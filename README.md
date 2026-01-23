@@ -52,7 +52,7 @@ Services portal.
    - If you use Docker Compose for local development, see
      [`docs/local_dev.md`](docs/local_dev.md) for the recommended setup and
      `POSTGRES_HOST` overrides when running helper scripts outside Docker.
-3. Install packages: `pip install -r requirements.txt`.
+3. Install packages: `pip install -r requirements-dev.txt`.
 4. Create tables: `alembic upgrade head`.
 5. Import ZIP and air rate data before starting the app:
    `python scripts/import_air_rates.py path/to/rates_dir`.
@@ -188,15 +188,16 @@ Security guidance:
 ### Testing
 
 Run the automated test suite with [pytest](https://docs.pytest.org/) after you
-install the dependencies and configure your environment variables. From the
-project root, execute:
+install the development dependencies and configure your environment variables.
+From the project root, execute:
 
 ```bash
 pytest
 ```
 
 This command discovers and runs all tests in the `tests/` directory. Use it to
-verify changes before deploying or opening a pull request.
+verify changes before deploying or opening a pull request. Production builds
+should continue to install only `requirements.txt`.
 
 ### Rate limiting
 

@@ -2,8 +2,10 @@
 
 The application relies on packages such as Flask, SQLAlchemy, and Alembic.
 This module centralizes installation so automated environments always install
-``requirements.txt`` before invoking the test suite, preventing
-``ModuleNotFoundError`` failures for skipped dependencies.
+the production dependencies in ``requirements.txt`` before invoking the test
+suite, preventing ``ModuleNotFoundError`` failures for skipped dependencies.
+Development workflows can also opt into the extra tools listed in
+``requirements-dev.txt``.
 """
 
 from __future__ import annotations
@@ -24,13 +26,17 @@ def run_pip(pip_arguments: Sequence[str], *, use_cache: bool) -> None:
         use_cache: When ``False`` the command injects ``--no-cache-dir`` to avoid
             storing downloaded wheels inside ephemeral build environments.
 
+    Returns:
+        ``None``. The function is executed for its side effects.
+
     Raises:
         subprocess.CalledProcessError: Propagated if ``subprocess.run`` reports
             a failure when executing the pip command.
 
-    This helper wraps :func:`subprocess.run` so callers execute pip with the
-    interpreter located at :data:`sys.executable`, ensuring installation occurs
-    in the active environment.
+    This helper wraps :func:`subprocess.run` (defined in the standard library at
+    https://docs.python.org/3/library/subprocess.html#subprocess.run) so callers
+    execute pip with the interpreter located at :data:`sys.executable`,
+    ensuring installation occurs in the active environment.
     """
 
     command = [sys.executable, "-m", "pip", *pip_arguments]
@@ -47,6 +53,9 @@ def install_from_requirements(requirements: Path, *, use_cache: bool = True) -> 
         requirements: Path to the requirements file to install.
         use_cache: Indicates whether pip's download cache should be used.
 
+    Returns:
+        ``None``. The function is executed for its side effects.
+
     Raises:
         FileNotFoundError: If the requirements file does not exist.
         subprocess.CalledProcessError: Raised if either pip command fails.
@@ -58,8 +67,38 @@ def install_from_requirements(requirements: Path, *, use_cache: bool = True) -> 
     if not requirements.exists():
         raise FileNotFoundError(f"Requirements file not found: {requirements}")
 
+    install_requirements_files((requirements,), use_cache=use_cache)
+
+
+def install_requirements_files(
+    requirements_files: Sequence[Path], *, use_cache: bool = True
+) -> None:
+    """Install packages from one or more requirement files.
+
+    Args:
+        requirements_files: Ordered collection of requirement file paths to
+            install (for example ``("requirements.txt", "requirements-dev.txt")``).
+        use_cache: Indicates whether pip's download cache should be used.
+
+    Returns:
+        ``None``. The function is executed for its side effects.
+
+    Raises:
+        FileNotFoundError: If any requirements file does not exist.
+        subprocess.CalledProcessError: Raised if pip fails to install a file.
+
+    The function upgrades pip once, then installs each requirements file by
+    delegating to :func:`run_pip`.
+    """
+
+    missing = [path for path in requirements_files if not path.exists()]
+    if missing:
+        missing_list = ", ".join(str(path) for path in missing)
+        raise FileNotFoundError(f"Requirements file(s) not found: {missing_list}")
+
     run_pip(("install", "--upgrade", "pip"), use_cache=use_cache)
-    run_pip(("install", "-r", str(requirements)), use_cache=use_cache)
+    for requirements in requirements_files:
+        run_pip(("install", "-r", str(requirements)), use_cache=use_cache)
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
@@ -71,8 +110,10 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     Returns:
         A populated :class:`argparse.Namespace` with parsed options.
 
-    This helper delegates to :func:`argparse.ArgumentParser.parse_args` to
-    interpret the script parameters.
+    This helper delegates to
+    :func:`argparse.ArgumentParser.parse_args` (documented at
+    https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.parse_args)
+    to interpret the script parameters.
     """
 
     parser = argparse.ArgumentParser(
@@ -88,6 +129,20 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
         help="Path to the requirements file to install (defaults to requirements.txt).",
     )
     parser.add_argument(
+        "--include-dev",
+        action="store_true",
+        help="Also install development requirements from requirements-dev.txt.",
+    )
+    parser.add_argument(
+        "--dev-requirements",
+        type=Path,
+        default=Path("requirements-dev.txt"),
+        help=(
+            "Path to the development requirements file (defaults to "
+            "requirements-dev.txt)."
+        ),
+    )
+    parser.add_argument(
         "--no-cache",
         action="store_true",
         help="Disable pip's download cache (useful for container builds).",
@@ -101,17 +156,24 @@ def main(argv: Optional[Sequence[str]] = None) -> None:
     Args:
         argv: Optional list of command-line arguments for invocation.
 
+    Returns:
+        ``None``. The function is executed for its side effects.
+
     Raises:
         FileNotFoundError: If the requested requirements file is missing.
-        subprocess.CalledProcessError: Propagated from :func:`install_from_requirements`.
+        subprocess.CalledProcessError: Propagated from
+            :func:`install_requirements_files`.
 
     The function resolves the requirements path relative to the current working
-    directory and delegates installation to :func:`install_from_requirements`.
+    directory and delegates installation to :func:`install_requirements_files`.
     """
 
     args = parse_args(argv)
     requirements_path = args.requirements.resolve()
-    install_from_requirements(requirements_path, use_cache=not args.no_cache)
+    requirements_files = [requirements_path]
+    if args.include_dev:
+        requirements_files.append(args.dev_requirements.resolve())
+    install_requirements_files(requirements_files, use_cache=not args.no_cache)
 
 
 if __name__ == "__main__":
