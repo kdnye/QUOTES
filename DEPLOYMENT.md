@@ -107,6 +107,67 @@ accounts with two-step verification enabled; basic username/password sign-in
 without app passwords is no longer supported for most accounts. If you prefer
 SSL on port 465, set `MAIL_USE_SSL=true` and disable TLS.
 
+### Seed secrets in Secret Manager
+
+Store sensitive values in Secret Manager and reference them from Cloud Run
+instead of committing them to `.env` files. The script below wraps the standard
+`gcloud secrets create` and `gcloud secrets versions add` commands and creates
+secrets for the database password, SMTP password, and Google Maps API key:
+
+```bash
+export PROJECT_ID="your-project-id"
+export DB_PASSWORD="replace-with-db-password"
+export MAIL_PASSWORD="replace-with-mail-password"
+export GOOGLE_MAPS_API_KEY="replace-with-maps-key"
+./scripts/gcp/seed_secrets.sh
+```
+
+If you prefer manual commands, the equivalent `gcloud` calls are:
+
+```bash
+gcloud secrets create DB_PASSWORD --project=PROJECT --replication-policy=automatic
+printf "%s" "replace-with-db-password" | \\
+  gcloud secrets versions add DB_PASSWORD --project=PROJECT --data-file=-
+
+gcloud secrets create MAIL_PASSWORD --project=PROJECT --replication-policy=automatic
+printf "%s" "replace-with-mail-password" | \\
+  gcloud secrets versions add MAIL_PASSWORD --project=PROJECT --data-file=-
+
+gcloud secrets create GOOGLE_MAPS_API_KEY --project=PROJECT --replication-policy=automatic
+printf "%s" "replace-with-maps-key" | \\
+  gcloud secrets versions add GOOGLE_MAPS_API_KEY --project=PROJECT --data-file=-
+```
+
+### Bind secrets to Cloud Run
+
+Bind Secret Manager values at deploy time with `--set-secrets`. Map the secret
+name to the environment variable expected by the app (for example, the
+`DB_PASSWORD` secret becomes `POSTGRES_PASSWORD` in the container):
+
+```bash
+gcloud run deploy quote-tool \\
+  --image=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG \\
+  --region=REGION \\
+  --platform=managed \\
+  --allow-unauthenticated \\
+  --set-env-vars=FLASK_DEBUG=false \\
+  --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest,\\
+POSTGRES_PASSWORD=projects/PROJECT/secrets/DB_PASSWORD:latest,\\
+MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\\
+GOOGLE_MAPS_API_KEY=projects/PROJECT/secrets/GOOGLE_MAPS_API_KEY:latest
+```
+
+### Cloud Run runtime IAM permissions
+
+Ensure the Cloud Run runtime service account has the minimum IAM permissions
+required to read secrets and reach dependencies:
+
+- `roles/secretmanager.secretAccessor` on the secrets above so Cloud Run can
+  inject values at startup.
+- `roles/cloudsql.client` if the service connects to Cloud SQL.
+- `roles/storage.objectAdmin` (or scoped `storage.objects.create/delete/get`)
+  if branding uploads are stored in GCS.
+
 ### Variable reference
 
 | Variable | Required | Purpose |
