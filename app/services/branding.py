@@ -288,7 +288,8 @@ def resolve_brand_logo_url(raw_value: str | None) -> str | None:
 
     Args:
         raw_value: Stored value from ``app_settings``. May be a filename in the
-            instance ``company_logos`` directory or an absolute URL.
+            instance ``company_logos`` directory, a ``gs://`` GCS location, or
+            an absolute URL.
 
     Returns:
         Public URL string for the logo or ``None`` when no logo is configured.
@@ -300,10 +301,35 @@ def resolve_brand_logo_url(raw_value: str | None) -> str | None:
     if not raw_value:
         return None
     cleaned = raw_value.strip()
+    if cleaned.lower().startswith("gs://"):
+        return _gcs_public_url_from_location(cleaned)
     if cleaned.lower().startswith("http"):
         return cleaned
     filename = Path(cleaned).name
     return url_for("branding.logo_file", filename=filename)
+
+
+def _gcs_public_url_from_location(location: str) -> str | None:
+    """Convert a ``gs://`` location into a public HTTPS URL.
+
+    Args:
+        location: GCS object location in ``gs://bucket/path`` format.
+
+    Returns:
+        Public HTTPS URL for the object, or ``None`` when parsing fails.
+
+    External dependencies:
+        * :func:`urllib.parse.urlparse` for parsing the GCS location.
+    """
+
+    parsed = urlparse(location)
+    if parsed.scheme != "gs" or not parsed.netloc or not parsed.path:
+        return None
+    bucket = parsed.netloc
+    object_path = parsed.path.lstrip("/")
+    if not object_path:
+        return None
+    return f"https://storage.googleapis.com/{bucket}/{object_path}"
 
 
 def _get_legacy_logo_dir() -> Path:
