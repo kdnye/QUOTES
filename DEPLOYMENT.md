@@ -391,7 +391,8 @@ request a quote.
 - Restrict Cloud Run IAM access to trusted administrators. Use VPC firewall
   rules and Cloud SQL authorized networks as needed.
 - Keep base images patched. Rebuild the image after applying dependency updates
-  in `requirements.txt`.
+  in `requirements.txt`. Use `requirements-dev.txt` only for local development
+  workflows and CI tooling.
 
 Following this runbook yields a reproducible deployment of Quote Tool with HTTPS
 termination, seeded data, and a hardened configuration ready for production.
