@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Setup - Create Admin{% endblock %}
+
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-lg-6">
+      <h1 class="h3 mb-3">Create the first super admin</h1>
+      <p class="text-muted">
+        This account will have full administrative access and can approve
+        employee accounts once setup is complete.
+      </p>
+
+      <form method="post" action="{{ url_for('setup.setup_admin') }}" class="card">
+        <div class="card-body">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <div class="mb-3">
+            <label class="form-label" for="email">Email address</label>
+            <input
+              class="form-control"
+              type="email"
+              id="email"
+              name="email"
+              value="{{ email }}"
+              required
+            />
+          </div>
+          <div class="mb-3">
+            <label class="form-label" for="password">Password</label>
+            <input
+              class="form-control"
+              type="password"
+              id="password"
+              name="password"
+              required
+            />
+            <div class="form-text">
+              Use 14+ characters with upper, lower, number, and symbol
+              characters, or a 24+ character passphrase.
+            </div>
+          </div>
+          <button type="submit" class="btn btn-primary">Create admin</button>
+        </div>
+      </form>
+
+      <div class="mt-4">
+        <a href="{{ url_for('setup.setup_status') }}" class="link-secondary">
+          Back to setup checklist
+        </a>
+      </div>
+    </div>
+  </div>
+{% endblock %}

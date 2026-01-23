@@ -1,0 +1,175 @@
+"""Setup blueprint for first-run configuration flows."""
+
+from __future__ import annotations
+
+import os
+from typing import Any
+
+from flask import (
+    Blueprint,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask.typing import ResponseReturnValue
+
+from app.database import ensure_database_schema
+from app.models import User, db
+from app.services.auth_utils import is_valid_email, is_valid_password
+
+setup_bp = Blueprint("setup", __name__)
+
+
+def _collect_env_checks() -> list[dict[str, Any]]:
+    """Return environment health checks for the setup landing page.
+
+    Returns:
+        A list of dictionaries containing the variable label, a boolean
+        ``configured`` flag, and instructional text for the setup templates.
+
+    External dependencies:
+        * Reads environment variables via :func:`os.getenv`.
+        * Reads defaults from :data:`flask.current_app.config`.
+    """
+
+    secret_key = os.getenv("SECRET_KEY") or current_app.config.get("SECRET_KEY")
+    maps_key = (
+        os.getenv("GOOGLE_MAPS_API_KEY")
+        or os.getenv("MAPS_API_KEY")
+        or current_app.config.get("GOOGLE_MAPS_API_KEY")
+    )
+    gcs_bucket = os.getenv("GCS_BUCKET") or current_app.config.get("GCS_BUCKET")
+
+    return [
+        {
+            "label": "SECRET_KEY",
+            "configured": bool(secret_key),
+            "instruction": (
+                "Set SECRET_KEY to a long random value so session cookies are secure."
+            ),
+        },
+        {
+            "label": "GOOGLE_MAPS_API_KEY or MAPS_API_KEY",
+            "configured": bool(maps_key),
+            "instruction": (
+                "Provide a Google Maps API key so ZIP validation and distance lookups work."
+            ),
+        },
+        {
+            "label": "GCS_BUCKET",
+            "configured": bool(gcs_bucket),
+            "instruction": (
+                "Set GCS_BUCKET when branding assets should be stored in Google Cloud Storage."
+            ),
+        },
+    ]
+
+
+@setup_bp.route("/setup", methods=["GET"])
+def setup_status() -> str:
+    """Render a setup checklist for required environment configuration.
+
+    Returns:
+        Rendered HTML for the setup landing page.
+    """
+
+    checks = _collect_env_checks()
+    missing = [check for check in checks if not check["configured"]]
+    return render_template("setup/index.html", checks=checks, missing=missing)
+
+
+@setup_bp.route("/setup/db-init", methods=["GET", "POST"])
+def setup_db_init() -> ResponseReturnValue:
+    """Initialize or upgrade the database schema for first-run setup.
+
+    Returns:
+        ``ResponseReturnValue`` that renders the DB init template or redirects
+        back to it after invoking :func:`app.database.ensure_database_schema`.
+
+    External dependencies:
+        * Calls :func:`app.database.ensure_database_schema` to run migrations or
+          create tables for SQLite databases.
+    """
+
+    if request.method == "POST":
+        try:
+            ensure_database_schema(db.engine)
+        except Exception as exc:  # pragma: no cover - depends on database state
+            current_app.logger.exception("Setup database init failed: %s", exc)
+            flash("Database initialization failed. Check logs for details.", "danger")
+        else:
+            flash("Database initialization completed.", "success")
+        return redirect(url_for("setup.setup_db_init"))
+
+    return render_template("setup/db_init.html")
+
+
+@setup_bp.route("/setup/admin", methods=["GET", "POST"])
+def setup_admin() -> ResponseReturnValue:
+    """Collect credentials and create the initial super administrator.
+
+    Returns:
+        ``ResponseReturnValue`` rendering the admin form or redirecting to the
+        setup completion route when the administrator is created.
+
+    External dependencies:
+        * Calls :func:`app.services.auth_utils.is_valid_email` and
+          :func:`app.services.auth_utils.is_valid_password` for validation.
+        * Stores passwords using :meth:`app.models.User.set_password`.
+    """
+
+    if User.query.count() > 0:
+        flash("Setup is already complete. Please sign in.", "info")
+        return redirect(url_for("auth.login"))
+
+    email_value = (request.form.get("email") or "").strip().lower()
+    if request.method == "POST":
+        password = request.form.get("password") or ""
+        errors: list[str] = []
+
+        if not email_value:
+            errors.append("Email is required.")
+        elif not is_valid_email(email_value):
+            errors.append("Enter a valid email address.")
+
+        if not is_valid_password(password):
+            errors.append(
+                "Password must be at least 14 characters and include upper, lower, "
+                "number, and symbol characters (or 24+ characters for a passphrase)."
+            )
+
+        if User.query.filter_by(email=email_value).first():
+            errors.append("Email already exists in the database.")
+
+        if errors:
+            for error in errors:
+                flash(error, "warning")
+        else:
+            user = User(
+                email=email_value,
+                role="super_admin",
+                employee_approved=True,
+            )
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            flash("Super admin account created.", "success")
+            return redirect(url_for("setup.setup_complete"))
+
+    return render_template("setup/admin.html", email=email_value)
+
+
+@setup_bp.route("/setup/complete", methods=["GET"])
+def setup_complete() -> ResponseReturnValue:
+    """Mark setup complete and redirect to the admin dashboard.
+
+    Returns:
+        ``ResponseReturnValue`` redirecting the caller to
+        :func:`admin.dashboard`.
+    """
+
+    current_app.config["SETUP_REQUIRED"] = False
+    return redirect(url_for("admin.dashboard"))

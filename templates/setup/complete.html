@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block title %}Setup Complete{% endblock %}
+
+{% block content %}
+  <div class="text-center">
+    <h1 class="h3 mb-3">Setup complete</h1>
+    <p class="text-muted">
+      Redirecting you to the admin dashboard. If you are not redirected, use
+      the button below.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('admin.dashboard') }}">
+      Go to admin dashboard
+    </a>
+  </div>
+{% endblock %}

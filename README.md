@@ -73,6 +73,9 @@ Services portal.
      debugging. Set ``FLASK_DEBUG=true`` while developing locally and leave it
      unset or ``false`` in production so the hardened configuration stays in
      effect.
+8. On first run, visit `/setup` to confirm environment variables, initialize
+   the database schema, and create the initial super admin account. The setup
+   flow locks down the rest of the app until a user exists.
 
 ### Docker (production-style container)
 

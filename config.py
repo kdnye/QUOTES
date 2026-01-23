@@ -566,6 +566,12 @@ class Config:
             "POSTGRES_PASSWORD, and POSTGRES_DB."
         )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SETUP_MODE = os.getenv("SETUP_MODE", "false").lower() in {
+        "true",
+        "1",
+        "yes",
+        "y",
+    }
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
     DB_POOL_SIZE = os.getenv("DB_POOL_SIZE")
     SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
