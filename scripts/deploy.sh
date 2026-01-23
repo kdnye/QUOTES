@@ -191,13 +191,16 @@ fi
 
 GOOGLE_MAPS_API_KEY="$(prompt_required "GOOGLE_MAPS_API_KEY")"
 
-require_no_commas "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
-require_no_commas "SECRET_KEY" "${SECRET_KEY}"
-require_no_commas "GOOGLE_MAPS_API_KEY" "${GOOGLE_MAPS_API_KEY}"
-require_no_commas "POSTGRES_USER" "${POSTGRES_USER}"
-require_no_commas "POSTGRES_DB" "${POSTGRES_DB}"
-require_no_commas "CLOUD_SQL_CONNECTION_NAME" "${CLOUD_SQL_CONNECTION_NAME}"
-require_no_commas "IMAGE_URI" "${IMAGE_URI}"
+for env_pair in \
+    "POSTGRES_PASSWORD:${POSTGRES_PASSWORD}" \
+    "SECRET_KEY:${SECRET_KEY}" \
+    "GOOGLE_MAPS_API_KEY:${GOOGLE_MAPS_API_KEY}" \
+    "POSTGRES_USER:${POSTGRES_USER}" \
+    "POSTGRES_DB:${POSTGRES_DB}" \
+    "CLOUD_SQL_CONNECTION_NAME:${CLOUD_SQL_CONNECTION_NAME}" \
+    "IMAGE_URI:${IMAGE_URI}"; do
+    require_no_commas "${env_pair%%:*}" "${env_pair#*:}"
+done
 require_no_commas "SERVICE_NAME" "${SERVICE_NAME}"
 require_no_commas "PROJECT_ID" "${PROJECT_ID}"
 require_no_commas "REGION" "${REGION}"
