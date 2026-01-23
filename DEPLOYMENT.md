@@ -243,6 +243,11 @@ gcloud run deploy quote-tool \\
   --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest
 ```
 
+For an interactive workflow, `scripts/deploy.sh` prompts for the required
+Cloud Run environment values, infers the active project and existing service
+image when possible, and deploys with the Cloud SQL connection values needed
+by the application.
+
 ### Cloud Run entrypoint
 
 The container image defaults to binding on `0.0.0.0:${PORT:-8080}` using
