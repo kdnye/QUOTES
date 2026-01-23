@@ -258,6 +258,13 @@ minimum
 `storage.objects.create` and `storage.objects.delete` (plus `get` if your
 bucket requires reads to resolve public URLs).
 
+Admins can also configure per-rate-set logo locations by visiting **Admin >
+Branding** and entering a base GCS bucket location in the form
+`gs://bucket/path`. The application expects each rate set logo to be stored as
+`<rate_set>.png` under that base path (for example,
+`gs://bucket/path/default.png`). The branding screen will preview the
+calculated public URLs so you can verify the configuration before saving.
+
 ### Rate CSV formats
 
 The `Zipcode_Zones.csv` file must include a header row with these columns in
