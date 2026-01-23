@@ -64,7 +64,10 @@ Production deployments must define `SECRET_KEY` (otherwise the app starts in
 maintenance mode and reports a configuration error when `ENVIRONMENT` or
 `FLASK_ENV` is set to `production`). Provide either a Cloud SQL connection name
 or a full PostgreSQL DSN (`DATABASE_URL`) so the container can connect to Cloud
-SQL.
+SQL. The `scripts/deploy.sh` workflow now creates or updates Secret Manager
+entries named `${SERVICE_NAME}-db-password`, `${SERVICE_NAME}-secret-key`, and
+`${SERVICE_NAME}-maps-key` before it deploys the Cloud Run service, so ensure
+the operator has the required permissions to manage secrets.
 
 ```dotenv
 # Core application settings
@@ -156,6 +159,12 @@ POSTGRES_PASSWORD=projects/PROJECT/secrets/DB_PASSWORD:latest,\\
 MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\\
 GOOGLE_MAPS_API_KEY=projects/PROJECT/secrets/GOOGLE_MAPS_API_KEY:latest
 ```
+
+When using `scripts/deploy.sh`, the deployment operator needs permissions to
+describe, create, and add new versions to secrets. Grant `roles/secretmanager.admin`
+or a least-privilege combination that includes `secretmanager.secrets.create`,
+`secretmanager.secrets.get`, and `secretmanager.versions.add` on the project or
+on the specific secrets.
 
 ### Cloud Run runtime IAM permissions
 

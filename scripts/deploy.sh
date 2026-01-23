@@ -101,6 +101,21 @@ require_no_commas() {
     fi
 }
 
+upsert_secret() {
+    local secret_name="$1"
+    local secret_value="$2"
+
+    if ! gcloud secrets describe "${secret_name}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
+        gcloud secrets create "${secret_name}" \
+            --project="${PROJECT_ID}" \
+            --replication-policy=automatic
+    fi
+
+    printf "%s" "${secret_value}" | gcloud secrets versions add "${secret_name}" \
+        --project="${PROJECT_ID}" \
+        --data-file=-
+}
+
 require_command gcloud
 require_command python
 
@@ -161,7 +176,7 @@ fi
 
 POSTGRES_USER="$(prompt_with_default "Postgres user" "${DEFAULT_POSTGRES_USER}")"
 POSTGRES_DB="$(prompt_with_default "Postgres database" "${DEFAULT_POSTGRES_DB}")"
-DB_PASSWORD="$(prompt_required_secret "DB_PASSWORD")"
+POSTGRES_PASSWORD="$(prompt_required_secret "POSTGRES_PASSWORD")"
 
 SECRET_KEY="$(prompt_optional_secret "SECRET_KEY (leave blank to generate)")"
 if [[ -z "${SECRET_KEY}" ]]; then
@@ -174,11 +189,11 @@ PY
     echo "Generated SECRET_KEY for deployment." >&2
 fi
 
-MAPS_KEY="$(prompt_required "MAPS_KEY")"
+GOOGLE_MAPS_API_KEY="$(prompt_required "GOOGLE_MAPS_API_KEY")"
 
-require_no_commas "DB_PASSWORD" "${DB_PASSWORD}"
+require_no_commas "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 require_no_commas "SECRET_KEY" "${SECRET_KEY}"
-require_no_commas "MAPS_KEY" "${MAPS_KEY}"
+require_no_commas "GOOGLE_MAPS_API_KEY" "${GOOGLE_MAPS_API_KEY}"
 require_no_commas "POSTGRES_USER" "${POSTGRES_USER}"
 require_no_commas "POSTGRES_DB" "${POSTGRES_DB}"
 require_no_commas "CLOUD_SQL_CONNECTION_NAME" "${CLOUD_SQL_CONNECTION_NAME}"
@@ -187,10 +202,19 @@ require_no_commas "SERVICE_NAME" "${SERVICE_NAME}"
 require_no_commas "PROJECT_ID" "${PROJECT_ID}"
 require_no_commas "REGION" "${REGION}"
 
+DB_PASSWORD_SECRET="${SERVICE_NAME}-db-password"
+SECRET_KEY_SECRET="${SERVICE_NAME}-secret-key"
+MAPS_KEY_SECRET="${SERVICE_NAME}-maps-key"
+
+upsert_secret "${DB_PASSWORD_SECRET}" "${POSTGRES_PASSWORD}"
+upsert_secret "${SECRET_KEY_SECRET}" "${SECRET_KEY}"
+upsert_secret "${MAPS_KEY_SECRET}" "${GOOGLE_MAPS_API_KEY}"
+
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --platform=managed \
     --allow-unauthenticated \
     --image="${IMAGE_URI}" \
-    --set-env-vars="DB_PASSWORD=${DB_PASSWORD},POSTGRES_PASSWORD=${DB_PASSWORD},POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},SECRET_KEY=${SECRET_KEY},MAPS_KEY=${MAPS_KEY},GOOGLE_MAPS_API_KEY=${MAPS_KEY},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs"
+    --set-env-vars="POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs" \
+    --update-secrets="POSTGRES_PASSWORD=${DB_PASSWORD_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,GOOGLE_MAPS_API_KEY=${MAPS_KEY_SECRET}:latest"
