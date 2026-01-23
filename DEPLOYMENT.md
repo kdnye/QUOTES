@@ -119,7 +119,7 @@ secrets for the database password, SMTP password, and Google Maps API key:
 
 ```bash
 export PROJECT_ID="your-project-id"
-export DB_PASSWORD="replace-with-db-password"
+export POSTGRES_PASSWORD="replace-with-db-password"
 export MAIL_PASSWORD="replace-with-mail-password"
 export GOOGLE_MAPS_API_KEY="replace-with-maps-key"
 ./scripts/gcp/seed_secrets.sh
@@ -128,9 +128,9 @@ export GOOGLE_MAPS_API_KEY="replace-with-maps-key"
 If you prefer manual commands, the equivalent `gcloud` calls are:
 
 ```bash
-gcloud secrets create DB_PASSWORD --project=PROJECT --replication-policy=automatic
+gcloud secrets create POSTGRES_PASSWORD --project=PROJECT --replication-policy=automatic
 printf "%s" "replace-with-db-password" | \\
-  gcloud secrets versions add DB_PASSWORD --project=PROJECT --data-file=-
+  gcloud secrets versions add POSTGRES_PASSWORD --project=PROJECT --data-file=-
 
 gcloud secrets create MAIL_PASSWORD --project=PROJECT --replication-policy=automatic
 printf "%s" "replace-with-mail-password" | \\
@@ -145,7 +145,7 @@ printf "%s" "replace-with-maps-key" | \\
 
 Bind Secret Manager values at deploy time with `--set-secrets`. Map the secret
 name to the environment variable expected by the app (for example, the
-`DB_PASSWORD` secret becomes `POSTGRES_PASSWORD` in the container):
+`POSTGRES_PASSWORD` secret is injected as `POSTGRES_PASSWORD` in the container):
 
 ```bash
 gcloud run deploy quote-tool \\
@@ -155,7 +155,7 @@ gcloud run deploy quote-tool \\
   --allow-unauthenticated \\
   --set-env-vars=FLASK_DEBUG=false \\
   --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest,\\
-POSTGRES_PASSWORD=projects/PROJECT/secrets/DB_PASSWORD:latest,\\
+POSTGRES_PASSWORD=projects/PROJECT/secrets/POSTGRES_PASSWORD:latest,\\
 MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\\
 GOOGLE_MAPS_API_KEY=projects/PROJECT/secrets/GOOGLE_MAPS_API_KEY:latest
 ```

@@ -16,11 +16,11 @@ BUCKET_NAME="${PROJECT_ID}-branding"
 REPO_NAME="${ARTIFACT_REPO_NAME:-quote-repo}"
 INSTANCE_NAME="${CLOUD_SQL_INSTANCE_NAME:-quote-postgres}"
 DB_NAME="quote_tool"
-DB_PASSWORD="${DB_PASSWORD:-}"
+POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-}"
 
-if [[ -z "${DB_PASSWORD}" ]]; then
+if [[ -z "${POSTGRES_PASSWORD}" ]]; then
     # Uses Python's secrets module to generate a strong password.
-    DB_PASSWORD="$(python - <<'PY'
+    POSTGRES_PASSWORD="$(python - <<'PY'
 import secrets
 
 print(secrets.token_urlsafe(18))
@@ -70,7 +70,7 @@ if ! gcloud sql instances describe "${INSTANCE_NAME}" --project="${PROJECT_ID}" 
         --database-version="POSTGRES_14" \
         --tier="db-f1-micro" \
         --region="${REGION}" \
-        --root-password="${DB_PASSWORD}"
+        --root-password="${POSTGRES_PASSWORD}"
 fi
 
 # Create the application database if missing.
@@ -87,7 +87,7 @@ CONNECTION_NAME="$(gcloud sql instances describe "${INSTANCE_NAME}" \
     --format="value(connectionName)")"
 
 if [[ "${GENERATED_PASSWORD}" == "true" ]]; then
-    echo "Generated Cloud SQL postgres password (store securely): ${DB_PASSWORD}" >&2
+    echo "Generated Cloud SQL postgres password (store securely): ${POSTGRES_PASSWORD}" >&2
 fi
 
 echo "Cloud SQL connection name: ${CONNECTION_NAME}"
