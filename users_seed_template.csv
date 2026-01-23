@@ -1,0 +1,5 @@
+# Copy this file and replace the placeholder values with your own accounts.
+# Valid roles: customer, employee, super_admin. is_admin=TRUE automatically grants super admin privileges.
+# email,name,first_name,last_name,phone,company_name,company_phone,password,role,is_admin,employee_approved,is_active
+admin@example.com,Admin User,Admin,User,555-555-0100,Freight Services,555-555-0150,Adm1n!Example2024,super_admin,TRUE,TRUE,TRUE
+employee@example.com,Alex Employee,Alex,Employee,555-555-0110,Freight Services,555-555-0160,EmployeE!234567,employee,FALSE,FALSE,TRUE
