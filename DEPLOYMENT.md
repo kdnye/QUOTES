@@ -380,6 +380,7 @@ Cloud Storage. Set the following environment variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `BRANDING_STORAGE` | Branding backend (`local` or `gcs`) | `local` (defaults to `gcs` on Cloud Run) |
+| `FSI_LOGO_URL` | Optional override URL for the header FSI logo | (empty) |
 | `GCS_BUCKET` | Target bucket for branding uploads | (empty) |
 | `GCS_PREFIX` | Optional object prefix for branding uploads | (empty) |
 
@@ -387,6 +388,9 @@ When `BRANDING_STORAGE=gcs` (mandatory on Cloud Run), the service account used
 by the deployment must have `roles/storage.objectAdmin` or the scoped permissions
 `storage.objects.create` and `storage.objects.delete` (plus `get` if your
 bucket requires reads to resolve public URLs).
+
+Provide `FSI_LOGO_URL` when the service should render a custom header logo from
+an external HTTPS location instead of the built-in fallback asset.
 
 ### Seed rate tables and admin user
 
