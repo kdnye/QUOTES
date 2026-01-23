@@ -5,13 +5,15 @@ from pathlib import Path
 
 import pytest
 from flask import Flask
+from flask.signals import template_rendered
+from flask_login import login_user
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
 from app import create_app
-from app.admin import LogoUploadForm
-from app.models import db
+from app.admin import LogoUploadForm, branding
+from app.models import User, db
 from app.services.branding import resolve_brand_logo_url
 from app.services.branding_locations import (
     build_brand_logo_object_location,
@@ -52,14 +54,68 @@ def app(tmp_path: Path) -> Flask:
         db.drop_all()
 
 
-def test_logo_form_rejects_invalid_gcs_location(app: Flask) -> None:
+def _create_super_admin(rate_set: str = DEFAULT_RATE_SET) -> User:
+    """Create and persist a super admin user for authentication tests.
+
+    Args:
+        rate_set: Rate set identifier assigned to the user account.
+
+    Returns:
+        Persisted :class:`app.models.User` instance.
+
+    External dependencies:
+        * Writes through :data:`app.models.db.session`.
+    """
+
+    user = User(
+        email="admin@example.com",
+        password_hash="unused",
+        role="super_admin",
+        employee_approved=True,
+        rate_set=rate_set,
+    )
+    user.set_password("StrongPassw0rd!")
+    db.session.add(user)
+    db.session.commit()
+    return user
+
+
+def _collect_template_context(app: Flask) -> dict[str, object]:
+    """Return the merged template context from registered processors.
+
+    Args:
+        app: Application instance with template context processors registered.
+
+    Returns:
+        Dictionary containing all injected template context values.
+    """
+
+    context: dict[str, object] = {}
+    for processor in app.template_context_processors[None]:
+        context.update(processor())
+    return context
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "not-a-location",
+        "gs://bucket",
+        "gs://",
+        "gs:///path",
+        "gs://bucket/",
+    ],
+)
+def test_logo_form_rejects_invalid_gcs_location(
+    app: Flask, location: str
+) -> None:
     """Ensure the branding form rejects non-GCS locations."""
 
     with app.test_request_context(
         method="POST",
         data={
             "rate_set": DEFAULT_RATE_SET,
-            "gcs_bucket_location": "not-a-location",
+            "gcs_bucket_location": location,
         },
     ):
         form = LogoUploadForm()
@@ -67,14 +123,22 @@ def test_logo_form_rejects_invalid_gcs_location(app: Flask) -> None:
         assert "gs://bucket/path" in ", ".join(form.gcs_bucket_location.errors)
 
 
-def test_logo_form_accepts_valid_gcs_location(app: Flask) -> None:
+@pytest.mark.parametrize(
+    "location",
+    [
+        "gs://bucket/path/logo.png",
+        "gs://bucket/path",
+        "gs://bucket/nested/path/logo.svg",
+    ],
+)
+def test_logo_form_accepts_valid_gcs_location(app: Flask, location: str) -> None:
     """Ensure the branding form accepts valid GCS locations."""
 
     with app.test_request_context(
         method="POST",
         data={
             "rate_set": DEFAULT_RATE_SET,
-            "gcs_bucket_location": "gs://bucket/path/logo.png",
+            "gcs_bucket_location": location,
         },
     ):
         form = LogoUploadForm()
@@ -117,3 +181,60 @@ def test_build_brand_logo_url_uses_rate_set_naming() -> None:
 
     url = build_brand_logo_url("gs://bucket/path", "ININ")
     assert url == "https://storage.googleapis.com/bucket/path/inin.png"
+
+
+def test_build_brand_logo_location_returns_none_for_blank_input() -> None:
+    """Ensure blank logo locations do not produce object URLs."""
+
+    assert build_brand_logo_object_location("   ", "ININ") is None
+    assert build_brand_logo_url("", "ININ") is None
+
+
+def test_branding_payload_includes_blank_and_populated_logos(app: Flask) -> None:
+    """Confirm branding payload renders both populated and blank logo data."""
+
+    captured: list[dict[str, object]] = []
+
+    def _record(
+        sender: Flask, template, context: dict[str, object], **extra: object
+    ) -> None:
+        if template and template.name == "admin_branding.html":
+            captured.append(context)
+
+    template_rendered.connect(_record, app)
+    try:
+        with app.test_request_context("/admin/branding"):
+            upsert_brand_logo_location(DEFAULT_RATE_SET, "gs://bucket/path")
+            db.session.commit()
+            branding.__wrapped__()
+    finally:
+        template_rendered.disconnect(_record, app)
+
+    assert captured, "Expected branding template context to be captured."
+    logos = captured[0]["logos"]
+    assert logos[DEFAULT_RATE_SET]["url"] == (
+        "https://storage.googleapis.com/bucket/path/default.png"
+    )
+    assert logos[DEFAULT_RATE_SET]["object_location"] == (
+        "gs://bucket/path/default.png"
+    )
+    assert logos["inin"]["url"] is None
+    assert logos["inin"]["object_location"] is None
+
+
+def test_company_logo_context_blank_and_populated(app: Flask) -> None:
+    """Ensure logo context is empty when missing and populated when stored."""
+
+    with app.test_request_context("/"):
+        user = _create_super_admin()
+        login_user(user)
+        empty_context = _collect_template_context(app)
+        assert "company_logo_url" not in empty_context
+
+        upsert_brand_logo_location(DEFAULT_RATE_SET, "gs://bucket/path")
+        db.session.commit()
+        populated_context = _collect_template_context(app)
+
+    assert populated_context["company_logo_url"] == (
+        "https://storage.googleapis.com/bucket/path/default.png"
+    )
