@@ -55,6 +55,39 @@
           {% endif %}
         </div>
       </div>
+
+      <div class="card mb-4">
+        <div class="card-header">Configure required settings</div>
+        <div class="card-body">
+          <p class="text-muted">
+            Save these values to the application database during initial setup.
+            Stored overrides apply immediately and can be adjusted later in the
+            admin settings page.
+          </p>
+          <form method="post" action="{{ url_for('setup.setup_status') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            {% for field in override_fields %}
+              <div class="mb-3">
+                <label class="form-label" for="{{ field.name }}">{{ field.label }}</label>
+                <input
+                  class="form-control"
+                  type="{{ field.input_type }}"
+                  id="{{ field.name }}"
+                  name="{{ field.name }}"
+                  value="{{ field.value }}"
+                />
+                <div class="form-text">{{ field.help_text }}</div>
+                {% if field.configured %}
+                  <div class="form-text text-success">Currently configured.</div>
+                {% endif %}
+              </div>
+            {% endfor %}
+            <button type="submit" class="btn btn-outline-primary">
+              Save configuration
+            </button>
+          </form>
+        </div>
+      </div>
     </div>
     <div class="col-lg-4">
       <div class="card mb-3">
