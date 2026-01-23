@@ -623,6 +623,14 @@ class Config:
             "CLOUD_SQL_CONNECTION_NAME along with POSTGRES_USER, "
             "POSTGRES_PASSWORD, and POSTGRES_DB."
         )
+    DATABASE_URL = _sanitized_database_url or ""
+    POSTGRES_USER = os.getenv("POSTGRES_USER", "").strip()
+    POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "").strip()
+    POSTGRES_DB = os.getenv("POSTGRES_DB", "").strip()
+    POSTGRES_HOST = os.getenv("POSTGRES_HOST", "").strip()
+    POSTGRES_PORT = os.getenv("POSTGRES_PORT", "").strip()
+    POSTGRES_OPTIONS = os.getenv("POSTGRES_OPTIONS", "").strip()
+    CLOUD_SQL_CONNECTION_NAME = os.getenv("CLOUD_SQL_CONNECTION_NAME", "").strip()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SETUP_MODE = os.getenv("SETUP_MODE", "false").lower() in {
         "true",

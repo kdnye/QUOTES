@@ -62,7 +62,8 @@
           <p class="text-muted">
             Save these values to the application database during initial setup.
             Stored overrides apply immediately and can be adjusted later in the
-            admin settings page.
+            admin settings page. Database connection changes require an app
+            restart to take effect.
           </p>
           <form method="post" action="{{ url_for('setup.setup_status') }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

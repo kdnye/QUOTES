@@ -107,6 +107,14 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         data={
             "google_maps_api_key": "maps-key",
             "gcs_bucket": "branding-bucket",
+            "database_url": "postgresql+psycopg2://user:pass@db/quote_tool",
+            "postgres_user": "db-user",
+            "postgres_password": "db-pass",
+            "postgres_db": "db-name",
+            "postgres_host": "db.example.com",
+            "postgres_port": "5432",
+            "postgres_options": "sslmode=require",
+            "cloud_sql_connection_name": "project:region:instance",
         },
         follow_redirects=True,
     )
@@ -121,5 +129,35 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         assert settings["google_maps_api_key"].is_secret is True
         assert settings["gcs_bucket"].value == "branding-bucket"
         assert settings["gcs_bucket"].is_secret is False
+        assert (
+            settings["database_url"].value
+            == "postgresql+psycopg2://user:pass@db/quote_tool"
+        )
+        assert settings["database_url"].is_secret is True
+        assert settings["postgres_user"].value == "db-user"
+        assert settings["postgres_user"].is_secret is False
+        assert settings["postgres_password"].value == "db-pass"
+        assert settings["postgres_password"].is_secret is True
+        assert settings["postgres_db"].value == "db-name"
+        assert settings["postgres_db"].is_secret is False
+        assert settings["postgres_host"].value == "db.example.com"
+        assert settings["postgres_host"].is_secret is False
+        assert settings["postgres_port"].value == "5432"
+        assert settings["postgres_port"].is_secret is False
+        assert settings["postgres_options"].value == "sslmode=require"
+        assert settings["postgres_options"].is_secret is False
+        assert settings["cloud_sql_connection_name"].value == "project:region:instance"
+        assert settings["cloud_sql_connection_name"].is_secret is False
         assert app.config["GOOGLE_MAPS_API_KEY"] == "maps-key"
         assert app.config["GCS_BUCKET"] == "branding-bucket"
+        assert (
+            app.config["DATABASE_URL"]
+            == "postgresql+psycopg2://user:pass@db/quote_tool"
+        )
+        assert app.config["POSTGRES_USER"] == "db-user"
+        assert app.config["POSTGRES_PASSWORD"] == "db-pass"
+        assert app.config["POSTGRES_DB"] == "db-name"
+        assert app.config["POSTGRES_HOST"] == "db.example.com"
+        assert app.config["POSTGRES_PORT"] == 5432
+        assert app.config["POSTGRES_OPTIONS"] == "sslmode=require"
+        assert app.config["CLOUD_SQL_CONNECTION_NAME"] == "project:region:instance"
