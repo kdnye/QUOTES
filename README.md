@@ -74,9 +74,10 @@ Services portal.
      unset or ``false`` in production so the hardened configuration stays in
      effect.
 8. On first run, visit `/setup` to confirm environment variables, optionally
-   save missing values into the app's settings table, initialize the database
-   schema, and create the initial super admin account. The setup flow locks
-   down the rest of the app until a user exists.
+   save missing values (including database connection settings) into the app's
+   settings table, initialize the database schema, and create the initial super
+   admin account. Database connection changes take effect after restarting the
+   app. The setup flow locks down the rest of the app until a user exists.
 
 ### Database migrations
 
