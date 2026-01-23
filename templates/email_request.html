@@ -1,0 +1,234 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>{{ page_heading }}</h2>
+<div class="alert alert-info" role="note">
+  <p class="mb-2">
+    Need a refresher on this email workflow? Read the
+    <a class="alert-link" href="/help/emailing">full instructions</a>.
+  </p>
+  <p class="mb-2">
+    The composed message opens with &ldquo;{{ email_intro_line | safe }}&rdquo; and the subject line
+    begins with &ldquo;{{ subject_prefix | safe }}&rdquo;.
+  </p>
+  {% if admin_fee > 0 %}
+  <p class="mb-0">
+    The total includes ${{ '%.2f'|format(admin_fee) }} email admin fee when you send this request.
+  </p>
+  {% else %}
+  <p class="mb-0">This request keeps the quoted amount without an added admin fee.</p>
+  {% endif %}
+</div>
+<form id="emailForm">
+  <h4 class="d-flex align-items-center gap-2">
+    Shipper info
+    <span
+      class="text-info"
+      tabindex="0"
+      data-bs-toggle="tooltip"
+      data-bs-placement="right"
+      title="Provide details for the pickup location so the carrier knows where to collect the shipment."
+    >
+      <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+      <span class="visually-hidden">Help for shipper information section</span>
+    </span>
+  </h4>
+  <div class="mb-2">
+    <label>Name <input type="text" name="shipper_name" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>Street Address <input type="text" name="shipper_street" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>City <input type="text" name="shipper_city" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>State <input type="text" name="shipper_state" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>
+      Zip
+      <span
+        class="ms-1 text-info"
+        tabindex="0"
+        data-bs-toggle="tooltip"
+        data-bs-placement="right"
+        title="Enter the five-digit ZIP code for the pickup location."
+      >
+        <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+        <span class="visually-hidden">Help for shipper ZIP</span>
+      </span>
+      <input type="text" name="shipper_zip" class="form-control" value="{{ quote.origin }}">
+    </label>
+  </div>
+  <div class="mb-2">
+    <label>
+      Contact
+      <span
+        class="ms-1 text-info"
+        tabindex="0"
+        data-bs-toggle="tooltip"
+        data-bs-placement="right"
+        title="Identify the on-site contact for pickup updates and driver check-in."
+      >
+        <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+        <span class="visually-hidden">Help for shipper contact</span>
+      </span>
+      <input type="text" name="shipper_contact" class="form-control">
+    </label>
+  </div>
+  <div class="mb-2">
+    <label>Phone <input type="text" name="shipper_phone" class="form-control"></label>
+  </div>
+  <h4 class="d-flex align-items-center gap-2">
+    Consignee info
+    <span
+      class="text-info"
+      tabindex="0"
+      data-bs-toggle="tooltip"
+      data-bs-placement="right"
+      title="Provide delivery location details so the carrier can complete the drop-off without delay."
+    >
+      <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+      <span class="visually-hidden">Help for consignee information section</span>
+    </span>
+  </h4>
+  <div class="mb-2">
+    <label>Name <input type="text" name="consignee_name" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>Street Address <input type="text" name="consignee_street" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>City <input type="text" name="consignee_city" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>State <input type="text" name="consignee_state" class="form-control"></label>
+  </div>
+  <div class="mb-2">
+    <label>
+      Zip
+      <span
+        class="ms-1 text-info"
+        tabindex="0"
+        data-bs-toggle="tooltip"
+        data-bs-placement="right"
+        title="Enter the five-digit ZIP code for the delivery location."
+      >
+        <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+        <span class="visually-hidden">Help for consignee ZIP</span>
+      </span>
+      <input type="text" name="consignee_zip" class="form-control" value="{{ quote.destination }}">
+    </label>
+  </div>
+  <div class="mb-2">
+    <label>
+      Contact
+      <span
+        class="ms-1 text-info"
+        tabindex="0"
+        data-bs-toggle="tooltip"
+        data-bs-placement="right"
+        title="Identify the primary receiver or dock contact for delivery updates."
+      >
+        <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+        <span class="visually-hidden">Help for consignee contact</span>
+      </span>
+      <input type="text" name="consignee_contact" class="form-control">
+    </label>
+  </div>
+  <div class="mb-2">
+    <label>Phone <input type="text" name="consignee_phone" class="form-control"></label>
+  </div>
+  <button type="submit" class="btn btn-primary mt-3">Compose Email</button>
+</form>
+{% set base_total = quote.total - metadata.accessorial_total %}
+<script>
+const data = {{ {
+  "origin": quote.origin,
+  "destination": quote.destination,
+  "weight": quote.weight,
+  "accessorials": metadata.accessorials,
+  "accessorial_total": metadata.accessorial_total,
+  "accessorial_names": accessorial_names,
+  "quote_id": quote.quote_id,
+  "user_name": user_name,
+  "user_company": user_company,
+  "total_with_fee": total_with_fee,
+  "base_total": base_total,
+  "email_intro_line": email_intro_line,
+  "subject_prefix": subject_prefix,
+  "admin_fee": admin_fee
+}|tojson }};
+
+document.getElementById('emailForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  const f = e.target;
+  const shipper = {
+    name: f.shipper_name.value,
+    street: f.shipper_street.value,
+    city: f.shipper_city.value,
+    state: f.shipper_state.value,
+    zip: f.shipper_zip.value,
+    contact: f.shipper_contact.value,
+    phone: f.shipper_phone.value
+  };
+  const consignee = {
+    name: f.consignee_name.value,
+    street: f.consignee_street.value,
+    city: f.consignee_city.value,
+    state: f.consignee_state.value,
+    zip: f.consignee_zip.value,
+    contact: f.consignee_contact.value,
+    phone: f.consignee_phone.value
+  };
+
+  let body = `${data.email_intro_line}\n`;
+  body += ` `;
+  body += `Quote ID: ${data.quote_id}\n`;
+  body += "------------\n";
+  body += `Origin: ${data.origin}\n`;
+  body += `Destination: ${data.destination}\n`;
+  const accessorialNames = data.accessorial_names || 'None';
+  body += `Accessorials Selected: ${accessorialNames}\n`;
+  body += `Weight: ${data.weight}\n`;
+  body += `Base Mileage Charge: $${data.base_total.toFixed(2)}\n`;
+  body += ` `;
+  body += "\n------------\nAccessorials\n------------\n";
+  for (const [name, cost] of Object.entries(data.accessorials || {})) {
+    body += `${name}                      $${cost.toFixed(2)}\n`;
+  }
+  body += "------------\n";
+  body += `Subtotal: $${data.accessorial_total.toFixed(2)}\n`;
+  body += "------------\n";
+  const adminFee = Number(data.admin_fee || 0);
+  const totalWithFee = Number(data.base_total || 0) + Number(data.accessorial_total || 0) + adminFee;
+  const adminFeeNote = adminFee > 0
+    ? ` (includes $${adminFee.toFixed(2)} email admin fee)`
+    : "";
+  body += `Quote Total: $${totalWithFee.toFixed(2)}${adminFeeNote}\n`;
+  body += "------------\n";
+  body += "Shipper info:\n";
+  body += `Name: ${shipper.name}\n`;
+  body += `Street Address: ${shipper.street}\n`;
+  body += `City: ${shipper.city}\n`;
+  body += `State: ${shipper.state}\n`;
+  body += `Zip: ${shipper.zip}\n`;
+  body += `Contact: ${shipper.contact}\n`;
+  body += `Phone: ${shipper.phone}\n`;
+  body += ` `;
+  body += "Consignee info:\n";
+  body += `Name: ${consignee.name}\n`;
+  body += `Street Address: ${consignee.street}\n`;
+  body += `City: ${consignee.city}\n`;
+  body += `State: ${consignee.state}\n`;
+  body += `Zip: ${consignee.zip}\n`;
+  body += `Contact: ${consignee.contact}\n`;
+  body += `Phone: ${consignee.phone}\n`;
+  body += "------------\n";
+  const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} from ${data.user_name} at ${data.user_company} - Quote ID: ${data.quote_id}`;
+  const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailto;
+});
+</script>
+{% endblock %}
+

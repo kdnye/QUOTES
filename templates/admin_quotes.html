@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}All Quotes{% endblock %}
+{% block main_class %}container-fluid px-3 px-md-4{% endblock %}
+{% block content %}
+  <h2>📦 All Submitted Quotes</h2>
+  <div class="mb-3">
+    <a class="btn btn-primary" href="{{ url_for('admin_quotes.quotes_csv') }}">Download CSV</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-striped table-sm">
+      <thead>
+        <tr>
+          <th>Quote ID</th>
+          <th>User ID</th>
+          <th>User Email</th>
+          <th>Type</th>
+          <th>Origin</th>
+          <th>Destination</th>
+          <th>Request IP</th>
+          <th>Weight</th>
+          <th>Method</th>
+          <th>Zone</th>
+          <th>Total</th>
+          <th>Accessorials</th>
+          <th>Date</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for q in quotes %}
+        <tr>
+          <td class="text-break">{{ q.quote_id }}</td>
+          <td class="text-break">{{ q.user_id }}</td>
+          <td class="text-break">{{ q.user_email }}</td>
+          <td class="text-break">{{ q.quote_type }}</td>
+          <td class="text-break">{{ q.origin }}</td>
+          <td class="text-break">{{ q.destination }}</td>
+          <td class="text-break">{{ q.request_ip }}</td>
+          <td>{{ '%.2f'|format(q.weight or 0) }}</td>
+          <td class="text-break">{{ q.weight_method }}</td>
+          <td class="text-break">{{ q.zone }}</td>
+          <td>${{ '%.2f'|format(q.total or 0) }}</td>
+          <td class="text-break" style="max-width:420px; white-space:pre-wrap;">{{ q.quote_metadata }}</td>
+          <td class="text-break">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '' }}</td>
+          <td>
+            {% if can_use_email_request %}
+            <a href="{{ url_for('admin_quotes.quote_email_request', quote_id=q.quote_id) }}">Generate booking email</a>
+            {% else %}
+            <span class="text-muted" title="Available to FreightServices.net team">Email option restricted</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

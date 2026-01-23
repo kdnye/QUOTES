@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Upload {{ table_label }}{% endblock %}
+{% block content %}
+<h1>Upload CSV for {{ table_label }}</h1>
+<p class="text-muted">
+  Ensure your file uses the following headers: <code>{{ expected_headers|join(', ') }}</code>.
+  You can <a href="{{ download_url }}">download the current table</a> as a template.
+</p>
+<form method="post" enctype="multipart/form-data">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.file.label(class="form-label") }}
+    {{ form.file(class="form-control") }}
+    {% if form.file.errors %}
+    <div class="text-danger small mt-1">{{ form.file.errors|join(', ') }}</div>
+    {% endif %}
+  </div>
+  <div class="mb-3">
+    <span class="form-label d-block">{{ form.action.label.text }}</span>
+    {% for option in form.action %}
+    <div class="form-check form-check-inline">
+      {{ option(class="form-check-input") }}
+      {{ option.label(class="form-check-label") }}
+    </div>
+    {% endfor %}
+    {% if form.action.errors %}
+    <div class="text-danger small mt-1">{{ form.action.errors|join(', ') }}</div>
+    {% endif %}
+  </div>
+  <button class="btn btn-primary" type="submit">Upload</button>
+  <a class="btn btn-secondary ms-2" href="{{ cancel_url }}">Cancel</a>
+</form>
+{% endblock %}

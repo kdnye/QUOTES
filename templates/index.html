@@ -1,0 +1,5 @@
+{% extends "base.html" %}
+{% block title %}Welcome{% endblock %}
+{% block content %}
+  <p>Please <a href="{{ url_for('auth.register') }}">register</a> or <a href="{{ url_for('auth.login') }}">log in</a> to access the quote tool.</p>
+{% endblock %}

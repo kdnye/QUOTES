@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Reset Password{% endblock %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-5">
+      <div class="card shadow-sm">
+        <div class="card-body p-4">
+          <h1 class="h4 text-center mb-3">Reset your password</h1>
+          {% if requires_auth %}
+            <p class="text-muted small">
+              Password resets can only be generated from inside the app while you're signed in.
+              If you are locked out, please contact an administrator so they can confirm your
+              identity and send a temporary link manually.
+            </p>
+            <a class="btn btn-outline-primary w-100" href="{{ url_for('auth.login') }}">
+              Return to login
+            </a>
+          {% else %}
+            <p class="text-muted small">
+              You're signed in as <strong>{{ account_email }}</strong>. Click the button below to
+              generate a one-time reset link for your account. Email delivery is temporarily
+              paused, so copying the link from this page is the fastest way to continue.
+            </p>
+            <form method="post" novalidate>
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="btn btn-primary w-100" type="submit">Generate reset link</button>
+            </form>
+            {% if reset_url %}
+            <div class="alert alert-info mt-4" role="alert" data-testid="self-reset-panel">
+              <h2 class="h6 mb-2">Reset link ready</h2>
+              <p class="small mb-3">
+                Click the button below or copy the token if you're working on another
+                device. The link expires in one hour.
+              </p>
+              <a class="btn btn-success w-100 mb-3" href="{{ reset_url }}">Open reset page</a>
+              <div class="mb-2">
+                <label class="form-label small" for="reset-token">Token (keep this private)</label>
+                <input
+                  class="form-control"
+                  id="reset-token"
+                  type="text"
+                  value="{{ reset_token }}"
+                  readonly
+                  data-testid="self-reset-token"
+                >
+              </div>
+              <p class="small text-muted mb-0">
+                Having trouble? Paste the token into the field on the reset page if the
+                link doesn't open automatically.
+              </p>
+            </div>
+            {% endif %}
+            <p class="text-muted small mt-3 mb-2">
+              Need a walkthrough? Review the
+              <a href="{{ url_for('help.password_reset_guide') }}">Password Reset guide</a> for a
+              step-by-step explanation.
+            </p>
+          {% endif %}
+          <p class="text-center small mt-3 mb-0">
+            Remembered your password?
+            <a href="{{ url_for('auth.login') }}">Back to login</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+{% endblock %}

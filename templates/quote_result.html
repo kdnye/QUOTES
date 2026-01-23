@@ -1,0 +1,100 @@
+{% extends 'base.html' %}
+{% block content %}
+<h2>Quote Result</h2>
+<p>Origin: {{ quote.origin }} | Destination: {{ quote.destination }}</p>
+<p>Type: {{ quote.quote_type }} | Weight: {{ '%.2f'|format(quote.weight) }} lbs ({{ quote.weight_method }})</p>
+<p><strong>Rate set used:</strong> {{ quote.rate_set }}</p>
+<p><strong>Request IP:</strong> {{ quote.request_ip or "N/A" }}</p>
+{% set base_total = quote.total - metadata.accessorial_total %}
+{% set grand_total = base_total + metadata.accessorial_total %}
+<p><strong>Base Charge:</strong> ${{ '%.2f'|format(base_total) }}</p>
+{% if quote.warnings %}
+<div class="alert alert-warning" role="alert">
+  <div class="d-flex flex-column flex-lg-row align-items-start gap-3">
+    <div class="flex-grow-1 mb-0" style="white-space: pre-wrap;">{{ quote.warnings }}</div>
+    {% if exceeds_threshold and can_use_email_request %}
+    <a
+      class="btn btn-outline-dark mt-3 mt-lg-0 text-start"
+      href="{{ url_for('quotes.email_volume_request_form', quote_id=quote.quote_id) }}"
+    >
+      Email for help with volume quote pricing
+    </a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if metadata.miles is not none %}
+<p>Total Miles: {{ metadata.miles }}</p>
+{% endif %}
+{% if metadata.accessorials %}
+<h3>Accessorials</h3>
+<ul>
+{% for name, cost in metadata.accessorials.items() %}
+  <li>{{ name }}: ${{ '%.2f'|format(cost) }}</li>
+{% endfor %}
+</ul>
+<p><strong>Accessorials Total:</strong> ${{ '%.2f'|format(metadata.accessorial_total) }}</p>
+{% endif %}
+{% if metadata.details %}
+<h3>Details</h3>
+<ul>
+{% for key, value in metadata.details.items() %}
+  <li>{{ key }}: {{ value }}</li>
+{% endfor %}
+</ul>
+{% endif %}
+<p>Pieces: {{ metadata.pieces }}</p>
+<div class="quote-total-highlight my-4">
+  <p class="text-uppercase fw-semibold text-white-50 mb-1">Quote Total</p>
+  <p class="quote-total-amount mb-0">${{ '%.2f'|format(grand_total) }}</p>
+</div>
+<div class="mt-3">
+  <div class="alert alert-info" role="note">
+    Ready to move forward? Click <strong>Book Quote</strong> to complete the shipment yourself through the FreightServices portal, or
+    choose <strong>Email to Request Booking</strong> so our team can finalize the load for you for a $15 admin fee.
+  </div>
+  <p class="mb-3">
+    <a href="/help/quoting" target="_blank" rel="noopener">Need help?</a>
+  </p>
+  <a href="https://freightservices.ts2000.net/Login/" class="btn btn-success" target="_blank" rel="noopener">Book Quote</a>
+  {% if can_use_email_request %}
+  <a href="{{ url_for('quotes.email_request_form', quote_id=quote.quote_id) }}" class="btn btn-secondary">Email to Request Booking ($15 admin fee)</a>
+  <div class="card mt-4">
+    <div class="card-body">
+      <h3 class="h5">Email this quote summary</h3>
+      <p class="mb-3 text-muted">
+        Send the key quote details directly to a customer inbox. This form is
+        available to Freight Services staff accounts only.
+      </p>
+      <form method="post" action="{{ url_for('send_email_route') }}" class="row g-3 align-items-end">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="origin_zip" value="{{ quote.origin }}" />
+        <input type="hidden" name="destination_zip" value="{{ quote.destination }}" />
+        <div class="col-md-6">
+          <label class="form-label" for="quote_email_recipient">Recipient email address</label>
+          <input
+            type="email"
+            class="form-control"
+            id="quote_email_recipient"
+            name="email"
+            placeholder="customer@example.com"
+            required
+          />
+        </div>
+        <div class="col-md-3 col-lg-2">
+          <button type="submit" class="btn btn-primary w-100">Send quote email</button>
+        </div>
+      </form>
+      <p class="small text-muted mt-2 mb-0">
+        The automated email includes the origin and destination ZIP codes,
+        estimated mileage, and a UTC timestamp.
+      </p>
+    </div>
+  </div>
+  {% else %}
+  <button type="button" class="btn btn-secondary" disabled title="Available to FreightServices.net team">Email to Request Booking ($15 admin fee)</button>
+  {% endif %}
+</div>
+<a href="{{ url_for('quotes.new_quote') }}" class="btn btn-primary mt-3">Create Another Quote</a>
+{% endblock %}
+

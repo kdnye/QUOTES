@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Beyond Rates{% endblock %}
+{% block content %}
+<h1>Beyond Rates</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_beyond_rate') }}">Add Beyond Rate</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='beyond_rates') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='beyond_rates') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Rate Set</th>
+        <th>Zone</th>
+        <th>Rate</th>
+        <th>Up To Miles</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for br in beyond_rates %}
+      <tr>
+        <td>{{ br.id }}</td>
+        <td>{{ br.rate_set }}</td>
+        <td>{{ br.zone }}</td>
+        <td>{{ br.rate }}</td>
+        <td>{{ br.up_to_miles }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_beyond_rate', br_id=br.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_beyond_rate', br_id=br.id) }}" onsubmit="return confirm('Delete this beyond rate?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}

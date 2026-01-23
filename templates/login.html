@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}Log In{% endblock %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-6 col-lg-4">
+      <div class="card shadow-sm">
+        <div class="card-body p-4">
+          <h1 class="h4 text-center mb-3">Log in to your account</h1>
+          {% if oidc_enabled %}
+          <div class="alert alert-info small" role="alert">
+            Freight Services employees ({{ employee_domain }}) should sign in with single sign-on.
+          </div>
+          <a class="btn btn-outline-primary w-100 mb-3" href="{{ oidc_login_url }}">
+            Sign in with SSO
+          </a>
+          {% endif %}
+          <form method="post" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="mb-3">
+              <label class="form-label" for="email">Email address</label>
+              <input
+                class="form-control"
+                type="email"
+                id="email"
+                name="email"
+                autocomplete="email"
+                required
+                autofocus
+              />
+            </div>
+            <div class="mb-3">
+              <label class="form-label" for="password">Password</label>
+              <input
+                class="form-control"
+                type="password"
+                id="password"
+                name="password"
+                autocomplete="current-password"
+                required
+              />
+            </div>
+            <div class="d-flex justify-content-between align-items-center">
+              <a class="small" href="{{ url_for('auth.reset_request') }}">Forgot your password?</a>
+              <button class="btn btn-primary" type="submit">Log In</button>
+            </div>
+          </form>
+        </div>
+      </div>
+      <p class="text-center small mt-3">
+        Need an account?
+        <a href="{{ url_for('auth.register') }}">Register here</a>.
+      </p>
+    </div>
+  </div>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Accessorials{% endblock %}
+{% block content %}
+<h1>Accessorials</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_accessorial') }}">Add Accessorial</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='accessorials') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='accessorials') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Name</th>
+        <th>Amount</th>
+        <th>Is Percentage</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for a in accessorials %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.name }}</td>
+        <td>{{ a.amount }}</td>
+        <td>{{ 'Yes' if a.is_percentage else 'No' }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_accessorial', acc_id=a.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_accessorial', acc_id=a.id) }}" onsubmit="return confirm('Delete this accessorial?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}

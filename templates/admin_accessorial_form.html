@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Accessorial' if accessorial else 'Add Accessorial' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit Accessorial' if accessorial else 'Add Accessorial' }}</h1>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.name.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#accessorials"
+      data-bs-toggle="tooltip"
+      title="See tips for naming accessorial surcharges consistently."
+    >More info</a>
+    {{ form.name(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.amount.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#accessorials"
+      data-bs-toggle="tooltip"
+      title="Review how to document flat versus percentage-based fees."
+    >More info</a>
+    {{ form.amount(class="form-control") }}
+  </div>
+  <div class="form-check mb-3">
+    {{ form.is_percentage(class="form-check-input") }}
+    {{ form.is_percentage.label(class="form-check-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#accessorials"
+      data-bs-toggle="tooltip"
+      title="Use the admin guide to decide when a surcharge should be a percentage."
+    >More info</a>
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_accessorials') }}">Cancel</a>
+</form>
+{% endblock %}

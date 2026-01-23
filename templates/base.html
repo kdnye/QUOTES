@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{% block title %}Quote Tool{% endblock %}</title>
+    {{ fsi_theme()|safe }}
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    />
+    {% block head %}{% endblock %}
+  </head>
+  <body>
+    <nav class="navbar navbar-expand-lg navbar-light">
+      <div class="container-fluid">
+        <a class="navbar-brand" href="/">
+          <img src="{{ url_for('theme.static', filename='fsi-logo.png') }}" alt="Freight Services Inc. logo" />
+          {% if company_logo_url %}
+            <img src="{{ company_logo_url }}" alt="{{ current_user.company_name or current_user.email }} logo" class="company-logo ms-2" />
+          {% endif %}
+        </a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#mainNav"
+          aria-controls="mainNav"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="mainNav">
+          <ul class="navbar-nav ms-auto">
+            <li class="nav-item">
+              <a
+                class="nav-link d-flex align-items-center justify-content-center px-2"
+                href="{{ url_for('help.help_index') }}"
+                aria-label="Help"
+                title="Help"
+              >
+                <span aria-hidden="true" class="fw-semibold">?</span>
+              </a>
+            </li>
+            {% if current_user.is_authenticated %}
+            {% if current_user.role == 'super_admin' or current_user.is_admin %}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
+            </li>
+            {% elif current_user.role == 'employee' and current_user.employee_approved %}
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('admin.dashboard') }}">Team Dashboard</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
+            </li>
+            {% endif %}
+            <li class="nav-item dropdown">
+              <a
+                class="nav-link dropdown-toggle d-flex align-items-center gap-2"
+                href="#"
+                id="accountMenu"
+                role="button"
+                data-bs-toggle="dropdown"
+                aria-expanded="false"
+              >
+                <i class="bi bi-person-circle" aria-hidden="true"></i>
+                <span class="fw-semibold">{{ current_user.first_name or current_user.email }}</span>
+              </a>
+              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+                <li class="dropdown-header small text-muted">
+                  Signed in as<br />
+                  <strong>{{ current_user.name or current_user.email }}</strong>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('auth.settings') }}">Account settings</a>
+                </li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('auth.reset_request') }}">Password reset</a>
+                </li>
+                <li><hr class="dropdown-divider" /></li>
+                <li>
+                  <a class="dropdown-item" href="{{ url_for('auth.logout') }}">Sign out</a>
+                </li>
+              </ul>
+            </li>
+            {% endif %}
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <main class="{% block main_class %}container{% endblock %} py-4">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="mt-2">
+            {% for category, message in messages %}
+              <div class="alert alert-{{ category }}" role="alert">{{ message }}</div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const tips = [
+          ...document.querySelectorAll('[data-bs-toggle="tooltip"]'),
+        ];
+        tips.map((t) => new bootstrap.Tooltip(t));
+      });
+    </script>
+  </body>
+</html>

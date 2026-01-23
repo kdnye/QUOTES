@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block title %}Employee Tools{% endblock %}
+{% block content %}
+<section class="admin-dashboard text-center">
+  <h1 class="mb-3">Team Quote Access</h1>
+  <p class="lead">Review stored pricing data from the internal quotes dashboard.</p>
+  <a class="btn btn-primary" href="{{ url_for('admin_quotes.quotes_html') }}">Open Quotes</a>
+  <p class="mt-3 text-muted">Need broader permissions? Contact a super administrator for help.</p>
+</section>
+{% endblock %}

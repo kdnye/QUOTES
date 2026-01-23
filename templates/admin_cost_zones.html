@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}Cost Zones{% endblock %}
+{% block content %}
+<h1>Cost Zones</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_cost_zone') }}">Add Cost Zone</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='cost_zones') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='cost_zones') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Concat</th>
+        <th>Cost Zone</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for cz in cost_zones %}
+      <tr>
+        <td>{{ cz.id }}</td>
+        <td>{{ cz.concat }}</td>
+        <td>{{ cz.cost_zone }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_cost_zone', cz_id=cz.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_cost_zone', cz_id=cz.id) }}" onsubmit="return confirm('Delete this cost zone?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}

@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block title %}Account settings{% endblock %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-8 col-xl-6">
+    <h1 class="mb-4">Account settings</h1>
+    <p class="text-muted">
+      Update the contact details tied to your quoting account. Changes take effect immediately and will be used the next time you request a quote.
+    </p>
+    <form method="post" novalidate>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label" for="first_name">First name</label>
+          <input
+            type="text"
+            class="form-control"
+            id="first_name"
+            name="first_name"
+            value="{{ form_state.first_name }}"
+            required
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="last_name">Last name</label>
+          <input
+            type="text"
+            class="form-control"
+            id="last_name"
+            name="last_name"
+            value="{{ form_state.last_name }}"
+            required
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="email">Email</label>
+          <input
+            type="email"
+            class="form-control"
+            id="email"
+            name="email"
+            value="{{ form_state.email }}"
+            required
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="phone">Phone</label>
+          <input
+            type="tel"
+            class="form-control"
+            id="phone"
+            name="phone"
+            value="{{ form_state.phone }}"
+            required
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="company_name">Company name</label>
+          <input
+            type="text"
+            class="form-control"
+            id="company_name"
+            name="company_name"
+            value="{{ form_state.company_name }}"
+            required
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="company_phone">Company phone</label>
+          <input
+            type="tel"
+            class="form-control"
+            id="company_phone"
+            name="company_phone"
+            value="{{ form_state.company_phone }}"
+            required
+          />
+        </div>
+      </div>
+      <hr class="my-4" />
+      <h2 class="h4">Update password</h2>
+      <p class="text-muted">
+        Provide your current password and a new password if you need to rotate credentials. {{ password_hint }}
+      </p>
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label" for="current_password">Current password</label>
+          <input
+            type="password"
+            class="form-control"
+            id="current_password"
+            name="current_password"
+            autocomplete="current-password"
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="new_password">New password</label>
+          <input
+            type="password"
+            class="form-control"
+            id="new_password"
+            name="new_password"
+            autocomplete="new-password"
+          />
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" for="confirm_password">Confirm new password</label>
+          <input
+            type="password"
+            class="form-control"
+            id="confirm_password"
+            name="confirm_password"
+            autocomplete="new-password"
+          />
+        </div>
+      </div>
+      <div class="d-flex flex-column flex-sm-row gap-2 justify-content-between align-items-sm-center mt-4">
+        <button type="submit" class="btn btn-primary">Save changes</button>
+        <a class="btn btn-outline-secondary" href="{{ url_for('auth.reset_request') }}">
+          Generate a password reset link
+        </a>
+      </div>
+    </form>
+  </div>
+</div>
+{% endblock %}

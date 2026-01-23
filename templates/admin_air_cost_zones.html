@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Air Cost Zones{% endblock %}
+{% block content %}
+<h1>Air Cost Zones</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_air_cost_zone') }}">Add Air Cost Zone</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='air_cost_zones') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='air_cost_zones') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Rate Set</th>
+        <th>Zone</th>
+        <th>Min Charge</th>
+        <th>Per LB</th>
+        <th>Weight Break</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for acz in air_cost_zones %}
+      <tr>
+        <td>{{ acz.id }}</td>
+        <td>{{ acz.rate_set }}</td>
+        <td>{{ acz.zone }}</td>
+        <td>{{ acz.min_charge }}</td>
+        <td>{{ acz.per_lb }}</td>
+        <td>{{ acz.weight_break }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_air_cost_zone', acz_id=acz.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_air_cost_zone', acz_id=acz.id) }}" onsubmit="return confirm('Delete this air cost zone?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}

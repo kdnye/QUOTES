@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Administrator Guide · Quote Tool{% endblock %}
+
+{% block content %}
+<h1>Administrator Guide</h1>
+<p class="text-muted">
+  Configure pricing data and approve users so the quoting team always has
+  current information.
+</p>
+<p>
+  Use this guide alongside the CSV import tools on each admin page. The help
+  sections below are linked directly from the form labels to surface the
+  context your team needs while editing data.
+</p>
+
+<h2 id="rate-tables">Rate tables and zones</h2>
+<p>
+  The quote engine references multiple rate tables to calculate base charges.
+  Keep these tables synchronized so mileage, zone, and weight break logic
+  stays accurate:
+</p>
+<ul>
+  <li>
+    <strong>Hotshot and Beyond tables:</strong> Define the mileage brackets,
+    weight breaks, and destination zones that drive per-mile, per-pound, and
+    fuel-percentage pricing. Align mileage breaks between the two tables so
+    quotes switch tiers cleanly.
+  </li>
+  <li>
+    <strong>Cost and air cost zones:</strong> Map origin/destination
+    combinations to margin buckets. Verify that the <code>concat</code>
+    identifier stays unique and that each zone has an associated minimum charge
+    for air freight.
+  </li>
+  <li>
+    <strong>ZIP zone assignments:</strong> Tie individual ZIP codes to the
+    destination zone and note when a location requires beyond mileage. Refresh
+    this table whenever carrier coverage shifts.
+  </li>
+</ul>
+<p>
+  After updating any rate table, spot check a few sample quotes to confirm the
+  correct tier triggers. Maintain a changelog so operations can trace pricing
+  adjustments back to their effective dates.
+</p>
+
+<h2 id="accessorials">Accessorial surcharges</h2>
+<p>
+  Accessorial definitions add flat or percentage-based surcharges to quotes.
+  Keep descriptions short and consistent with what appears on customer
+  invoices. When adding a new accessorial:
+</p>
+<ol>
+  <li>Choose a descriptive name that dispatch and accounting will recognize.</li>
+  <li>Set the amount as either a currency value or percentage, then flag
+      whether it should be treated as a percentage.</li>
+  <li>Review the surcharge in a test quote to verify it applies once and rounds
+      the same way invoices do.</li>
+</ol>
+<p>
+  Periodically audit the accessorial list to retire outdated fees and confirm
+  that margin calculations still meet policy.
+</p>
+
+<h2 id="user-approvals">User approval workflow</h2>
+<p>
+  Administrators control who can access the quote tool and which features they
+  can use. Follow these checkpoints when approving a new account:
+</p>
+<ul>
+  <li>
+    Verify the requester&apos;s company and contact details match an existing
+    partner relationship.
+  </li>
+  <li>
+    Decide whether the user needs administrator permissions. Admins can edit
+    rate data, approve other users, and manage accessorials.
+  </li>
+  <li>
+    Encourage strong passwords and enable multi-factor authentication when the
+    account handles sensitive pricing data.
+  </li>
+</ul>
+<p>
+  Update or deactivate accounts promptly when team members change roles. The
+  audit logs on the admin dashboard highlight recent approvals and edits to
+  help you trace changes.
+</p>
+
+<p class="mt-5">
+  <a class="btn btn-outline-secondary" href="{{ url_for('help.help_index') }}">
+    Back to Help Center
+  </a>
+</p>
+{% endblock %}

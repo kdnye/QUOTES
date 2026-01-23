@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Help Center · Quote Tool{% endblock %}
+
+{% block content %}
+<div class="row">
+  <div class="col-lg-4 mb-3">
+    <div class="list-group">
+      {% for topic in topics %}
+      <a
+        class="list-group-item list-group-item-action {% if topic.slug == active_topic %}active{% endif %}"
+        href="{{ url_for(topic.endpoint) }}"
+      >
+        <div class="d-flex w-100 justify-content-between">
+          <h5 class="mb-1">{{ topic.title }}</h5>
+        </div>
+        <p class="mb-1 small {% if topic.slug == active_topic %}text-white-50{% else %}text-muted{% endif %}">
+          {{ topic.summary }}
+        </p>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-lg-8">
+    {% if selected_topic %}
+    <h2>{{ selected_topic.title }}</h2>
+    <p class="text-muted">{{ selected_topic.summary }}</p>
+    {% if selected_topic.slug == "getting-started" %}
+    <div class="alert alert-info" role="alert">
+      Need a step-by-step tour of the registration form?
+      <a class="alert-link" href="{{ url_for('help.account_setup_guide') }}"
+        >Open the Account Setup guide.</a
+      >
+    </div>
+    {% endif %}
+    <ul>
+      {% for detail in selected_topic.details %}
+      <li>{{ detail }}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <h2>Welcome to the Quote Tool Help Center</h2>
+    <p class="text-muted">
+      Choose a topic on the left to explore quick tips for getting started, creating quotes,
+      booking freight, and managing your account.
+    </p>
+    <p>
+      Each guide highlights the workflows our operations team uses most often, so you can move
+      from quoting to booking with confidence.
+    </p>
+    <p>
+      Locked out of your account? Follow the
+      <a href="{{ url_for('help.password_reset_guide') }}">Password Reset guide</a>
+      to request a link and choose a new password safely.
+    </p>
+    <p>
+      Brand-new to the platform? Review the
+      <a href="{{ url_for('help.account_setup_guide') }}">Account Setup guide</a>
+      for the required fields and confirmation emails you&apos;ll receive after registering.
+    </p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Air Cost Zone' if air_cost_zone else 'Add Air Cost Zone' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit Air Cost Zone' if air_cost_zone else 'Add Air Cost Zone' }}</h1>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.rate_set.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Pick the rate set for this air cost zone so customer mappings stay consistent."
+    >More info</a>
+    {{ form.rate_set(class="form-select") }}
+  </div>
+  <div class="mb-3">
+    {{ form.zone.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Align air cost zones with the mapping guidance in the admin help."
+    >More info</a>
+    {{ form.zone(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.min_charge.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Reference the minimum charge checklist for air cost zones."
+    >More info</a>
+    {{ form.min_charge(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.per_lb.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Confirm per-pound air rates follow the documented tiering rules."
+    >More info</a>
+    {{ form.per_lb(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.weight_break.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See how air freight weight breaks should match surface tables."
+    >More info</a>
+    {{ form.weight_break(class="form-control") }}
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_air_cost_zones') }}">Cancel</a>
+</form>
+{% endblock %}

@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}ZIP Zones{% endblock %}
+{% block content %}
+<h1>ZIP Zones</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_zip_zone') }}">Add ZIP Zone</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='zip_zones') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='zip_zones') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>ZIP Code</th>
+        <th>Dest Zone</th>
+        <th>Beyond</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for z in zip_zones %}
+      <tr>
+        <td>{{ z.id }}</td>
+        <td>{{ z.zipcode }}</td>
+        <td>{{ z.dest_zone }}</td>
+        <td>{{ z.beyond }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_zip_zone', zz_id=z.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_zip_zone', zz_id=z.id) }}" onsubmit="return confirm('Delete this ZIP zone?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}

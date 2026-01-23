@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}Error{% endblock %}
+{% block content %}
+  <h1>Something went wrong</h1>
+  <p>{{ message or 'The application is misconfigured or encountered an error. Please contact the administrator.' }}</p>
+{% endblock %}

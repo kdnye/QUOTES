@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}Register{% endblock %}
+{% block content %}
+  <div class="row justify-content-center">
+    <div class="col-md-8 col-lg-6">
+      <div class="card shadow-sm">
+        <div class="card-body p-4">
+          <h1 class="h4 text-center mb-4">Create your FSI Quote Tool account</h1>
+          <form method="post" novalidate>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label" for="first_name">
+                  First name
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Enter the given name you use for business contacts.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="text"
+                  id="first_name"
+                  name="first_name"
+                  value="{{ request.form.get('first_name', '') }}"
+                  autocomplete="given-name"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="last_name">
+                  Last name
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Enter your family or surname.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="text"
+                  id="last_name"
+                  name="last_name"
+                  value="{{ request.form.get('last_name', '') }}"
+                  autocomplete="family-name"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="email">
+                  Email address
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="We send account updates to this address.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="email"
+                  id="email"
+                  name="email"
+                  value="{{ request.form.get('email', '') }}"
+                  autocomplete="email"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="phone">
+                  Phone number
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Direct number we can reach you at.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="tel"
+                  id="phone"
+                  name="phone"
+                  value="{{ request.form.get('phone', '') }}"
+                  autocomplete="tel"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="company_name">
+                  Company
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Legal or trade name of your organization.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="text"
+                  id="company_name"
+                  name="company_name"
+                  value="{{ request.form.get('company_name', '') }}"
+                  autocomplete="organization"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="company_phone">
+                  Company phone
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Primary phone line for your company.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="tel"
+                  id="company_phone"
+                  name="company_phone"
+                  value="{{ request.form.get('company_phone', '') }}"
+                  autocomplete="tel"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="password">
+                  Password
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Use 24+ chars or 14+ with upper, lower, number, and symbol.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="password"
+                  id="password"
+                  name="password"
+                  autocomplete="new-password"
+                  required
+                />
+              </div>
+              <div class="col-md-6">
+                <label class="form-label" for="confirm_password">
+                  Confirm password
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Re-enter the same password to confirm.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                <input
+                  class="form-control"
+                  type="password"
+                  id="confirm_password"
+                  name="confirm_password"
+                  autocomplete="new-password"
+                  required
+                />
+              </div>
+              <div class="col-12">
+                <label class="form-label" for="human_verification">
+                  Human verification
+                  <i
+                    class="bi bi-question-circle ms-1 text-secondary"
+                    data-bs-toggle="tooltip"
+                    data-bs-html="true"
+                    title="Answer the math prompt to prove you're human.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                  ></i>
+                </label>
+                {% if challenge_prompt %}
+                  <div class="form-text text-muted pb-1" id="human_verification_help">
+                    Human Verification: {{ challenge_prompt }}
+                  </div>
+                {% endif %}
+                <input
+                  class="form-control"
+                  type="text"
+                  id="human_verification"
+                  name="human_verification"
+                  value="{{ request.form.get('human_verification', '') }}"
+                  {% if challenge_prompt %}aria-describedby="human_verification_help"{% endif %}
+                  required
+                />
+              </div>
+            </div>
+            <button class="btn btn-primary w-100 mt-4" type="submit">Register</button>
+          </form>
+        </div>
+      </div>
+      <p class="text-center small mt-3">
+        Already have an account?
+        <a href="{{ url_for('auth.login') }}">Log in here</a>.
+      </p>
+    </div>
+  </div>
+{% endblock %}

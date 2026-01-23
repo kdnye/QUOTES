@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Account Setup Guide · Quote Tool{% endblock %}
+
+{% block content %}
+<h1>Account Setup Guide</h1>
+<p class="text-muted">
+  Use this walkthrough to prepare the details our registration form requires and to
+  understand what happens after you submit your request.
+</p>
+
+<h2 id="before-you-begin">Before you begin</h2>
+<p>
+  Gather the contact information that appears on your quotes. The review team
+  uses these details to verify your identity and configure your user profile.
+</p>
+<ul>
+  <li>
+    A business email address that you monitor daily. Shared inboxes can delay
+    the confirmation message and password reset requests.
+  </li>
+  <li>
+    Your direct phone number and the company&apos;s main dispatch or office line so
+    operations can reach you quickly when loads change.
+  </li>
+  <li>
+    The legal or trade name of your organization. We display this name in the
+    header of every quote you send to customers.
+  </li>
+</ul>
+
+<h2 id="required-fields">Required fields explained</h2>
+<p>
+  Each field on the registration form matches a section of the user profile.
+  Provide accurate data to avoid delays while administrators approve access.
+</p>
+<dl class="row">
+  <dt class="col-sm-4">First and last name</dt>
+  <dd class="col-sm-8">
+    Use the name that should appear in quote signatures. If you commonly go by a
+    nickname, include it in parentheses (for example, <em>Jonathan (Jon)</em>).
+  </dd>
+  <dt class="col-sm-4">Email address</dt>
+  <dd class="col-sm-8">
+    We route confirmation emails and password resets to this address. Double-check
+    the spelling before submitting the form to avoid lost messages.
+  </dd>
+  <dt class="col-sm-4">Phone number</dt>
+  <dd class="col-sm-8">
+    Enter a direct line where dispatch or accounting can reach you for urgent
+    shipment updates. Mobile numbers are acceptable.
+  </dd>
+  <dt class="col-sm-4">Company name</dt>
+  <dd class="col-sm-8">
+    Provide the legal or DBA name that appears on customer-facing documents. This
+    value populates the quote header.
+  </dd>
+  <dt class="col-sm-4">Company phone</dt>
+  <dd class="col-sm-8">
+    Supply the general line customers call for booking and billing questions. If
+    your organization has multiple branches, choose the location associated with
+    your dispatch team.
+  </dd>
+  <dt class="col-sm-4">Password</dt>
+  <dd class="col-sm-8">
+    Create a unique password that meets the complexity guidance shown on the
+    form. Longer passphrases or a mix of upper-case, lower-case, numbers, and
+    symbols improve security.
+  </dd>
+  <dt class="col-sm-4">Human verification</dt>
+  <dd class="col-sm-8">
+    Solve the short math prompt at the bottom of the form. This step keeps bots
+    from creating fake accounts and alerts us to repeated failed attempts.
+  </dd>
+</dl>
+
+<h2 id="confirmation-emails">Confirmation emails and next steps</h2>
+<p>
+  After you click <strong>Register</strong>, the quote tool immediately confirms the
+  submission on screen. You&apos;ll also receive a confirmation email summarizing the
+  details you provided. If you do not see it within a few minutes, check your spam
+  or junk folder and mark the message as safe for future notifications.
+</p>
+<p>
+  Once an administrator finishes the review, you&apos;ll get a second email that
+  indicates whether the account is ready to use or if more information is
+  required. Employee registrations from a <code>@freightservices.net</code> address are
+  flagged for manual approval, so the follow-up email may take slightly longer.
+</p>
+<p>
+  Keep both messages for your records. They include the information you need to
+  verify your login and confirm that your profile details are correct.
+</p>
+
+<p class="mt-5">
+  <a class="btn btn-outline-secondary" href="{{ url_for('help.help_index') }}">
+    Back to Help Center
+  </a>
+</p>
+{% endblock %}

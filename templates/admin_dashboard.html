@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+{% block title %}Admin Dashboard{% endblock %}
+{% block content %}
+<div class="admin-dashboard">
+  <h1>Admin Dashboard</h1>
+  <section class="dashboard-actions" aria-label="Admin quick actions">
+    <div class="btn-toolbar flex-wrap gap-2" role="toolbar">
+      <div class="btn-group me-2 mb-2" role="group" aria-label="Account tools">
+        <a class="btn btn-success" href="{{ url_for('admin.create_user') }}">Add User</a>
+        {% if settings_url %}
+        <a class="btn btn-warning" href="{{ settings_url }}">Settings</a>
+        {% endif %}
+        {% if current_user.role == 'super_admin' %}
+        <a class="btn btn-outline-secondary" href="{{ url_for('admin.branding') }}">Branding</a>
+        {% endif %}
+      </div>
+      <div class="btn-group me-2 mb-2" role="group" aria-label="Quote tools">
+        <a class="btn btn-secondary" href="{{ url_for('admin_quotes.quotes_html') }}">View Quotes</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_accessorials') }}">Accessorials</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_beyond_rates') }}">Beyond Rates</a>
+      </div>
+      <div class="btn-group mb-2" role="group" aria-label="Zone tools">
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_hotshot_rates') }}">Hotshot Rates</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_zip_zones') }}">ZIP Zones</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_cost_zones') }}">Cost Zones</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.list_air_cost_zones') }}">Air Cost Zones</a>
+      </div>
+    </div>
+  </section>
+  <div class="dashboard-table">
+    <div class="table-responsive">
+      <table class="table table-striped align-middle mb-0">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Email</th>
+            <th>Active</th>
+            <th>Toggle</th>
+            <th>Edit</th>
+            <th>Delete</th>
+            <th>Employee Access</th>
+            <th>Admin Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in users %}
+          <tr>
+            <td>{{ u.id }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ 'Yes' if u.is_active else 'No' }}</td>
+            <td>
+              <form method="post" action="{{ url_for('admin.toggle_active', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-secondary" type="submit">Toggle</button>
+              </form>
+            </td>
+            <td>
+              <a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_user', user_id=u.id) }}">Edit</a>
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" onsubmit="return confirm('Delete this user?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+              </form>
+            </td>
+            <td>
+              {% if u.role == 'employee' %}
+              {% if u.employee_approved %}
+              <span class="badge bg-success">Approved</span>
+              {% else %}
+              <span class="badge bg-warning text-dark me-2">Pending</span>
+              <form
+                method="post"
+                action="{{ url_for('admin.approve_employee', user_id=u.id) }}"
+                class="d-inline"
+              >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-success" type="submit">Approve</button>
+              </form>
+              {% endif %}
+              {% elif u.role == 'super_admin' %}
+              <span class="badge bg-primary">Super Admin</span>
+              {% else %}
+              <span class="badge bg-secondary">Customer</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if not u.is_admin %}
+              <form method="post" action="{{ url_for('admin.promote', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-primary" type="submit">Promote</button>
+              </form>
+              {% else %}
+              <form method="post" action="{{ url_for('admin.demote', user_id=u.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-sm btn-warning" type="submit">Demote</button>
+              </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Cost Zone' if cost_zone else 'Add Cost Zone' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit Cost Zone' if cost_zone else 'Add Cost Zone' }}</h1>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.concat.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Match the concat identifier to the cost-zone guidance in the admin help."
+    >More info</a>
+    {{ form.concat(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.cost_zone.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See how cost zones support margin management across regions."
+    >More info</a>
+    {{ form.cost_zone(class="form-control") }}
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_cost_zones') }}">Cancel</a>
+</form>
+{% endblock %}

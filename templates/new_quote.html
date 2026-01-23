@@ -1,0 +1,193 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1>Create New Quote</h1>
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+  <div class="mb-3">
+    <label class="form-label d-block">
+      Quote Type
+      <a
+        class="ms-1 text-secondary"
+        href="{{ url_for('help.quote_types') }}"
+        target="_blank"
+        rel="noopener"
+        data-bs-toggle="tooltip"
+        title="Compare Hotshot and Air options in the help center (opens in a new tab)."
+        aria-label="Compare quote types in the help center"
+      >
+        <i class="bi bi-question-circle" aria-hidden="true"></i>
+        <span class="visually-hidden">Compare quote types</span>
+      </a>
+    </label>
+    <div class="form-check form-check-inline">
+      <input
+        class="form-check-input"
+        type="radio"
+        name="quote_type"
+        id="qt_hotshot"
+        value="Hotshot"
+        {% if quote_type != 'Air' %}checked{% endif %}
+      />
+      <label class="form-check-label" for="qt_hotshot">Hotshot</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input
+        class="form-check-input"
+        type="radio"
+        name="quote_type"
+        id="qt_air"
+        value="Air"
+        {% if quote_type == 'Air' %}checked{% endif %}
+      />
+      <label class="form-check-label" for="qt_air">Air</label>
+    </div>
+  </div>
+
+  <div class="row g-3">
+    <div class="col-md-6">
+      <label for="origin_zip" class="form-label">
+        Origin ZIP
+        <i
+          class="bi bi-question-circle ms-1 text-secondary"
+          data-bs-toggle="tooltip"
+          title="5-digit ZIP code where the driver will pick up the freight."
+        ></i>
+      </label>
+      <input type="text" id="origin_zip" name="origin_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+    </div>
+    <div class="col-md-6">
+      <label for="dest_zip" class="form-label">
+        Destination ZIP
+        <i
+          class="bi bi-question-circle ms-1 text-secondary"
+          data-bs-toggle="tooltip"
+          title="5-digit ZIP code where the shipment will be delivered."
+        ></i>
+      </label>
+      <input type="text" id="dest_zip" name="dest_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+    </div>
+  </div>
+
+  <div class="mt-3">
+    <label for="weight_actual" class="form-label">
+      Actual Weight (lbs)
+      <i
+        class="bi bi-question-circle ms-1 text-secondary"
+        data-bs-toggle="tooltip"
+        title="Enter the shipment's actual scale weight in pounds."
+      ></i>
+    </label>
+    <input type="number" step="0.01" min="0" id="weight_actual" name="weight_actual" class="form-control" required />
+  </div>
+
+  <div class="mt-3">
+    <label class="form-label">
+      Dimensions (inches)
+      <i
+        class="bi bi-question-circle ms-1 text-secondary"
+        data-bs-toggle="tooltip"
+        title="Provide the packaged dimensions of the freight in inches."
+      ></i>
+    </label>
+    <div class="row g-2">
+      <div class="col-md-3">
+        <label for="pieces" class="form-label">
+          Pieces
+          <i
+            class="bi bi-question-circle ms-1 text-secondary"
+            data-bs-toggle="tooltip"
+            title="Total number of handling units shipping together."
+          ></i>
+        </label>
+        <input type="number" min="1" id="pieces" name="pieces" value="1" class="form-control" />
+      </div>
+      <div class="col-md-3">
+        <label for="length" class="form-label">
+          Length
+          <i
+            class="bi bi-question-circle ms-1 text-secondary"
+            data-bs-toggle="tooltip"
+            title="Longest side measurement of the freight in inches."
+          ></i>
+        </label>
+        <input type="number" step="0.01" min="0" id="length" name="length" class="form-control" />
+      </div>
+      <div class="col-md-3">
+        <label for="width" class="form-label">
+          Width
+          <i
+            class="bi bi-question-circle ms-1 text-secondary"
+            data-bs-toggle="tooltip"
+            title="Side-to-side measurement of the freight in inches."
+          ></i>
+        </label>
+        <input type="number" step="0.01" min="0" id="width" name="width" class="form-control" />
+      </div>
+      <div class="col-md-3">
+        <label for="height" class="form-label">
+          Height
+          <i
+            class="bi bi-question-circle ms-1 text-secondary"
+            data-bs-toggle="tooltip"
+            title="Stacked height of the freight in inches."
+          ></i>
+        </label>
+        <input type="number" step="0.01" min="0" id="height" name="height" class="form-control" />
+      </div>
+    </div>
+  </div>
+
+  {% if accessorial_options %}
+  <div class="mt-3">
+    <h5>
+      Accessorials
+      <i
+        class="bi bi-question-circle ms-1 text-secondary"
+        data-bs-toggle="tooltip"
+        title="Select any optional services or fees needed for this shipment."
+      ></i>
+    </h5>
+    {% for acc in accessorial_options %}
+    <div class="form-check">
+      <input class="form-check-input" type="checkbox" id="acc_{{ loop.index }}" name="accessorials" value="{{ acc }}" />
+      <label class="form-check-label" for="acc_{{ loop.index }}">{{ acc }}</label>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const guarantee = Array.from(document.querySelectorAll('input[name="accessorials"]')).find(
+        (el) => el.value.toLowerCase().includes('guarantee')
+      );
+      if (!guarantee) return;
+      const wrapper = guarantee.closest('.form-check');
+      const hotshot = document.getElementById('qt_hotshot');
+      const air = document.getElementById('qt_air');
+
+      function toggleGuarantee() {
+        const isAir = air.checked;
+        wrapper.style.display = isAir ? '' : 'none';
+        if (!isAir) guarantee.checked = false;
+      }
+
+      hotshot.addEventListener('change', toggleGuarantee);
+      air.addEventListener('change', toggleGuarantee);
+      toggleGuarantee();
+    });
+  </script>
+
+  {% if errors %}
+    <div class="alert alert-danger mt-3">
+      <ul class="mb-0">
+        {% for e in errors %}<li>{{ e }}</li>{% endfor %}
+      </ul>
+    </div>
+  {% endif %}
+
+  <button type="submit" class="btn btn-primary mt-4">Calculate</button>
+</form>
+{% endblock %}
+

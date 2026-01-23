@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Hotshot Rate' if hotshot_rate else 'Add Hotshot Rate' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit Hotshot Rate' if hotshot_rate else 'Add Hotshot Rate' }}</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.rate_set.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Assign the rate table group for this mileage bracket."
+    >More info</a>
+    {{ form.rate_set(class="form-select") }}
+  </div>
+  <div class="mb-3">
+    {{ form.miles.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Review guidance on aligning mileage brackets with pricing tiers."
+    >More info</a>
+    {{ form.miles(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.zone.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See how cost and destination zones feed rate calculations."
+    >More info</a>
+    {{ form.zone(class="form-control") }}
+  </div>
+    <div class="mb-3">
+      {{ form.per_lb.label(class="form-label") }}
+      <a
+        class="ms-2 small"
+        href="{{ url_for('help.admin') }}#rate-tables"
+        data-bs-toggle="tooltip"
+        title="Use the admin guide to confirm per-pound charges for each tier."
+      >More info</a>
+      {{ form.per_lb(class="form-control") }}
+      {% for error in form.per_lb.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+    <div class="mb-3">
+      {{ form.per_mile.label(class="form-label") }}
+      <a
+        class="ms-2 small"
+        href="{{ url_for('help.admin') }}#rate-tables"
+        data-bs-toggle="tooltip"
+        title="Double-check per-mile rates against the documented zone setup."
+      >More info</a>
+      {{ form.per_mile(class="form-control") }}
+      {% for error in form.per_mile.errors %}
+        <div class="text-danger">{{ error }}</div>
+      {% endfor %}
+    </div>
+    <div class="mb-3">
+      {{ form.min_charge.label(class="form-label") }}
+      <a
+        class="ms-2 small"
+        href="{{ url_for('help.admin') }}#rate-tables"
+        data-bs-toggle="tooltip"
+        title="Reference the rate-table notes on minimum charges and margins."
+      >More info</a>
+      {{ form.min_charge(class="form-control") }}
+    </div>
+  <div class="mb-3">
+    {{ form.weight_break.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Check how weight breaks align with beyond and zone pricing."
+    >More info</a>
+    {{ form.weight_break(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.fuel_pct.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See the administrator guide for coordinating fuel surcharges."
+    >More info</a>
+    {{ form.fuel_pct(class="form-control") }}
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_hotshot_rates') }}">Cancel</a>
+</form>
+{% endblock %}

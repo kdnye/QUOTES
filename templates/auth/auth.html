@@ -1,0 +1,26 @@
+{% extends 'auth/base.html' %}
+{% block content %}
+  <h2>Authentication</h2>
+  <div class="grid">
+    <article>
+      <h3>Login</h3>
+      <form method="post" action="{{ url_for('auth_bp.login') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label>Email <input type="email" name="email" required></label>
+        <label>Password <input type="password" name="password" required></label>
+        <button class="btn" type="submit">Login</button>
+      </form>
+    </article>
+    <article>
+      <h3>Register</h3>
+      <form method="post" action="{{ url_for('auth_bp.register') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label>Name <input name="name" required></label>
+        <label>Email <input type="email" name="email" required></label>
+        <label>Password <input type="password" name="password" required></label>
+        <small>Min 14 chars w/ upper, lower, number, symbol; or 24+ letters only.</small>
+        <button class="btn" type="submit">Create Account</button>
+      </form>
+    </article>
+  </div>
+{% endblock %}

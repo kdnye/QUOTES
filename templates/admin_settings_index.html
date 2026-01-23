@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Runtime Settings{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-3">Runtime configuration overrides</h1>
+  <p class="text-muted">
+    Manage dynamic settings stored in the database. Values entered here override
+    environment defaults during application startup and after each change.
+  </p>
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <span class="badge bg-secondary">Active overrides: {{ settings|length }}</span>
+    <a class="btn btn-primary" href="{{ url_for('admin.create_setting') }}">Add setting</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th scope="col">Key</th>
+          <th scope="col">Stored value</th>
+          <th scope="col">Parsed value</th>
+          <th scope="col">Secret</th>
+          <th scope="col">Updated</th>
+          <th scope="col" class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for record in settings %}
+        <tr>
+          <td><code>{{ record.key.upper() }}</code></td>
+          <td>
+            {% if record.is_secret and record.raw_value %}
+            <span class="text-muted">••••</span>
+            {% elif record.raw_value %}
+            <code>{{ record.raw_value }}</code>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if record.parsed_value is not none %}
+            <code>{{ record.parsed_value }}</code>
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if record.is_secret %}
+            <span class="badge bg-warning text-dark">Secret</span>
+            {% else %}
+            <span class="badge bg-secondary">Public</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if record.updated_at %}
+            {{ record.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}
+            {% else %}
+            <span class="text-muted">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group" aria-label="Setting actions">
+              <a class="btn btn-outline-primary" href="{{ url_for('admin.edit_setting', setting_id=record.id) }}">Edit</a>
+              <form class="d-inline" method="post" action="{{ url_for('admin.delete_setting', setting_id=record.id) }}" onsubmit="return confirm('Delete this setting?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not settings %}
+        <tr>
+          <td colspan="6" class="text-center text-muted">No overrides have been configured.</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

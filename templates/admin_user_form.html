@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit User' if user else 'Add User' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit User' if user else 'Add User' }}</h1>
+{% set data = form_data or {} %}
+<form method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="mb-3">
+    <label for="email" class="form-label">Email</label>
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#user-approvals"
+      data-bs-toggle="tooltip"
+      title="Follow the approval checklist before activating a new email."
+    >More info</a>
+    <input
+      type="email"
+      class="form-control"
+      id="email"
+      name="email"
+      value="{{ data.get('email', user.email if user else '') }}"
+      required
+    >
+  </div>
+  <div class="mb-3">
+    <label for="first_name" class="form-label">First Name</label>
+    <input
+      type="text"
+      class="form-control"
+      id="first_name"
+      name="first_name"
+      value="{{ data.get('first_name', user.first_name if user else '') }}"
+    >
+  </div>
+  <div class="mb-3">
+    <label for="last_name" class="form-label">Last Name</label>
+    <input
+      type="text"
+      class="form-control"
+      id="last_name"
+      name="last_name"
+      value="{{ data.get('last_name', user.last_name if user else '') }}"
+    >
+  </div>
+  <div class="mb-3">
+    <label for="phone" class="form-label">Phone Number</label>
+    <input
+      type="tel"
+      class="form-control"
+      id="phone"
+      name="phone"
+      value="{{ data.get('phone', user.phone if user else '') }}"
+    >
+  </div>
+  <div class="mb-3">
+    <label for="company_name" class="form-label">Company</label>
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#user-approvals"
+      data-bs-toggle="tooltip"
+      title="Verify the requester&apos;s organization matches an approved partner."
+    >More info</a>
+    <input
+      type="text"
+      class="form-control"
+      id="company_name"
+      name="company_name"
+      value="{{ data.get('company_name', user.company_name if user else '') }}"
+    >
+  </div>
+  <div class="mb-3">
+    <label for="company_phone" class="form-label">Company Phone Number</label>
+    <input
+      type="tel"
+      class="form-control"
+      id="company_phone"
+      name="company_phone"
+      value="{{ data.get('company_phone', user.company_phone if user else '') }}"
+    >
+  </div>
+  <div class="mb-3">
+    <label for="name" class="form-label">Display Name (optional)</label>
+    <input
+      type="text"
+      class="form-control"
+      id="name"
+      name="name"
+      value="{{ data.get('name', user.name if user else '') }}"
+    >
+    <div class="form-text">Defaults to "First Last" when left blank.</div>
+  </div>
+  <div class="mb-3">
+    <label for="password" class="form-label">{{ 'New Password' if user else 'Password' }}</label>
+    <input type="password" class="form-control" id="password" name="password" {{ '' if user else 'required' }}>
+  </div>
+  <div class="mb-3">
+    <label for="rate_set" class="form-label">Rate Set</label>
+    <select class="form-select" id="rate_set" name="rate_set" required>
+      {% set selected_rate_set = data.get('rate_set', user.rate_set if user else (available_rate_sets[0] if available_rate_sets else '')) %}
+      {% for rate in available_rate_sets %}
+        <option value="{{ rate }}" {% if selected_rate_set == rate %}selected{% endif %}>{{ rate }}</option>
+      {% endfor %}
+    </select>
+    <div class="form-text">Assign the pricing table group for this account.</div>
+  </div>
+  <div class="mb-3">
+    <label for="role" class="form-label">Role</label>
+    <select class="form-select" id="role" name="role" required>
+      {% set current_role = data.get('role', user.role if user else 'customer') %}
+      <option value="customer" {% if current_role == 'customer' %}selected{% endif %}>
+        Customer
+      </option>
+      <option value="employee" {% if current_role == 'employee' %}selected{% endif %}>
+        Employee
+      </option>
+      <option value="super_admin" {% if current_role == 'super_admin' %}selected{% endif %}>
+        Super Admin
+      </option>
+    </select>
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#user-approvals"
+      data-bs-toggle="tooltip"
+      title="Compare feature access for customers, employees, and administrators."
+    >More info</a>
+  </div>
+  <div
+    class="form-check mb-3 {% if (data.get('role', user.role if user else 'customer')) != 'employee' %}d-none{% endif %}"
+    id="employee-approval-group"
+  >
+    <input
+      class="form-check-input"
+      type="checkbox"
+      id="employee_approved"
+      name="employee_approved"
+      {% if data.get('employee_approved', user.employee_approved if user else False) %}checked{% endif %}
+    >
+    <label class="form-check-label" for="employee_approved">Employee Approved</label>
+    <div class="form-text">
+      Toggle on after verifying internal access requirements for the employee.
+    </div>
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Cancel</a>
+</form>
+<script>
+  (function () {
+    const roleField = document.getElementById('role');
+    const approvalGroup = document.getElementById('employee-approval-group');
+    const updateVisibility = () => {
+      if (roleField.value === 'employee') {
+        approvalGroup.classList.remove('d-none');
+      } else {
+        approvalGroup.classList.add('d-none');
+      }
+    };
+    if (roleField && approvalGroup) {
+      updateVisibility();
+      roleField.addEventListener('change', updateVisibility);
+    }
+  })();
+</script>
+{% endblock %}

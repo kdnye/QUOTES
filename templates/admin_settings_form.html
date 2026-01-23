@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit setting' if setting else 'Add setting' }}{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-3">{{ 'Edit setting' if setting else 'Add setting' }}</h1>
+  <p class="text-muted">
+    Keys are normalized to lowercase before being stored. Use names that match
+    configuration variables such as <code>MAIL_SERVER</code> or
+    <code>AUTH_LOGIN_RATE_LIMIT</code>.
+  </p>
+  <form method="post" novalidate>
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.key.label(class="form-label") }}
+      {{ form.key(class="form-control", placeholder="MAIL_SERVER") }}
+      {% for error in form.key.errors %}
+      <div class="invalid-feedback d-block">{{ error }}</div>
+      {% endfor %}
+    </div>
+    <div class="mb-3">
+      {{ form.value.label(class="form-label") }}
+      {{ form.value(class="form-control", rows=4, placeholder="smtp.gmail.com") }}
+      <div class="form-text">Leave blank to remove the override.</div>
+      {% for error in form.value.errors %}
+      <div class="invalid-feedback d-block">{{ error }}</div>
+      {% endfor %}
+    </div>
+    <div class="form-check mb-4">
+      {{ form.is_secret(class="form-check-input", id="is-secret") }}
+      <label class="form-check-label" for="is-secret">{{ form.is_secret.label.text }}</label>
+    </div>
+    <button type="submit" class="btn btn-primary">Save setting</button>
+    <a class="btn btn-secondary ms-2" href="{{ url_for('admin.list_settings') }}">Cancel</a>
+  </form>
+</div>
+{% endblock %}

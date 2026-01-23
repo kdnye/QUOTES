@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block content %}
+<h1 class="mb-4">Route Map</h1>
+<div class="ratio ratio-16x9">
+<div>{{ map_html|safe }}</div>
+</div>
+<a href="/" class="btn btn-link mt-3">Back</a>
+{% endblock %}

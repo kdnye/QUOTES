@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit Beyond Rate' if beyond_rate else 'Add Beyond Rate' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit Beyond Rate' if beyond_rate else 'Add Beyond Rate' }}</h1>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.rate_set.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Choose the customer rate group this beyond charge belongs to."
+    >More info</a>
+    {{ form.rate_set(class="form-select") }}
+  </div>
+  <div class="mb-3">
+    {{ form.zone.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Review how destination zones interact with beyond charges."
+    >More info</a>
+    {{ form.zone(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.rate.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Confirm per-mile pricing with the rate-table checklist."
+    >More info</a>
+    {{ form.rate(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.up_to_miles.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See guidance on keeping mileage limits synchronized across tables."
+    >More info</a>
+    {{ form.up_to_miles(class="form-control") }}
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_beyond_rates') }}">Cancel</a>
+</form>
+{% endblock %}

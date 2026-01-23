@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit ZIP Zone' if zip_zone else 'Add ZIP Zone' }}{% endblock %}
+{% block content %}
+<h1>{{ 'Edit ZIP Zone' if zip_zone else 'Add ZIP Zone' }}</h1>
+<form method="post">
+  {{ form.hidden_tag() }}
+  <div class="mb-3">
+    {{ form.zipcode.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Link ZIP assignments to the rate-table maintenance checklist."
+    >More info</a>
+    {{ form.zipcode(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.dest_zone.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Confirm each ZIP points to the correct destination zone."
+    >More info</a>
+    {{ form.dest_zone(class="form-control") }}
+  </div>
+  <div class="mb-3">
+    {{ form.beyond.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="See guidance on flagging when beyond mileage applies."
+    >More info</a>
+    {{ form.beyond(class="form-control") }}
+  </div>
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ url_for('admin.list_zip_zones') }}">Cancel</a>
+</form>
+{% endblock %}

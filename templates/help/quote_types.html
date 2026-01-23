@@ -1,0 +1,118 @@
+{% extends "base.html" %}
+
+{% block title %}Quote Types · Help Center{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-lg-10 col-xl-8">
+    <h1 class="h2">Understanding Quote Types</h1>
+    <p class="text-muted">
+      The New Quote form offers two shipment profiles—<strong>Hotshot</strong> and
+      <strong>Air</strong>. Each option optimizes pricing, transit time
+      assumptions, and accessorial availability for a different style of
+      expedited freight. Use this guide to choose the best fit before you begin a
+      quote.
+    </p>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Hotshot (Ground Expedited)</h2>
+        <p>
+          Hotshot moves leverage dedicated sprinter vans or straight trucks for
+          rapid point-to-point delivery without terminal handoffs.
+        </p>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Ideal Use Cases</h3>
+            <ul class="mb-0">
+              <li>Urgent freight within the continental US or cross-border to Canada.</li>
+              <li>Shipments up to roughly 10,000 lbs or 12 linear feet that fit on a single vehicle.</li>
+              <li>Pickup or delivery locations that require flexible scheduling or dock-high access.</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Pros</h3>
+            <ul class="mb-0">
+              <li>Door-to-door service with the same driver, minimizing handling risk.</li>
+              <li>Competitive pricing for regional or multi-state runs.</li>
+              <li>Accessory options like liftgate or residential service where available.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="row g-3 mt-2">
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Considerations</h3>
+            <ul class="mb-0">
+              <li>Transit times depend on road conditions and driver hours-of-service limits.</li>
+              <li>Limited capacity for oversized freight compared to full truckload equipment.</li>
+              <li>Weather and traffic can introduce delays during long-haul runs.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Air (Next-Flight-Out)</h2>
+        <p>
+          Air quotes combine courier pickup, commercial air cargo, and final-mile
+          delivery to achieve the fastest possible transit time.
+        </p>
+        <div class="row g-3">
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Ideal Use Cases</h3>
+            <ul class="mb-0">
+              <li>Critical shipments that must arrive the same day or overnight.</li>
+              <li>High-value or time-sensitive components headed to maintenance or production lines.</li>
+              <li>Long-distance moves where ground transit would miss customer deadlines.</li>
+            </ul>
+          </div>
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Pros</h3>
+            <ul class="mb-0">
+              <li>Fastest delivery option with predictable flight schedules.</li>
+              <li>Dedicated monitoring from pickup through final mile.</li>
+              <li>Ability to route internationally with customs coordination.</li>
+            </ul>
+          </div>
+        </div>
+        <div class="row g-3 mt-2">
+          <div class="col-md-6">
+            <h3 class="h6 text-uppercase text-muted">Considerations</h3>
+            <ul class="mb-0">
+              <li>Higher base cost compared to ground alternatives.</li>
+              <li>Dimensional weight minimums can apply to bulky but lightweight freight.</li>
+              <li>Hazmat and lithium battery restrictions may limit eligibility.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h2 class="h4">Choosing the Right Option</h2>
+        <p class="mb-2">
+          Start with the customer's deadline and shipment profile:
+        </p>
+        <ul>
+          <li>Select <strong>Hotshot</strong> when the freight fits on a dedicated ground unit and delivery within one to two days is acceptable.</li>
+          <li>Choose <strong>Air</strong> if missing a same-day or next-day deadline would shut down production, incur penalties, or harm safety.</li>
+          <li>When unsure, compare both quotes and consult operations for capacity or compliance guidance.</li>
+        </ul>
+        <p class="mb-0">
+          After selecting the quote type, complete the remaining form details and
+          review any automatically enabled accessorials before sending the
+          customer-facing proposal.
+        </p>
+      </div>
+    </div>
+
+    <p class="text-center">
+      <a class="btn btn-outline-primary" href="{{ url_for('help.quoting') }}">Back to Quoting Help</a>
+      <a class="btn btn-primary ms-2" href="{{ url_for('quotes.new_quote') }}">Open the New Quote Form</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

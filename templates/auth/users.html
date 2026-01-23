@@ -1,0 +1,30 @@
+{% extends 'auth/base.html' %}
+{% block content %}
+  <h2>Manage Users</h2>
+  <div class="table-responsive">
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Email</th><th>Role</th><th>Approved</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+          <tr>
+            <td>{{ u.name }}</td>
+            <td>{{ u.email }}</td>
+            <td>{{ u.role }}</td>
+            <td>{{ 'Yes' if u.is_approved else 'No' }}</td>
+            <td>
+              {% if not u.is_approved %}
+                <form method="post" action="{{ url_for('auth_bp.approve_user') }}" style="display:inline;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input type="hidden" name="email" value="{{ u.email }}" />
+                  <button class="btn" type="submit">Approve</button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

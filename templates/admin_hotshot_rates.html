@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Hotshot Rates{% endblock %}
+{% block content %}
+<h1>Hotshot Rates</h1>
+<div class="d-flex flex-wrap gap-2 mb-3">
+  <a class="btn btn-success" href="{{ url_for('admin.new_hotshot_rate') }}">Add Hotshot Rate</a>
+  <a class="btn btn-outline-primary" href="{{ url_for('admin.download_csv', table='hotshot_rates') }}">Download CSV</a>
+  <a class="btn btn-outline-secondary" href="{{ url_for('admin.upload_csv', table='hotshot_rates') }}">Upload CSV</a>
+</div>
+<div class="table-responsive">
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>ID</th>
+          <th>Rate Set</th>
+          <th>Miles</th>
+          <th>Zone</th>
+          <th>Per LB</th>
+          <th>Per Mile</th>
+          <th>Min Charge</th>
+          <th>Weight Break</th>
+          <th>Fuel %</th>
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for hs in hotshot_rates %}
+      <tr>
+        <td>{{ hs.id }}</td>
+          <td>{{ hs.rate_set }}</td>
+          <td>{{ hs.miles }}</td>
+          <td>{{ hs.zone }}</td>
+          <td>{{ hs.per_lb }}</td>
+          <td>{{ hs.per_mile }}</td>
+          <td>{{ hs.min_charge }}</td>
+          <td>{{ hs.weight_break }}</td>
+          <td>{{ hs.fuel_pct }}</td>
+        <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_hotshot_rate', hs_id=hs.id) }}">Edit</a></td>
+        <td>
+          <form method="post" action="{{ url_for('admin.delete_hotshot_rate', hs_id=hs.id) }}" onsubmit="return confirm('Delete this hotshot rate?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back</a>
+{% endblock %}
