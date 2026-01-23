@@ -185,6 +185,21 @@ def _should_run_startup_db_checks(app: Flask, config_errors: list[str]) -> bool:
     return True
 
 
+def _is_setup_required() -> bool:
+    """Return whether the first-run setup flow should be enforced.
+
+    Returns:
+        ``True`` when no :class:`app.models.User` records exist, otherwise
+        ``False``.
+
+    External dependencies:
+        * Uses :class:`app.models.User` and ``User.query.count`` to inspect the
+          database.
+    """
+
+    return User.query.count() == 0
+
+
 @login_manager.user_loader
 def load_user(user_id):
     return db.session.get(User, int(user_id))
@@ -292,6 +307,8 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
           when migrations are enabled and startup checks are not disabled. Any
           migration failures are captured so the app can start in maintenance
           mode.
+        * Computes ``SETUP_REQUIRED`` based on :func:`_is_setup_required` so the
+          setup flow can redirect until an administrator account exists.
         * Loads override settings via :func:`app.services.settings.reload_overrides`.
     """
     app = Flask(__name__, template_folder="../templates")
@@ -366,6 +383,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         if config_errors:
             setup_errors.extend(config_errors)
         reload_overrides(app)
+        app.config["SETUP_REQUIRED"] = _is_setup_required()
 
     limiter.init_app(app)
 
@@ -380,12 +398,51 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                 500,
             )
 
+    def _is_allowed_setup_path(path: str) -> bool:
+        """Return True when ``path`` should bypass setup redirects.
+
+        Args:
+            path: Raw request path from :data:`flask.request.path`.
+
+        Returns:
+            ``True`` when setup enforcement should skip the path.
+        """
+
+        return (
+            path.startswith("/setup")
+            or path.startswith("/static")
+            or path == "/healthz"
+        )
+
+    @app.before_request
+    def _redirect_to_setup() -> ResponseReturnValue | None:
+        """Redirect to setup when no users exist in the database.
+
+        Returns:
+            ``None`` when the request should continue as normal. When setup is
+            required, returns a redirect response to
+            :func:`setup.setup_status`.
+
+        External dependencies:
+            * Calls :func:`_is_setup_required`, which queries
+              :class:`app.models.User`.
+        """
+
+        if _is_allowed_setup_path(request.path):
+            return None
+        setup_required = _is_setup_required()
+        current_app.config["SETUP_REQUIRED"] = setup_required
+        if setup_required:
+            return redirect(url_for("setup.setup_status"))
+        return None
+
     # Blueprints
     from app.api import api_bp
     from .auth import auth_bp
     from .admin import admin_bp
     from .branding import branding_bp
     from .help import help_bp
+    from app.setup import setup_bp
     from .quotes import quotes_bp
     from app.quote.admin_view import admin_quotes_bp
 
@@ -397,6 +454,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(admin_quotes_bp, url_prefix="/admin")
     app.register_blueprint(quotes_bp, url_prefix="/quotes")
     app.register_blueprint(help_bp, url_prefix="/help")
+    app.register_blueprint(setup_bp)
 
     @app.route("/", methods=["GET"])
     def index() -> str:
