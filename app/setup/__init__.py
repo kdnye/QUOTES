@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Mapping
 
 from flask import (
     Blueprint,
@@ -15,10 +15,12 @@ from flask import (
     url_for,
 )
 from flask.typing import ResponseReturnValue
+from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 
 from app.database import ensure_database_schema
 from app.models import User, db
 from app.services.auth_utils import is_valid_email, is_valid_password
+from app.services.settings import reload_overrides, set_setting
 
 setup_bp = Blueprint("setup", __name__)
 
@@ -68,7 +70,121 @@ def _collect_env_checks() -> list[dict[str, Any]]:
     ]
 
 
-@setup_bp.route("/setup", methods=["GET"])
+def _get_setup_override_fields() -> list[dict[str, Any]]:
+    """Return metadata for the setup configuration form.
+
+    Returns:
+        A list of dictionaries describing each configurable field for the setup
+        landing page. Each dictionary includes the field name, configuration
+        key, input type, and help text for the UI.
+
+    External dependencies:
+        * Reads :data:`flask.current_app.config` for prefilled values.
+    """
+
+    field_specs = [
+        {
+            "name": "secret_key",
+            "config_key": "SECRET_KEY",
+            "label": "SECRET_KEY",
+            "is_secret": True,
+            "help_text": (
+                "Paste a long random value to secure sessions. Rotating this key "
+                "signs users out."
+            ),
+        },
+        {
+            "name": "google_maps_api_key",
+            "config_key": "GOOGLE_MAPS_API_KEY",
+            "label": "GOOGLE_MAPS_API_KEY",
+            "is_secret": True,
+            "help_text": (
+                "Required for ZIP validation and distance lookups. Leave blank to "
+                "keep the current value."
+            ),
+        },
+        {
+            "name": "gcs_bucket",
+            "config_key": "GCS_BUCKET",
+            "label": "GCS_BUCKET",
+            "is_secret": False,
+            "help_text": (
+                "Provide the target Google Cloud Storage bucket for branding assets."
+            ),
+        },
+    ]
+
+    fields: list[dict[str, Any]] = []
+    for field in field_specs:
+        config_key = field["config_key"]
+        current_value = (current_app.config.get(config_key) or "").strip()
+        fields.append(
+            {
+                **field,
+                "input_type": "password" if field["is_secret"] else "text",
+                "value": "" if field["is_secret"] else current_value,
+                "configured": bool(current_value),
+            }
+        )
+    return fields
+
+
+def _persist_setup_overrides(
+    form_data: Mapping[str, str],
+) -> tuple[list[str], list[str]]:
+    """Persist setup overrides from the setup checklist form.
+
+    Args:
+        form_data: Submitted form payload containing configuration values.
+
+    Returns:
+        A tuple containing the list of updated configuration keys and a list of
+        error messages to display in the UI.
+
+    External dependencies:
+        * Calls :func:`app.services.settings.set_setting` to save overrides.
+        * Calls :func:`app.services.settings.reload_overrides` to refresh
+          ``current_app.config``.
+    """
+
+    updated_keys: list[str] = []
+    errors: list[str] = []
+    fields = _get_setup_override_fields()
+    for field in fields:
+        raw_value = (form_data.get(field["name"]) or "").strip()
+        if not raw_value:
+            continue
+        try:
+            set_setting(
+                field["config_key"],
+                raw_value,
+                is_secret=bool(field["is_secret"]),
+            )
+        except (OperationalError, ProgrammingError) as exc:
+            current_app.logger.exception(
+                "Setup override save failed for %s: %s", field["config_key"], exc
+            )
+            errors.append(
+                f"Unable to save {field['label']}. Confirm the database is ready."
+            )
+        else:
+            updated_keys.append(field["config_key"])
+
+    if updated_keys:
+        try:
+            db.session.commit()
+        except SQLAlchemyError as exc:
+            db.session.rollback()
+            current_app.logger.exception("Setup override commit failed: %s", exc)
+            errors.append("Unable to save settings. Check the database connection.")
+            updated_keys = []
+        else:
+            reload_overrides(current_app)
+
+    return updated_keys, errors
+
+
+@setup_bp.route("/setup", methods=["GET", "POST"])
 def setup_status() -> str:
     """Render a setup checklist for required environment configuration.
 
@@ -76,9 +192,29 @@ def setup_status() -> str:
         Rendered HTML for the setup landing page.
     """
 
+    if request.method == "POST":
+        updated_keys, errors = _persist_setup_overrides(request.form)
+        if errors:
+            for message in errors:
+                flash(message, "danger")
+        if updated_keys:
+            flash(
+                "Saved configuration overrides: " + ", ".join(sorted(updated_keys)),
+                "success",
+            )
+        elif not errors:
+            flash("No configuration values were provided.", "info")
+        return redirect(url_for("setup.setup_status"))
+
     checks = _collect_env_checks()
     missing = [check for check in checks if not check["configured"]]
-    return render_template("setup/index.html", checks=checks, missing=missing)
+    override_fields = _get_setup_override_fields()
+    return render_template(
+        "setup/index.html",
+        checks=checks,
+        missing=missing,
+        override_fields=override_fields,
+    )
 
 
 @setup_bp.route("/setup/db-init", methods=["GET", "POST"])

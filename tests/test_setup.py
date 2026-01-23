@@ -97,3 +97,29 @@ def test_setup_admin_creates_super_admin(app: Flask, client: FlaskClient) -> Non
 
     index_response = client.get("/", follow_redirects=False)
     assert index_response.status_code == 200
+
+
+def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
+    """Ensure setup form persists configuration overrides."""
+
+    response = client.post(
+        "/setup",
+        data={
+            "google_maps_api_key": "maps-key",
+            "gcs_bucket": "branding-bucket",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+
+    with app.app_context():
+        from app.models import AppSetting
+
+        settings = {setting.key: setting for setting in AppSetting.query.all()}
+        assert settings["google_maps_api_key"].value == "maps-key"
+        assert settings["google_maps_api_key"].is_secret is True
+        assert settings["gcs_bucket"].value == "branding-bucket"
+        assert settings["gcs_bucket"].is_secret is False
+        assert app.config["GOOGLE_MAPS_API_KEY"] == "maps-key"
+        assert app.config["GCS_BUCKET"] == "branding-bucket"
