@@ -74,6 +74,22 @@ Services portal.
      unset or ``false`` in production so the hardened configuration stays in
      effect.
 
+### Docker (production-style container)
+
+1. Build the container image:
+   ```bash
+   docker build -t quote-tool:latest .
+   ```
+2. Run the container, providing the environment settings from your `.env`
+   (including database configuration and API keys):
+   ```bash
+   docker run --rm -p 8080:8080 --env-file .env quote-tool:latest
+   ```
+
+The container starts Gunicorn with the Flask application factory. It listens on
+`$PORT` (defaults to `8080`) and requires the same environment variables as the
+non-containerized deployment paths described above.
+
 ### Cloud Run + Cloud SQL
 
 Cloud Run requires an external PostgreSQL database; the app starts in
