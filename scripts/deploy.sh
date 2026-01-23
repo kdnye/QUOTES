@@ -202,13 +202,13 @@ require_no_commas "SERVICE_NAME" "${SERVICE_NAME}"
 require_no_commas "PROJECT_ID" "${PROJECT_ID}"
 require_no_commas "REGION" "${REGION}"
 
-DB_PASSWORD_SECRET="${SERVICE_NAME}-db-password"
+POSTGRES_PASSWORD_SECRET="${SERVICE_NAME}-postgres-password"
 SECRET_KEY_SECRET="${SERVICE_NAME}-secret-key"
-MAPS_KEY_SECRET="${SERVICE_NAME}-maps-key"
+GOOGLE_MAPS_API_KEY_SECRET="${SERVICE_NAME}-google-maps-api-key"
 
-upsert_secret "${DB_PASSWORD_SECRET}" "${POSTGRES_PASSWORD}"
+upsert_secret "${POSTGRES_PASSWORD_SECRET}" "${POSTGRES_PASSWORD}"
 upsert_secret "${SECRET_KEY_SECRET}" "${SECRET_KEY}"
-upsert_secret "${MAPS_KEY_SECRET}" "${GOOGLE_MAPS_API_KEY}"
+upsert_secret "${GOOGLE_MAPS_API_KEY_SECRET}" "${GOOGLE_MAPS_API_KEY}"
 
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
@@ -217,4 +217,4 @@ gcloud run deploy "${SERVICE_NAME}" \
     --allow-unauthenticated \
     --image="${IMAGE_URI}" \
     --set-env-vars="POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs" \
-    --update-secrets="POSTGRES_PASSWORD=${DB_PASSWORD_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,GOOGLE_MAPS_API_KEY=${MAPS_KEY_SECRET}:latest"
+    --update-secrets="POSTGRES_PASSWORD=${POSTGRES_PASSWORD_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:latest"

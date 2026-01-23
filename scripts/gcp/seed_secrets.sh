@@ -5,19 +5,19 @@ set -euo pipefail
 #
 # Inputs (required):
 #   PROJECT_ID           GCP project ID to store secrets in.
-#   DB_PASSWORD          Database password (mapped to POSTGRES_PASSWORD).
+#   POSTGRES_PASSWORD    Database password consumed by the app.
 #   MAIL_PASSWORD        SMTP password or app password.
 #   GOOGLE_MAPS_API_KEY  Google Maps API key used for distance lookups.
 #
 # Example usage:
 #   export PROJECT_ID="my-project"
-#   export DB_PASSWORD="super-secret"
+#   export POSTGRES_PASSWORD="super-secret"
 #   export MAIL_PASSWORD="smtp-secret"
 #   export GOOGLE_MAPS_API_KEY="maps-secret"
 #   ./scripts/gcp/seed_secrets.sh
 
 : "${PROJECT_ID:?Set PROJECT_ID to your GCP project ID.}"
-: "${DB_PASSWORD:?Set DB_PASSWORD to the database password.}"
+: "${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD to the database password.}"
 : "${MAIL_PASSWORD:?Set MAIL_PASSWORD to the SMTP password.}"
 : "${GOOGLE_MAPS_API_KEY:?Set GOOGLE_MAPS_API_KEY to the Maps API key.}"
 
@@ -36,7 +36,7 @@ ensure_secret() {
         --data-file=-
 }
 
-ensure_secret "DB_PASSWORD" "${DB_PASSWORD}"
+ensure_secret "POSTGRES_PASSWORD" "${POSTGRES_PASSWORD}"
 ensure_secret "MAIL_PASSWORD" "${MAIL_PASSWORD}"
 ensure_secret "GOOGLE_MAPS_API_KEY" "${GOOGLE_MAPS_API_KEY}"
 
