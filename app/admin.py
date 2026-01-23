@@ -57,8 +57,9 @@ from .models import (
 )
 from . import csrf
 from .policies import employee_required, super_admin_required
-from app.services.branding import resolve_brand_logo_url
 from app.services.branding_locations import (
+    build_brand_logo_object_location,
+    build_brand_logo_url,
     delete_brand_logo_location,
     get_brand_logo_location,
     list_brand_logo_locations,
@@ -310,7 +311,8 @@ class LogoUploadForm(FlaskForm):
     Attributes:
         rate_set: Dropdown of available rate sets populated from
             :func:`app.services.rate_sets.get_available_rate_sets`.
-        gcs_bucket_location: Location of the logo file stored in GCS.
+        gcs_bucket_location: Base location in GCS where rate set logos are
+            stored using the ``<rate_set>.png`` naming convention.
 
     External dependencies:
         * Calls :func:`app.admin._validate_gcs_bucket_location` for validation.
@@ -369,23 +371,24 @@ def _parse_rate_set(
     raise ValueError(f"Unknown rate set '{normalized}'.")
 
 
-def _logo_url_from_value(raw_value: str | None) -> str | None:
-    """Return a fully qualified URL for ``raw_value`` when it stores a logo.
+def _logo_url_from_location(raw_value: str | None, rate_set: str) -> str | None:
+    """Return a fully qualified URL for a rate set logo.
 
     Args:
-        raw_value: Stored value from :class:`app.models.BrandLogoLocation` that
-            may contain a file name relative to the instance logo directory, a
-            ``gs://`` GCS location, or an absolute URL.
+        raw_value: Base GCS bucket location stored in
+            :class:`app.models.BrandLogoLocation`.
+        rate_set: Rate set identifier used to build the logo filename.
 
     Returns:
         URL string suitable for rendering in templates or ``None`` when the
         value is empty.
 
     External dependencies:
-        * :func:`app.services.branding.resolve_brand_logo_url` for URL creation.
+        * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
+          construct the public URL.
     """
 
-    return resolve_brand_logo_url(raw_value)
+    return build_brand_logo_url(raw_value, rate_set)
 
 
 @dataclass(frozen=True)
@@ -862,8 +865,8 @@ def branding() -> Union[str, Response]:
     """Store or remove per-rate-set company logos.
 
     Accepts an authenticated super administrator's GCS bucket location,
-    persists the GCS bucket location per rate set, and renders the stored URL
-    for preview.
+    persists the GCS bucket location per rate set, and renders preview URLs
+    using the ``<bucket_location>/<rate_set>.png`` naming convention.
 
     Returns:
         A rendered HTML page or redirect response when the form is submitted.
@@ -872,7 +875,8 @@ def branding() -> Union[str, Response]:
         * :func:`app.services.rate_sets.get_available_rate_sets` for choices.
         * :func:`app.services.branding_locations.upsert_brand_logo_location` to
           persist the value.
-        * :func:`app.services.branding.resolve_brand_logo_url` to preview logos.
+        * :func:`app.services.branding_locations.build_brand_logo_url` to
+          preview logos.
     """
 
     form = LogoUploadForm()
@@ -897,7 +901,11 @@ def branding() -> Union[str, Response]:
     for rs in rate_sets:
         record = stored_logos.get(rs)
         raw_value = record.gcs_bucket_location if record else None
-        logos[rs] = {"filename": raw_value, "url": _logo_url_from_value(raw_value)}
+        logos[rs] = {
+            "bucket_location": raw_value,
+            "object_location": build_brand_logo_object_location(raw_value, rs),
+            "url": _logo_url_from_location(raw_value, rs),
+        }
 
     return render_template(
         "admin_branding.html",

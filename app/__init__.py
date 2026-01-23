@@ -33,8 +33,10 @@ from app.services.mail import (
     user_has_mail_privileges,
 )
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
-from app.services.branding import resolve_brand_logo_url
-from app.services.branding_locations import get_brand_logo_location
+from app.services.branding_locations import (
+    build_brand_logo_url,
+    get_brand_logo_location,
+)
 from app.services.settings import reload_overrides
 from app.services.oidc_client import init_oidc_oauth
 
@@ -232,21 +234,25 @@ def build_map_html(origin_zip: str, destination_zip: str) -> str | None:
     )
 
 
-def _resolve_company_logo_url(raw_value: str | None) -> str | None:
-    """Return a public URL for a stored company logo.
+def _resolve_company_logo_url(
+    gcs_bucket_location: str | None, rate_set: str
+) -> str | None:
+    """Return a public URL for a rate set's branding logo.
 
     Args:
-        raw_value: Stored value from ``app_settings``. May be a filename in the
-            instance ``company_logos`` directory or an absolute URL.
+        gcs_bucket_location: Base GCS bucket location configured for branding
+            logos, such as ``gs://bucket/path``.
+        rate_set: Rate set identifier used to construct the logo filename.
 
     Returns:
         Public URL string for the logo or ``None`` when no logo is configured.
 
     External dependencies:
-        * :func:`app.services.branding.resolve_brand_logo_url` for URL creation.
+        * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
+          construct the public URL.
     """
 
-    return resolve_brand_logo_url(raw_value)
+    return build_brand_logo_url(gcs_bucket_location, rate_set)
 
 
 def _verify_app_setup(app: Flask) -> list[str]:
@@ -587,10 +593,10 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         The processor resolves the caller's :attr:`~app.models.User.rate_set`
         via :func:`app.services.rate_sets.normalize_rate_set` and looks up a
         stored GCS bucket location for the rate set using
-        :func:`app.services.branding_locations.get_brand_logo_location`. When
-        configured, the URL is returned for template rendering so
-        :mod:`templates.base` can display the customer-specific logo alongside
-        the FSI branding.
+        :func:`app.services.branding_locations.get_brand_logo_location`. The
+        logo URL is then derived with the ``<bucket_location>/<rate_set>.png``
+        naming convention so :mod:`templates.base` can display the
+        customer-specific logo alongside the FSI branding.
         """
 
         try:
@@ -604,7 +610,9 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         record = get_brand_logo_location(rate_set)
         logo_url = (
-            _resolve_company_logo_url(record.gcs_bucket_location) if record else None
+            _resolve_company_logo_url(record.gcs_bucket_location, rate_set)
+            if record
+            else None
         )
         if logo_url:
             return {"company_logo_url": logo_url}
