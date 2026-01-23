@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import List
 
 from app.models import BrandLogoLocation, db
+from app.services.branding import resolve_brand_logo_url
 from app.services.rate_sets import normalize_rate_set
 
 
@@ -25,6 +26,58 @@ def get_brand_logo_location(rate_set: str) -> BrandLogoLocation | None:
 
     normalized = normalize_rate_set(rate_set)
     return BrandLogoLocation.query.filter_by(rate_set=normalized).one_or_none()
+
+
+def build_brand_logo_object_location(
+    gcs_bucket_location: str | None, rate_set: str
+) -> str | None:
+    """Return the GCS object location for a rate set's logo.
+
+    Args:
+        gcs_bucket_location: Base GCS bucket location configured for branding,
+            such as ``gs://bucket/path``.
+        rate_set: Rate set identifier used to build the logo filename.
+
+    Returns:
+        Full ``gs://`` location for the expected logo asset, or ``None`` when
+        the input location is missing.
+
+    External dependencies:
+        * Calls :func:`app.services.rate_sets.normalize_rate_set` to normalize
+          the identifier.
+    """
+
+    if not gcs_bucket_location:
+        return None
+    cleaned_location = gcs_bucket_location.strip().rstrip("/")
+    if not cleaned_location:
+        return None
+    normalized_rate_set = normalize_rate_set(rate_set)
+    return f"{cleaned_location}/{normalized_rate_set}.png"
+
+
+def build_brand_logo_url(gcs_bucket_location: str | None, rate_set: str) -> str | None:
+    """Return a public URL for a rate set's logo asset.
+
+    Args:
+        gcs_bucket_location: Base GCS bucket location configured for branding,
+            such as ``gs://bucket/path``.
+        rate_set: Rate set identifier used to build the logo filename.
+
+    Returns:
+        Public HTTPS URL for the logo asset, or ``None`` when no location is
+        configured.
+
+    External dependencies:
+        * Calls :func:`build_brand_logo_object_location` for the GCS path.
+        * Calls :func:`app.services.branding.resolve_brand_logo_url` to turn the
+          GCS location into a public URL.
+    """
+
+    object_location = build_brand_logo_object_location(gcs_bucket_location, rate_set)
+    if not object_location:
+        return None
+    return resolve_brand_logo_url(object_location)
 
 
 def upsert_brand_logo_location(

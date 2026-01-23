@@ -14,6 +14,8 @@ from app.admin import LogoUploadForm
 from app.models import db
 from app.services.branding import resolve_brand_logo_url
 from app.services.branding_locations import (
+    build_brand_logo_object_location,
+    build_brand_logo_url,
     get_brand_logo_location,
     upsert_brand_logo_location,
 )
@@ -105,3 +107,13 @@ def test_resolve_brand_logo_url_supports_gcs_locations() -> None:
 
     url = resolve_brand_logo_url("gs://bucket/path/logo.png")
     assert url == "https://storage.googleapis.com/bucket/path/logo.png"
+
+
+def test_build_brand_logo_url_uses_rate_set_naming() -> None:
+    """Confirm rate set logos use the ``<bucket>/<rate_set>.png`` convention."""
+
+    object_location = build_brand_logo_object_location("gs://bucket/path", "ININ")
+    assert object_location == "gs://bucket/path/inin.png"
+
+    url = build_brand_logo_url("gs://bucket/path", "ININ")
+    assert url == "https://storage.googleapis.com/bucket/path/inin.png"
