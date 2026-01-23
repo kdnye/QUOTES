@@ -77,6 +77,17 @@ Services portal.
    the database schema, and create the initial super admin account. The setup
    flow locks down the rest of the app until a user exists.
 
+### Database migrations
+
+Generate new Alembic migrations with the helper script, which accepts a message
+argument or prompts you interactively:
+
+```bash
+./scripts/make_migration.sh "describe change"
+```
+
+Run `alembic upgrade head` after creating a revision to apply it locally.
+
 ### Docker (production-style container)
 
 1. Build the container image:
