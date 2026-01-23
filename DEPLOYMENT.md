@@ -158,19 +158,26 @@ and port so you can set `POSTGRES_HOST` and `POSTGRES_PORT` (or build a
 
 Use Cloud Build or a local Docker build to publish your container image to
 Artifact Registry or another registry reachable by Cloud Run. Example using
-Cloud Build with the provided `cloudbuild.yaml`:
+Cloud Build with the provided `cloudbuild.yaml` (which builds, pushes, and
+deploys to Cloud Run in one pipeline):
 
 ```bash
-gcloud builds submit --config=cloudbuild.yaml --substitutions=_IMAGE_URI=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG .
+gcloud builds submit --config=cloudbuild.yaml \\
+  --substitutions=_IMAGE_URI=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG,_SERVICE=quote-tool,_REGION=REGION \\
+  .
 ```
 
-Deploy the image to Cloud Run (set environment variables via `--set-env-vars`
-and secrets via `--set-secrets` or in the Cloud Console):
+If you need a manual deploy (for example, to change the authentication
+settings), you can deploy the image to Cloud Run directly (set environment
+variables via `--set-env-vars` and secrets via `--set-secrets` or in the Cloud
+Console):
 
 ```bash
 gcloud run deploy quote-tool \\
   --image=LOCATION-docker.pkg.dev/PROJECT/REPO/quote-tool:TAG \\
   --region=REGION \\
+  --platform=managed \\
+  --allow-unauthenticated \\
   --set-env-vars=FLASK_DEBUG=false,GOOGLE_MAPS_API_KEY=YOUR_KEY \\
   --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest
 ```
@@ -206,11 +213,12 @@ option that matches your security and retention needs:
 - **Cloud Logging only** – Set `build.options.logging` to
   `CLOUD_LOGGING_ONLY` (or `NONE` to disable logging).
 
-The repository now includes a ready-to-use `cloudbuild.yaml` that builds the
-container image and enables Cloud Logging only by default. Update the
-`_IMAGE_URI` substitution if you want to publish to a different registry or
-tag format, and add deployment steps if you want Cloud Build to deploy to Cloud
-Run as part of the trigger.
+The repository now includes a ready-to-use `cloudbuild.yaml` that builds,
+pushes, and deploys the container image while enabling Cloud Logging only by
+default. Update the `_IMAGE_URI`, `_SERVICE`, and `_REGION` substitutions if you
+want to publish to a different registry, tag format, or Cloud Run destination.
+The pipeline defaults to `--allow-unauthenticated`; change that to
+`--no-allow-unauthenticated` if you want to require IAM authentication.
 
 Example `cloudbuild.yaml` fragment using Cloud Logging only:
 
