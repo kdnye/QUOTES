@@ -34,7 +34,8 @@ from app.services.mail import (
 )
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 from app.services.branding import resolve_brand_logo_url
-from app.services.settings import get_settings_cache, reload_overrides
+from app.services.branding_locations import get_brand_logo_location
+from app.services.settings import reload_overrides
 from app.services.oidc_client import init_oidc_oauth
 
 login_manager = LoginManager()
@@ -585,10 +586,11 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         The processor resolves the caller's :attr:`~app.models.User.rate_set`
         via :func:`app.services.rate_sets.normalize_rate_set` and looks up a
-        stored ``brand_logo:<rate_set>`` value using
-        :func:`app.services.settings.get_settings_cache`. When configured, the
-        URL is returned for template rendering so :mod:`templates.base` can
-        display the customer-specific logo alongside the FSI branding.
+        stored GCS bucket location for the rate set using
+        :func:`app.services.branding_locations.get_brand_logo_location`. When
+        configured, the URL is returned for template rendering so
+        :mod:`templates.base` can display the customer-specific logo alongside
+        the FSI branding.
         """
 
         try:
@@ -600,9 +602,10 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         except Exception:  # pragma: no cover - defensive guard
             return {}
 
-        cache = get_settings_cache()
-        record = cache.get(f"brand_logo:{rate_set}")
-        logo_url = _resolve_company_logo_url(record.raw_value) if record else None
+        record = get_brand_logo_location(rate_set)
+        logo_url = (
+            _resolve_company_logo_url(record.gcs_bucket_location) if record else None
+        )
         if logo_url:
             return {"company_logo_url": logo_url}
         return {}

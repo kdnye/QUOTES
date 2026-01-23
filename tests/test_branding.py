@@ -13,6 +13,10 @@ from app import create_app
 from app.admin import LogoUploadForm
 from app.models import db
 from app.services.branding import resolve_brand_logo_url
+from app.services.branding_locations import (
+    get_brand_logo_location,
+    upsert_brand_logo_location,
+)
 from app.services.rate_sets import DEFAULT_RATE_SET
 
 
@@ -51,11 +55,14 @@ def test_logo_form_rejects_invalid_gcs_location(app: Flask) -> None:
 
     with app.test_request_context(
         method="POST",
-        data={"rate_set": DEFAULT_RATE_SET, "gcs_location": "not-a-location"},
+        data={
+            "rate_set": DEFAULT_RATE_SET,
+            "gcs_bucket_location": "not-a-location",
+        },
     ):
         form = LogoUploadForm()
         assert form.validate() is False
-        assert "gs://bucket/path" in ", ".join(form.gcs_location.errors)
+        assert "gs://bucket/path" in ", ".join(form.gcs_bucket_location.errors)
 
 
 def test_logo_form_accepts_valid_gcs_location(app: Flask) -> None:
@@ -65,11 +72,32 @@ def test_logo_form_accepts_valid_gcs_location(app: Flask) -> None:
         method="POST",
         data={
             "rate_set": DEFAULT_RATE_SET,
-            "gcs_location": "gs://bucket/path/logo.png",
+            "gcs_bucket_location": "gs://bucket/path/logo.png",
         },
     ):
         form = LogoUploadForm()
         assert form.validate() is True
+
+
+def test_brand_logo_location_persists_per_rate_set(app: Flask) -> None:
+    """Ensure GCS locations are persisted per rate set."""
+
+    with app.app_context():
+        first_location = "gs://bucket/path/logo.png"
+        upsert_brand_logo_location(DEFAULT_RATE_SET, first_location)
+        db.session.commit()
+
+        stored = get_brand_logo_location(DEFAULT_RATE_SET)
+        assert stored is not None
+        assert stored.gcs_bucket_location == first_location
+
+        updated_location = "gs://bucket/path/updated.png"
+        upsert_brand_logo_location(DEFAULT_RATE_SET, updated_location)
+        db.session.commit()
+
+        updated = get_brand_logo_location(DEFAULT_RATE_SET)
+        assert updated is not None
+        assert updated.gcs_bucket_location == updated_location
 
 
 def test_resolve_brand_logo_url_supports_gcs_locations() -> None:
