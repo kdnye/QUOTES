@@ -12,8 +12,8 @@ The application exposes both HTML pages and JSON APIs and persists data in a SQL
 
 - **Language:** Python 3.8+
 - **Web Framework:** Flask with Blueprints
-- **Database:** google Cloud SQL
-- **Auth:** flask-login sessions 
+- **Database:** postgress cloud sql
+- **Auth:** flask-login sessions and CSRF protection via Flask-WTF
 - **Front End:** Jinja2 templates and Bootstrap-based theme
 - **External Services:** Google Maps Directions API for mileage lookups
 
@@ -119,9 +119,8 @@ The pricing modules implement the following core functions:
 ## External Configuration
 
 The application relies on several environment variables (see `.env.example`):
-- `DATABASE_URL` or google cloud sql
+- `DATABASE_URL` or google clouod sql
 - `SECRET_KEY` for session signing
-- SMTP settings (`MAIL_SERVER`, `MAIL_PORT`, etc.) 
 - `GOOGLE_MAPS_API_KEY` for distance lookups
 - Admin bootstrap credentials (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
 
