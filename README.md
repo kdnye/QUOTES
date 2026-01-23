@@ -120,6 +120,12 @@ valid Postgres DSN. Configure Cloud SQL using one of these options:
   DSN automatically. Optional `POSTGRES_OPTIONS` are appended as query
   parameters.
 
+Use `./scripts/setup_gcp.sh PROJECT_ID` to bootstrap required Google Cloud
+services, a public branding bucket, an Artifact Registry repo, and a Cloud SQL
+Postgres instance with the `quote_tool` database. Set `REGION` (defaults to
+`us-central1`), `CLOUD_SQL_INSTANCE_NAME`, `ARTIFACT_REPO_NAME`, or
+`DB_PASSWORD` to override defaults before running the script.
+
 For the Quote Tool Cloud SQL instance, configure either of the following:
 
 ```bash
