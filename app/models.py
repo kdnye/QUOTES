@@ -1,0 +1,376 @@
+"""Centralizes database table names and SQLAlchemy models for the quoting app.
+
+The module exposes string constants that define the canonical table names used
+throughout migrations, raw SQL helpers, and other services. Those constants are
+paired with SQLAlchemy models such as :class:`User`, :class:`Quote`,
+:class:`EmailQuoteRequest`, and :class:`PasswordResetToken`, which describe the
+schema and relationships for their respective tables.
+"""
+
+from datetime import datetime
+import uuid
+from typing import Optional
+from flask_login import UserMixin
+from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy import Boolean, Enum, UniqueConstraint
+from sqlalchemy.orm import Mapped
+from werkzeug.security import generate_password_hash, check_password_hash
+
+
+# Table name constants for easy reuse across the codebase
+USERS_TABLE = "users"
+QUOTES_TABLE = "quotes"
+EMAIL_REQUESTS_TABLE = "email_quote_requests"
+EMAIL_DISPATCH_LOG_TABLE = "email_dispatch_log"
+PASSWORD_RESET_TOKENS_TABLE = "password_reset_tokens"
+ACCESSORIALS_TABLE = "accessorials"
+APP_SETTINGS_TABLE = "app_settings"
+HOTSHOT_RATES_TABLE = "hotshot_rates"
+BEYOND_RATES_TABLE = "beyond_rates"
+AIR_COST_ZONES_TABLE = "air_cost_zones"
+ZIP_ZONES_TABLE = "zip_zones"
+COST_ZONES_TABLE = "cost_zones"
+RATE_UPLOADS_TABLE = "rate_uploads"
+
+RATE_SET_DEFAULT = "default"
+
+db = SQLAlchemy()
+
+
+class User(UserMixin, db.Model):
+    """Registered application user.
+
+    Users can authenticate and create :class:`Quote` records. The model stores
+    contact information collected during registration to support quoting and
+    customer service follow-up.
+
+    Attributes:
+        first_name: User's given name collected from the registration form.
+        last_name: User's family name collected from the registration form.
+        phone: Primary phone number supplied by the user. Stored as free-form
+            text because formatting varies by country.
+        company_name: Company name associated with the user account.
+        company_phone: Contact phone number for the user's company.
+        role: Application role flag used to enable privileged employee or
+            administrative features. Acceptable values are ``"customer"``,
+            ``"employee"``, or ``"super_admin"`` and the field defaults to
+            ``"customer"``.
+        employee_approved: Boolean gating elevated employee-only features.
+            Set to ``True`` when the account has been vetted for internal tool
+            access.
+        admin_previous_role: Cached role restored when administrative access is
+            revoked. Persisted only while :attr:`is_admin` is ``True``.
+        admin_previous_employee_approved: Cached ``employee_approved`` value
+            restored alongside :attr:`admin_previous_role` when demoting an
+            administrator.
+    """
+
+    __tablename__ = USERS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(255), unique=True, index=True, nullable=False)
+    name = db.Column(db.String(120))
+    first_name = db.Column(db.String(80))
+    last_name = db.Column(db.String(80))
+    phone = db.Column(db.String(50))
+    company_name = db.Column(db.String(120))
+    company_phone = db.Column(db.String(50))
+    password_hash = db.Column(db.String(255), nullable=False)
+    is_admin = db.Column(db.Boolean, default=False)
+    role: Mapped[str] = db.Column(
+        Enum("customer", "employee", "super_admin", name="user_role"),
+        nullable=False,
+        default="customer",
+    )
+    employee_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    admin_previous_role: Mapped[Optional[str]] = db.Column(
+        Enum("customer", "employee", name="user_admin_previous_role"),
+        nullable=True,
+    )
+    admin_previous_employee_approved: Mapped[Optional[bool]] = db.Column(
+        Boolean, nullable=True
+    )
+    is_active = db.Column(db.Boolean, default=True)
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, raw_password: str) -> None:
+        """Hash ``raw_password`` using
+        :func:`werkzeug.security.generate_password_hash`.
+
+        Args:
+            raw_password: Plain text password provided by the user.
+
+        Returns:
+            None. The hashed value is stored on ``self.password_hash``.
+        """
+
+        self.password_hash = generate_password_hash(raw_password)
+
+    def check_password(self, raw_password: str) -> bool:
+        """Validate ``raw_password`` against the stored hash using
+        :func:`werkzeug.security.check_password_hash`.
+
+        Args:
+            raw_password: Plain text password to compare.
+
+        Returns:
+            ``True`` when the supplied password matches the stored hash;
+            otherwise ``False``.
+        """
+
+        return check_password_hash(self.password_hash, raw_password)
+
+
+class Quote(db.Model):
+    """Shipping quote generated by a :class:`User`.
+
+    Stores shipment details and totals and may be linked to an
+    :class:`EmailQuoteRequest`.
+    """
+
+    __tablename__ = QUOTES_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    quote_id = db.Column(
+        db.String(36), default=lambda: str(uuid.uuid4()), unique=True
+    )  # public UUID for external reference
+    user_id = db.Column(db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"))
+    user_email = db.Column(db.String(100))  # cached user email for quick access
+    quote_type = db.Column(db.String(20), nullable=False)
+    origin = db.Column(db.String(20))
+    destination = db.Column(db.String(20))
+    weight = db.Column(db.Float)
+    weight_method = db.Column(db.String(20))
+    actual_weight = db.Column(db.Float)
+    dim_weight = db.Column(db.Float)
+    pieces = db.Column(db.Integer, default=1)
+    length = db.Column(db.Float, default=0.0)
+    width = db.Column(db.Float, default=0.0)
+    height = db.Column(db.Float, default=0.0)
+    zone = db.Column(db.String(5))
+    total = db.Column(db.Float, default=0.0)
+    quote_metadata = db.Column(db.Text)  # JSON-encoded pricing metadata
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+    # IP address of the client that requested this quote (optional)
+    request_ip = db.Column(db.String(45), nullable=True, index=True)
+    warnings = db.Column(db.Text)  # calculation warnings shown to the user
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship("User", backref="quotes")  # parent user relationship
+
+
+class EmailQuoteRequest(db.Model):
+    """Supplemental details for a quote submitted via email.
+
+    Linked to :class:`Quote` through ``quote_id``.
+    """
+
+    __tablename__ = EMAIL_REQUESTS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    quote_id = db.Column(
+        db.String(36), db.ForeignKey(f"{QUOTES_TABLE}.quote_id"), nullable=False
+    )  # references Quote.quote_id
+    shipper_name = db.Column(db.String)
+    shipper_address = db.Column(db.String)
+    shipper_contact = db.Column(db.String)
+    shipper_phone = db.Column(db.String)
+    consignee_name = db.Column(db.String)
+    consignee_address = db.Column(db.String)
+    consignee_contact = db.Column(db.String)
+    consignee_phone = db.Column(db.String)
+    total_weight = db.Column(db.Float)
+    special_instructions = db.Column(db.String)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class EmailDispatchLog(db.Model):
+    """Audit trail for outbound emails sent by the application.
+
+    Rows are created by :func:`app.send_email` via
+    :func:`services.mail.log_email_dispatch` to support rate limiting and
+    troubleshooting. Each entry associates an optional :class:`User` with a
+    feature label and recipient address.
+    """
+
+    __tablename__ = EMAIL_DISPATCH_LOG_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"))
+    feature = db.Column(db.String(50), nullable=False)
+    recipient = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    user = db.relationship("User")
+
+
+class AppSetting(db.Model):
+    """Database-persisted configuration override.
+
+    Attributes:
+        key: Unique identifier for the setting (for example, ``"mail_username"``).
+        value: Optional string payload stored for the key.
+        is_secret: Flags whether the value should be hidden in administrative UIs.
+        created_at: UTC timestamp when the row was created.
+        updated_at: UTC timestamp automatically refreshed on modification.
+    """
+
+    __tablename__ = APP_SETTINGS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String(255), unique=True, nullable=False)
+    value = db.Column(db.Text, nullable=True)
+    is_secret = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class PasswordResetToken(db.Model):
+    """One-time token used to reset a user's password.
+
+    Associated with a single :class:`User`. The ``token`` column stores the
+    SHA-256 digest generated by :func:`services.auth_utils.hash_reset_token` so
+    leaked database rows do not expose usable reset links.
+    """
+
+    __tablename__ = PASSWORD_RESET_TOKENS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"), nullable=False)
+    token = db.Column(
+        db.String(128), unique=True, nullable=False
+    )  # hashed token value (SHA-256 hex digest)
+    expires_at = db.Column(db.DateTime, nullable=False)  # UTC expiration timestamp
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    used = db.Column(db.Boolean, default=False)
+    user = db.relationship("User")
+
+
+class Accessorial(db.Model):
+    """Optional surcharge that can be applied to a :class:`Quote`."""
+
+    __tablename__ = ACCESSORIALS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), unique=True, nullable=False)
+    amount = db.Column(db.Float, nullable=True)  # fixed dollar amount for the charge
+    is_percentage = db.Column(
+        db.Boolean, nullable=False, default=False
+    )  # True if ``amount`` is a percentage of base
+
+
+class HotshotRate(db.Model):
+    """Rate table entries for expedited (hotshot) shipments.
+
+    ``weight_break`` may be ``None`` when a rate does not specify a break
+    point. The ``per_mile`` column is stored but only used for special
+    zone ``"X"`` calculations; standard zones rely solely on ``per_lb`` and
+    ``min_charge``. See
+    :func:`scripts.import_hotshot_rates.load_hotshot_rates` for how raw
+    spreadsheet values are normalized.
+    """
+
+    __tablename__ = HOTSHOT_RATES_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    miles = db.Column(db.Integer, nullable=False)  # distance tier
+    zone = db.Column(db.String(5), nullable=False)
+    per_lb = db.Column(db.Float, nullable=False)
+    per_mile = db.Column(db.Float, nullable=True)  # optional per-mile rate
+    min_charge = db.Column(db.Float, nullable=False)
+    weight_break = db.Column(
+        db.Float, nullable=True
+    )  # optional weight threshold for base rate
+    fuel_pct = db.Column(db.Float, nullable=False)  # fuel surcharge percentage
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class BeyondRate(db.Model):
+    """Flat beyond charges applied to shipments outside standard zones."""
+
+    __tablename__ = BEYOND_RATES_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    zone = db.Column(db.String(5), nullable=False)
+    rate = db.Column(db.Float, nullable=False)
+    up_to_miles = db.Column(db.Float, nullable=False)
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class AirCostZone(db.Model):
+    """Rate information for air shipments by zone."""
+
+    __tablename__ = AIR_COST_ZONES_TABLE
+
+    __table_args__ = (
+        UniqueConstraint("rate_set", "zone", name="uq_air_cost_zones_rate_set_zone"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    zone = db.Column(db.String(5), nullable=False)
+    min_charge = db.Column(db.Float, nullable=False)
+    per_lb = db.Column(db.Float, nullable=False)
+    weight_break = db.Column(db.Float, nullable=False)
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class ZipZone(db.Model):
+    """Maps ZIP codes to destination zones."""
+
+    __tablename__ = ZIP_ZONES_TABLE
+
+    __table_args__ = (
+        UniqueConstraint("rate_set", "zipcode", name="uq_zip_zones_rate_set_zipcode"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    zipcode = db.Column(db.String(10), nullable=False)
+    dest_zone = db.Column(db.Integer, nullable=False)
+    beyond = db.Column(db.String(20))  # indicator for beyond-area surcharges
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class CostZone(db.Model):
+    """Lookup for cost zones based on origin/destination pairs."""
+
+    __tablename__ = COST_ZONES_TABLE
+
+    __table_args__ = (
+        UniqueConstraint("rate_set", "concat", name="uq_cost_zones_rate_set_concat"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    concat = db.Column(db.String(5), nullable=False)  # concatenated origin/dest key
+    cost_zone = db.Column(db.String(5), nullable=False)  # resulting cost zone code
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class RateUpload(db.Model):
+    """Audit log for uploaded rate CSV files."""
+
+    __tablename__ = RATE_UPLOADS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    table_name = db.Column(db.String(50), nullable=False)
+    filename = db.Column(db.String(255), nullable=False)
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
