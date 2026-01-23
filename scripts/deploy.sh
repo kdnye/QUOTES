@@ -210,11 +210,20 @@ upsert_secret "${POSTGRES_PASSWORD_SECRET}" "${POSTGRES_PASSWORD}"
 upsert_secret "${SECRET_KEY_SECRET}" "${SECRET_KEY}"
 upsert_secret "${GOOGLE_MAPS_API_KEY_SECRET}" "${GOOGLE_MAPS_API_KEY}"
 
+# Default to requiring authentication unless explicitly enabled for safety.
+auth_flag="--no-allow-unauthenticated"
+auth_response="$(prompt_with_default "Allow unauthenticated requests? (y/yes to allow)" "no")"
+case "${auth_response,,}" in
+    y|yes)
+        auth_flag="--allow-unauthenticated"
+        ;;
+esac
+
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --platform=managed \
-    --allow-unauthenticated \
+    "${auth_flag}" \
     --image="${IMAGE_URI}" \
     --set-env-vars="POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs" \
     --update-secrets="POSTGRES_PASSWORD=${POSTGRES_PASSWORD_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:latest"
