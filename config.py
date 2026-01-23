@@ -10,6 +10,8 @@ Key settings exposed by :class:`Config`:
   development and test environments so each deployment receives a unique value.
 * ``SQLALCHEMY_DATABASE_URI`` and ``SQLALCHEMY_ENGINE_OPTIONS``: Provide the
   SQLAlchemy connection string and optional connection pooling behaviour.
+* ``DB_POOL_RECYCLE`` and ``DB_POOL_MAX_OVERFLOW``: Tune SQLAlchemy connection
+  recycling to avoid Cloud Run idle timeouts and control burst capacity.
 * ``GOOGLE_MAPS_API_KEY``: Supplies credentials for distance calculations and
   address lookups.
 * ``CACHE_TYPE`` and ``CACHE_REDIS_URL``: Configure the caching backend.
@@ -152,6 +154,33 @@ def _get_int_from_env(var_name: str, default: int) -> int:
         return default
 
 
+def _get_optional_int_from_env(var_name: str) -> Optional[int]:
+    """Return an optional integer from the environment.
+
+    Args:
+        var_name: Environment variable name to read.
+
+    Returns:
+        Optional[int]: Parsed integer when the environment value is present and
+        valid, otherwise ``None``.
+
+    External Dependencies:
+        Calls :func:`os.getenv` to read the environment variable value. Logs
+        warnings via :func:`logging.getLogger` when parsing fails.
+    """
+
+    raw_value = os.getenv(var_name)
+    if raw_value is None or not raw_value.strip():
+        return None
+    try:
+        return int(raw_value)
+    except ValueError:
+        logging.getLogger("quote_tool.config").warning(
+            "Invalid %s value %r; ignoring override.", var_name, raw_value
+        )
+        return None
+
+
 def _parse_postgres_options(raw_options: str) -> Iterable[Tuple[str, str]]:
     """Return key/value pairs parsed from ``POSTGRES_OPTIONS``.
 
@@ -169,6 +198,35 @@ def _parse_postgres_options(raw_options: str) -> Iterable[Tuple[str, str]]:
     """
 
     return parse_qsl(raw_options, keep_blank_values=True)
+
+
+def _build_sqlalchemy_engine_options(
+    *, pool_size: Optional[int], pool_recycle: int, max_overflow: int
+) -> dict[str, int | bool]:
+    """Return SQLAlchemy engine options for connection pooling.
+
+    Args:
+        pool_size: Optional base pool size from ``DB_POOL_SIZE``. When ``None``,
+            SQLAlchemy's default pool size is used.
+        pool_recycle: Maximum connection age in seconds from ``DB_POOL_RECYCLE``.
+            Recycling connections before Cloud Run's idle timeout helps avoid
+            server-side disconnects on reused connections.
+        max_overflow: Extra connections beyond ``pool_size`` from
+            ``DB_POOL_MAX_OVERFLOW`` to handle short traffic bursts.
+
+    Returns:
+        dict[str, int | bool]: SQLAlchemy engine options to pass into
+        :func:`sqlalchemy.create_engine`.
+    """
+
+    options: dict[str, int | bool] = {
+        "pool_pre_ping": True,
+        "pool_recycle": pool_recycle,
+        "max_overflow": max_overflow,
+    }
+    if pool_size is not None:
+        options["pool_size"] = pool_size
+    return options
 
 
 def _is_hostname_resolvable(hostname: str) -> bool:
@@ -573,10 +631,14 @@ class Config:
         "y",
     }
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
-    DB_POOL_SIZE = os.getenv("DB_POOL_SIZE")
-    SQLALCHEMY_ENGINE_OPTIONS = {"pool_pre_ping": True}
-    if DB_POOL_SIZE:
-        SQLALCHEMY_ENGINE_OPTIONS["pool_size"] = int(DB_POOL_SIZE)
+    DB_POOL_SIZE = _get_optional_int_from_env("DB_POOL_SIZE")
+    DB_POOL_RECYCLE = _get_int_from_env("DB_POOL_RECYCLE", 1800)
+    DB_POOL_MAX_OVERFLOW = _get_int_from_env("DB_POOL_MAX_OVERFLOW", 5)
+    SQLALCHEMY_ENGINE_OPTIONS = _build_sqlalchemy_engine_options(
+        pool_size=DB_POOL_SIZE,
+        pool_recycle=DB_POOL_RECYCLE,
+        max_overflow=DB_POOL_MAX_OVERFLOW,
+    )
     CACHE_TYPE = _resolve_cache_type()
     CACHE_REDIS_URL = _resolve_cache_redis_url()
     # Mail/reset settings (optional):
