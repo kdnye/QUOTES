@@ -2,10 +2,12 @@ from __future__ import annotations
 
 """Utility helpers for outbound email policies and rate limiting."""
 
+import random
 import smtplib
-from email.message import EmailMessage
+import time
 from datetime import datetime, timedelta
-from typing import Optional
+from email.message import EmailMessage
+from typing import Optional, Type
 
 from flask import current_app
 
@@ -216,11 +218,19 @@ def send_email(
         ValueError: If ``MAIL_DEFAULT_SENDER`` is configured for a domain
             outside ``MAIL_ALLOWED_SENDER_DOMAIN``.
         smtplib.SMTPException: If the underlying SMTP call fails.
+        smtplib.SMTPServerDisconnected: When a transient SMTP disconnect
+            persists after retries.
+        smtplib.SMTPResponseException: When a transient SMTP response error
+            persists after retries.
+        smtplib.SMTPConnectError: When a transient SMTP connection error
+            persists after retries.
 
     External dependencies:
         * Applies :func:`services.mail.enforce_mail_rate_limit` and
           :func:`services.mail.log_email_dispatch` around SMTP activity.
         * Reads runtime overrides with :func:`services.settings.load_mail_settings`.
+        * Retries transient SMTP failures with backoff using
+          :func:`time.sleep` and jitter from :func:`random.uniform`.
     """
 
     msg = EmailMessage()
@@ -281,10 +291,93 @@ def send_email(
         smtp_cls = smtplib.SMTP
         default_port = 587 if use_tls else 25
 
-    with smtp_cls(server, port or default_port) as smtp:
-        if use_tls and not use_ssl:
-            smtp.starttls()
-        if username and password:
-            smtp.login(username, password)
-        smtp.send_message(msg)
+    def _deliver_message(
+        smtp_type: Type[smtplib.SMTP],
+        host: str,
+        host_port: Optional[int],
+        fallback_port: int,
+        enable_tls: bool,
+        enable_ssl: bool,
+        smtp_user: Optional[str],
+        smtp_password: Optional[str],
+    ) -> None:
+        """Connect and send the email over SMTP.
+
+        Args:
+            smtp_type: SMTP class to instantiate (``smtplib.SMTP`` or
+                ``smtplib.SMTP_SSL``).
+            host: Mail server hostname.
+            host_port: Explicit server port, if configured.
+            fallback_port: Port to use when ``host_port`` is ``None``.
+            enable_tls: Whether to start TLS after connecting.
+            enable_ssl: Whether the connection is already wrapped in SSL.
+            smtp_user: Optional username to authenticate with the server.
+            smtp_password: Optional password to authenticate with the server.
+
+        Returns:
+            ``None`` after the message is sent successfully.
+
+        External dependencies:
+            * Uses :class:`smtplib.SMTP` or :class:`smtplib.SMTP_SSL` to
+              connect to the mail server.
+        """
+
+        with smtp_type(host, host_port or fallback_port) as smtp:
+            if enable_tls and not enable_ssl:
+                smtp.starttls()
+            if smtp_user and smtp_password:
+                smtp.login(smtp_user, smtp_password)
+            smtp.send_message(msg)
+
+    def _retry_delay_seconds(attempt: int, base_delays: tuple[float, ...]) -> float:
+        """Return a jittered delay for a retry attempt.
+
+        Args:
+            attempt: Zero-based retry attempt index.
+            base_delays: Ordered sequence of base delay durations in seconds.
+
+        Returns:
+            Delay in seconds that includes a small random jitter.
+
+        External dependencies:
+            * Uses :func:`random.uniform` from the standard library.
+        """
+
+        base_delay = base_delays[min(attempt, len(base_delays) - 1)]
+        jitter = random.uniform(0, base_delay * 0.1)
+        return base_delay + jitter
+
+    retry_delays = (0.5, 1.0, 2.0)
+    transient_errors = (
+        smtplib.SMTPServerDisconnected,
+        smtplib.SMTPResponseException,
+        smtplib.SMTPConnectError,
+    )
+    max_attempts = len(retry_delays) + 1
+
+    for attempt in range(max_attempts):
+        try:
+            _deliver_message(
+                smtp_cls,
+                server,
+                port,
+                default_port,
+                use_tls,
+                use_ssl,
+                username,
+                password,
+            )
+            break
+        except transient_errors as exc:
+            if attempt >= max_attempts - 1:
+                raise
+            delay = _retry_delay_seconds(attempt, retry_delays)
+            current_app.logger.warning(
+                "Transient SMTP failure (%s). Retrying in %.2fs (attempt %s/%s).",
+                exc.__class__.__name__,
+                delay,
+                attempt + 1,
+                max_attempts,
+            )
+            time.sleep(delay)
     log_email_dispatch(feature, user, to)
