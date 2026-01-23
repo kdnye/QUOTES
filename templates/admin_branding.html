@@ -4,15 +4,23 @@
   <h1>Company logos by rate set</h1>
 
   <div class="card mb-3 p-3">
-    <form method="POST" enctype="multipart/form-data">
+    <form method="POST">
       {{ form.csrf_token }}
       <div class="mb-3">
-        {{ form.rate_set.label }} {{ form.rate_set(class="form-select") }}
+        {{ form.rate_set.label(class="form-label") }}
+        {{ form.rate_set(class="form-select") }}
+        {% if form.rate_set.errors %}
+          <div class="text-danger small mt-1">{{ form.rate_set.errors|join(', ') }}</div>
+        {% endif %}
       </div>
       <div class="mb-3">
-        {{ form.file.label }} {{ form.file(class="form-control") }}
+        {{ form.gcs_location.label(class="form-label") }}
+        {{ form.gcs_location(class="form-control", placeholder="gs://bucket/path/") }}
+        {% if form.gcs_location.errors %}
+          <div class="text-danger small mt-1">{{ form.gcs_location.errors|join(', ') }}</div>
+        {% endif %}
       </div>
-      <button class="btn btn-primary">Upload</button>
+      <button class="btn btn-primary">Save location</button>
     </form>
   </div>
 
