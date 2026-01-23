@@ -28,7 +28,9 @@ from app.models import (
 )
 
 
-engine = create_engine(Config.SQLALCHEMY_DATABASE_URI)
+engine = create_engine(
+    Config.SQLALCHEMY_DATABASE_URI, **Config.SQLALCHEMY_ENGINE_OPTIONS
+)
 # Use scoped_session to provide thread-local sessions that are removed
 # after each request context. Sessions should be acquired with ``Session()``
 # and cleaned up via ``Session.remove()``.
