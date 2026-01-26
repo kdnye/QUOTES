@@ -8,6 +8,8 @@ Key settings exposed by :class:`Config`:
 * ``SECRET_KEY``: Secures Flask sessions and form submissions. Generated at
   startup when the ``SECRET_KEY`` environment variable is missing in
   development and test environments so each deployment receives a unique value.
+* ``SECRET_KEY_IS_TEMPORARY``: Indicates when the ``SECRET_KEY`` is generated
+  at startup instead of configured via environment variables.
 * ``SQLALCHEMY_DATABASE_URI`` and ``SQLALCHEMY_ENGINE_OPTIONS``: Provide the
   SQLAlchemy connection string and optional connection pooling behaviour.
 * ``DB_POOL_RECYCLE`` and ``DB_POOL_MAX_OVERFLOW``: Tune SQLAlchemy connection
@@ -21,7 +23,8 @@ Key settings exposed by :class:`Config`:
   rate limiting enforced by :mod:`flask_limiter`.
 * ``API_AUTH_TOKEN`` and ``API_QUOTE_RATE_LIMIT``: Configure authentication
   and rate limiting for the JSON API endpoints.
-* ``WTF_CSRF_ENABLED``: Toggles CSRF protection across forms.
+* ``WTF_CSRF_ENABLED``: Toggles CSRF protection across forms based on whether
+  a temporary secret key is in use.
 * ``BRANDING_STORAGE``, ``GCS_BUCKET``, and ``GCS_PREFIX``: Configure branding
   logo storage for local or Google Cloud Storage backends.
 
@@ -88,11 +91,12 @@ def _is_production_environment() -> bool:
     return normalized in {"production", "prod", "live"}
 
 
-def _resolve_secret_key() -> str:
+def _resolve_secret_key() -> Tuple[str, bool]:
     """Return a cryptographically strong secret key for Flask sessions.
 
     Returns:
-        str: Configured ``SECRET_KEY`` value or a generated token for
+        Tuple[str, bool]: Configured ``SECRET_KEY`` value plus a flag that is
+        ``True`` when the key is temporary. A generated token is returned for
         development/test environments. In production, missing keys are recorded
         as startup errors and a temporary key is generated so the app can run
         in maintenance mode.
@@ -105,7 +109,7 @@ def _resolve_secret_key() -> str:
 
     configured = os.getenv("SECRET_KEY")
     if configured:
-        return configured
+        return configured, False
 
     if _is_production_environment():
         _record_startup_error(
@@ -117,13 +121,20 @@ def _resolve_secret_key() -> str:
             "SECRET_KEY is missing in production; generated a temporary key "
             "so the app can start in maintenance mode."
         )
-        return generated
+        return generated, True
 
     generated = token_urlsafe(32)
     logging.getLogger("quote_tool.config").warning(
         "SECRET_KEY environment variable is not set; generated a one-time key."
     )
-    return generated
+    return generated, True
+
+
+_SECRET_KEY, _SECRET_KEY_IS_TEMPORARY = _resolve_secret_key()
+if _SECRET_KEY_IS_TEMPORARY:
+    logging.getLogger("quote_tool.config").info(
+        "SECRET_KEY_IS_TEMPORARY is True; a generated key is in use."
+    )
 
 
 def _get_int_from_env(var_name: str, default: int) -> int:
@@ -590,7 +601,8 @@ def _resolve_branding_storage() -> str:
 
 
 class Config:
-    SECRET_KEY = _resolve_secret_key()
+    SECRET_KEY = _SECRET_KEY
+    SECRET_KEY_IS_TEMPORARY = _SECRET_KEY_IS_TEMPORARY
     _sanitized_database_url = _sanitize_database_url(os.getenv("DATABASE_URL"))
     _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
     _postgres_uri = build_postgres_database_uri_from_env()
@@ -683,7 +695,7 @@ class Config:
     MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY = int(
         os.getenv("MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY", 25)
     )
-    WTF_CSRF_ENABLED = True
+    WTF_CSRF_ENABLED = not SECRET_KEY_IS_TEMPORARY
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day;50 per hour")
     RATELIMIT_STORAGE_URI = _resolve_ratelimit_storage_uri()
     RATELIMIT_HEADERS_ENABLED = os.getenv(
