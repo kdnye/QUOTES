@@ -9,6 +9,7 @@ folium>=0.16
 geopy>=2.4
 google-cloud-storage==2.17.0
 google-cloud-secret-manager==2.24.0
+google-cloud-run==0.10.13
 gunicorn==22.0.0
 hypercorn>=0.15.0
 h2>=4.0.0
