@@ -747,21 +747,22 @@ def _resolve_oidc_allowed_domain() -> str:
 
 
 def _resolve_branding_storage() -> str:
-    """Return the branding storage backend, defaulting to GCS on Cloud Run.
+    """Return the branding storage backend based on environment defaults.
 
     Returns:
-        str: Normalized branding storage backend identifier.
+        str: Normalized branding storage backend identifier. Defaults to
+        ``"gcs"`` on Cloud Run when ``GCS_BUCKET`` is set, otherwise ``"local"``.
 
     External Dependencies:
-        Calls :func:`os.getenv` to read ``BRANDING_STORAGE`` and Cloud Run
-        environment markers.
+        Calls :func:`os.getenv` to read ``BRANDING_STORAGE``, ``GCS_BUCKET``, and
+        Cloud Run environment markers via :func:`_is_cloud_run_environment`.
     """
 
     configured = os.getenv("BRANDING_STORAGE")
     if configured:
         return configured.strip().lower()
 
-    if _is_cloud_run_environment():
+    if _is_cloud_run_environment() and (os.getenv("GCS_BUCKET") or "").strip():
         return "gcs"
 
     return "local"
@@ -900,19 +901,18 @@ class Config:
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
 
-    if _cloud_run:
-        if BRANDING_STORAGE not in {
+    if (
+        BRANDING_STORAGE
+        in {
             "gcs",
             "google",
             "google_cloud_storage",
             "googlecloudstorage",
-        }:
-            _record_startup_error(
-                "Cloud Run requires BRANDING_STORAGE=gcs for branding assets."
-            )
-        if not (GCS_BUCKET or "").strip():
-            _record_startup_error(
-                "GCS_BUCKET must be set for branding storage on Cloud Run."
-            )
+        }
+        and not (GCS_BUCKET or "").strip()
+    ):
+        _record_startup_error(
+            "GCS_BUCKET must be set when BRANDING_STORAGE is configured for GCS."
+        )
 
     CONFIG_ERRORS = list(_CONFIG_ERRORS)
