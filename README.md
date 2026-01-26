@@ -260,6 +260,7 @@ variables:
 | Variable | Purpose | Default |
 | --- | --- | --- |
 | `BRANDING_STORAGE` | Branding backend (`local` or `gcs`) | `local` (defaults to `gcs` on Cloud Run) |
+| `FSI_LOGO_URL` | Optional override URL for the header FSI logo | (empty) |
 | `GCS_BUCKET` | Target bucket for GCS branding logos | (empty) |
 | `GCS_PREFIX` | Optional object prefix for branding logos | (empty) |
 
@@ -269,6 +270,10 @@ workload identity or service account has `roles/storage.objectAdmin` or at
 minimum
 `storage.objects.create` and `storage.objects.delete` (plus `get` if your
 bucket requires reads to resolve public URLs).
+
+Set `FSI_LOGO_URL` to a fully qualified HTTPS URL when you need to override the
+default header logo (for example, when hosting the logo outside of GCS or when
+branding deployments differently per environment).
 
 Admins can also configure per-rate-set logo locations by visiting **Admin >
 Branding** and entering a base GCS bucket location in the form

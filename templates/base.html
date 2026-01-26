@@ -16,7 +16,10 @@
     <nav class="navbar navbar-expand-lg navbar-light">
       <div class="container-fluid">
         <a class="navbar-brand" href="/">
-          <img src="{{ url_for('theme.static', filename='fsi-logo.png') }}" alt="Freight Services Inc. logo" />
+          <img
+            src="{{ fsi_logo_url or url_for('theme.static', filename='fsi-logo.png') }}"
+            alt="Freight Services Inc. logo"
+          />
           {% if company_logo_url %}
             <img src="{{ company_logo_url }}" alt="{{ current_user.company_name or current_user.email }} logo" class="company-logo ms-2" />
           {% endif %}

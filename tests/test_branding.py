@@ -238,3 +238,15 @@ def test_company_logo_context_blank_and_populated(app: Flask) -> None:
     assert populated_context["company_logo_url"] == (
         "https://storage.googleapis.com/bucket/path/default.png"
     )
+
+
+def test_fsi_logo_context_override(app: Flask) -> None:
+    """Ensure the header logo override is exposed when configured."""
+
+    override_url = "https://cdn.example.com/fsi-logo.png"
+    app.config["FSI_LOGO_URL"] = override_url
+
+    with app.test_request_context("/"):
+        context = _collect_template_context(app)
+
+    assert context["fsi_logo_url"] == override_url

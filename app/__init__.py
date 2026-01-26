@@ -620,4 +620,21 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             return {"company_logo_url": logo_url}
         return {}
 
+    @app.context_processor
+    def inject_fsi_logo_url() -> dict[str, str]:
+        """Expose an optional FSI header logo override to templates.
+
+        Returns:
+            Dictionary containing ``fsi_logo_url`` when
+            ``FSI_LOGO_URL`` is configured, otherwise an empty mapping.
+
+        External dependencies:
+            * Reads ``FSI_LOGO_URL`` from :attr:`flask.current_app.config`.
+        """
+
+        configured_url = current_app.config.get("FSI_LOGO_URL")
+        if configured_url and str(configured_url).strip():
+            return {"fsi_logo_url": configured_url}
+        return {}
+
     return app
