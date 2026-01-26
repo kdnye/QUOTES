@@ -69,6 +69,21 @@ entries named `${SERVICE_NAME}-db-password`, `${SERVICE_NAME}-secret-key`, and
 `${SERVICE_NAME}-maps-key` before it deploys the Cloud Run service, so ensure
 the operator has the required permissions to manage secrets.
 
+**CSRF behavior and production guidance:** When `SECRET_KEY` is missing, the
+application generates a temporary key and **disables CSRF protection** to avoid
+locking out legitimate users during initial setup. CSRF protection
+automatically re-enables on the next restart once a stable `SECRET_KEY` is
+present. Because disabling CSRF materially reduces protection against
+cross-site request forgery, set `SECRET_KEY` as early as possible in production
+and avoid running a live revision without it.
+
+For Cloud Run + Secret Manager rollouts, create or update the secret first,
+then deploy the service with `SECRET_KEY` bound via `--set-secrets`. If you must
+rotate `SECRET_KEY`, deploy the new secret to all revisions in a single rollout
+so that every instance receives a stable key on startup. Avoid serving traffic
+from revisions that booted without `SECRET_KEY`, and verify the secret binding
+before shifting traffic.
+
 ```dotenv
 # Core application settings
 # Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'
