@@ -32,10 +32,11 @@ All values default to development-friendly settings and can be overridden via
 environment variables so each deployment can customize behaviour without
 modifying code.
 
-The application refuses to start when neither ``DATABASE_URL`` nor
-``CLOUD_SQL_CONNECTION_NAME`` yield a usable PostgreSQL configuration. In that
-case, the module raises a :class:`RuntimeError` during initialization so
-deployments fail fast with a clear message.
+The application falls back to a local SQLite database when neither
+``DATABASE_URL`` nor ``CLOUD_SQL_CONNECTION_NAME`` yield a usable PostgreSQL
+configuration. This keeps the service in Setup Mode so administrators can
+finish configuration, while production environments still record a startup
+error if an external database is missing.
 """
 
 # config.py
@@ -648,9 +649,10 @@ class Config:
     elif _sanitized_database_url:
         SQLALCHEMY_DATABASE_URI = _sanitized_database_url
     else:
-        raise RuntimeError(
-            "Refusing to start: No valid Cloud SQL or PostgreSQL configuration "
-            "found."
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{DEFAULT_DB_PATH}"
+        logging.getLogger("quote_tool.config").warning(
+            "No database configuration found; falling back to local SQLite to "
+            "enable Setup Mode."
         )
     if _is_production_environment() and not _is_postgres_dsn(SQLALCHEMY_DATABASE_URI):
         _record_startup_error(

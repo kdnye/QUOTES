@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import logging
 import shutil
 import sys
 from pathlib import Path
@@ -8,6 +9,7 @@ from types import ModuleType
 from typing import Any
 
 import pytest
+from _pytest.logging import LogCaptureFixture
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
@@ -89,14 +91,21 @@ def test_config_import_does_not_create_instance_dir(monkeypatch: Any) -> None:
     assert instance_dir.exists() is False
 
 
-def test_config_requires_database_configuration(monkeypatch: Any) -> None:
-    """Assert config import fails without any database configuration.
+def test_config_falls_back_to_sqlite_when_database_missing(
+    monkeypatch: Any,
+    caplog: LogCaptureFixture,
+) -> None:
+    """Assert config import falls back to SQLite without DB configuration.
 
     Args:
         monkeypatch: Pytest fixture for safely patching environment variables.
+        caplog: Pytest fixture capturing log output for assertions.
 
     Returns:
-        None. Expects a ``RuntimeError`` when database settings are missing.
+        None. Asserts SQLite fallback and a warning log are emitted.
+
+    External Dependencies:
+        Reloads the :mod:`config` module via :func:`importlib.reload`.
     """
 
     for var in (
@@ -111,8 +120,18 @@ def test_config_requires_database_configuration(monkeypatch: Any) -> None:
     ):
         monkeypatch.delenv(var, raising=False)
 
-    with pytest.raises(RuntimeError, match="Refusing to start"):
-        importlib.reload(config)
+    with caplog.at_level(logging.WARNING, logger="quote_tool.config"):
+        reloaded = importlib.reload(config)
+
+    assert (
+        reloaded.Config.SQLALCHEMY_DATABASE_URI
+        == f"sqlite:///{reloaded.DEFAULT_DB_PATH}"
+    )
+    assert (
+        "No database configuration found; falling back to local SQLite to "
+        "enable Setup Mode."
+        in caplog.text
+    )
 
 
 def test_cloud_run_defaults_to_local_branding_storage_without_bucket(

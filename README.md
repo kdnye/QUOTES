@@ -118,9 +118,10 @@ non-containerized deployment paths described above.
 
 ### Cloud Run + Cloud SQL
 
-Cloud Run requires an external PostgreSQL database; the app starts in
-maintenance mode and reports a configuration error in production without a
-valid Postgres DSN. Configure Cloud SQL using one of these options:
+Cloud Run requires an external PostgreSQL database; when one is missing the
+app logs a configuration error and falls back to local SQLite so Setup Mode
+can run. Production deployments should still configure a valid Postgres DSN.
+Configure Cloud SQL using one of these options:
 
 - **TCP** – Provide `DATABASE_URL` with a PostgreSQL DSN (recommended) or set
   `POSTGRES_HOST`, `POSTGRES_PORT`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, and
