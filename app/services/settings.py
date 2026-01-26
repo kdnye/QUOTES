@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 import logging
-from typing import Any, Dict, Iterable, Mapping, Optional, Union
+from typing import Any, Dict, Iterable, Mapping, Optional, Set, Union
 
 from flask import Flask
 from sqlalchemy.exc import OperationalError, ProgrammingError
@@ -70,7 +70,7 @@ _TRUE_VALUES = {"true", "1", "yes", "y", "on"}
 _FALSE_VALUES = {"false", "0", "no", "n", "off"}
 _SETTINGS_CACHE: Dict[str, SettingRecord] = {}
 _BASELINE_CONFIG: Dict[str, Any] = {}
-_APPLIED_CONFIG_KEYS: set[str] = set()
+_APPLIED_CONFIG_KEYS: Set[str] = set()
 _MISSING = object()
 
 
@@ -186,7 +186,7 @@ def apply_settings(
         settings = get_settings_cache()
 
     applied: Dict[str, Optional[SettingValue]] = {}
-    new_keys: set[str] = set()
+    new_keys: Set[str] = set()
     for normalized_key, record in settings.items():
         config_key = normalized_key.upper()
         new_keys.add(config_key)

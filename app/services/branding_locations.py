@@ -2,14 +2,14 @@
 
 from __future__ import annotations
 
-from typing import List
+from typing import List, Optional
 
 from app.models import BrandLogoLocation, db
 from app.services.branding import resolve_brand_logo_url
 from app.services.rate_sets import normalize_rate_set
 
 
-def get_brand_logo_location(rate_set: str) -> BrandLogoLocation | None:
+def get_brand_logo_location(rate_set: str) -> Optional[BrandLogoLocation]:
     """Return the persisted logo location for ``rate_set`` when present.
 
     Args:
@@ -29,8 +29,8 @@ def get_brand_logo_location(rate_set: str) -> BrandLogoLocation | None:
 
 
 def build_brand_logo_object_location(
-    gcs_bucket_location: str | None, rate_set: str
-) -> str | None:
+    gcs_bucket_location: Optional[str], rate_set: str
+) -> Optional[str]:
     """Return the GCS object location for a rate set's logo.
 
     Args:
@@ -56,7 +56,9 @@ def build_brand_logo_object_location(
     return f"{cleaned_location}/{normalized_rate_set}.png"
 
 
-def build_brand_logo_url(gcs_bucket_location: str | None, rate_set: str) -> str | None:
+def build_brand_logo_url(
+    gcs_bucket_location: Optional[str], rate_set: str
+) -> Optional[str]:
     """Return a public URL for a rate set's logo asset.
 
     Args:

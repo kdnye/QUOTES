@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
@@ -41,7 +42,7 @@ Session = scoped_session(sessionmaker(bind=engine))
 Base = db.Model
 
 
-def ensure_database_schema(active_engine: Engine | None = None) -> None:
+def ensure_database_schema(active_engine: Optional[Engine] = None) -> None:
     """Provision required tables for the configured database backend.
 
     The helper inspects the SQLAlchemy engine to determine the active backend.

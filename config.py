@@ -36,14 +36,14 @@ import os
 import socket
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Iterable, Optional, Set, Tuple
+from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BASE_DIR / "instance" / "app.db"
 # Capture configuration errors so the application can start in a safe
 # maintenance mode instead of crashing during import time.
-_CONFIG_ERRORS: list[str] = []
+_CONFIG_ERRORS: List[str] = []
 
 
 def _record_startup_error(message: str) -> None:
@@ -202,7 +202,7 @@ def _parse_postgres_options(raw_options: str) -> Iterable[Tuple[str, str]]:
 
 def _build_sqlalchemy_engine_options(
     *, pool_size: Optional[int], pool_recycle: int, max_overflow: int
-) -> dict[str, int | bool]:
+) -> Dict[str, Union[int, bool]]:
     """Return SQLAlchemy engine options for connection pooling.
 
     Args:
@@ -215,11 +215,11 @@ def _build_sqlalchemy_engine_options(
             ``DB_POOL_MAX_OVERFLOW`` to handle short traffic bursts.
 
     Returns:
-        dict[str, int | bool]: SQLAlchemy engine options to pass into
+        Dict[str, Union[int, bool]]: SQLAlchemy engine options to pass into
         :func:`sqlalchemy.create_engine`.
     """
 
-    options: dict[str, int | bool] = {
+    options: Dict[str, Union[int, bool]] = {
         "pool_pre_ping": True,
         "pool_recycle": pool_recycle,
         "max_overflow": max_overflow,
@@ -255,7 +255,7 @@ def _is_hostname_resolvable(hostname: str) -> bool:
         return hostname not in {"postgres", "localhost"}
 
 
-def _sanitize_database_url(raw_url: str | None) -> str | None:
+def _sanitize_database_url(raw_url: Optional[str]) -> Optional[str]:
     """Return a safe database URL or ``None`` when the value should be ignored.
 
     The helper filters out PostgreSQL URLs that omit passwords to avoid the
@@ -390,7 +390,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
     user = os.getenv("POSTGRES_USER", "quote_tool")
     db_name = os.getenv("POSTGRES_DB", "quote_tool")
     options = os.getenv("POSTGRES_OPTIONS", "")
-    query_pairs: list[tuple[str, str]] = []
+    query_pairs: List[Tuple[str, str]] = []
 
     if options:
         query_pairs.extend(_parse_postgres_options(options))
@@ -518,14 +518,14 @@ def _resolve_mail_allowed_sender_domain(default_sender: str) -> str:
     return default_sender.split("@", 1)[1].strip().lower()
 
 
-def _resolve_oidc_scopes() -> tuple[str, ...]:
+def _resolve_oidc_scopes() -> Tuple[str, ...]:
     """Return OpenID Connect scopes requested during the authorization step."""
 
     raw_scopes = os.getenv("OIDC_SCOPES")
     if not raw_scopes:
         return ("openid", "email", "profile")
 
-    scopes: list[str] = []
+    scopes: List[str] = []
     for chunk in raw_scopes.split(","):
         for scope in chunk.split():
             candidate = scope.strip()
@@ -534,7 +534,7 @@ def _resolve_oidc_scopes() -> tuple[str, ...]:
     return tuple(scopes) if scopes else ("openid", "email", "profile")
 
 
-def _resolve_oidc_audience() -> tuple[str, ...]:
+def _resolve_oidc_audience() -> Tuple[str, ...]:
     """Return optional audiences validated on received ID tokens."""
 
     raw_audience = os.getenv("OIDC_AUDIENCE", "")
