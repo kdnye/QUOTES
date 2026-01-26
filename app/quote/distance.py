@@ -15,12 +15,13 @@ from urllib.parse import quote as urlquote
 
 import requests
 from flask import current_app, has_app_context
+from typing import Optional, Union
 
 
 # ---- Config helpers ---------------------------------------------------------
 
 
-def _get_api_key() -> str | None:
+def _get_api_key() -> Optional[str]:
     """Resolve Google Maps API key.
     Order of precedence:
       1) Flask app config: GOOGLE_MAPS_API_KEY or GOOGLE_API_KEY
@@ -37,7 +38,7 @@ def _get_api_key() -> str | None:
 # ---- Utilities --------------------------------------------------------------
 
 
-def _sanitize_zip(z: str | int | None) -> str | None:
+def _sanitize_zip(z: Optional[Union[str, int]]) -> Optional[str]:
     """Return a ``"ZIP,USA"`` string for 5-digit or ZIP+4 inputs.
 
     Google Directions expects a 5-digit postal code. The external quote forms

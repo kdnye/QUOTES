@@ -7,7 +7,7 @@ import smtplib
 import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from typing import Optional, Type
+from typing import Optional, Tuple, Type
 
 from flask import current_app
 
@@ -18,7 +18,7 @@ class MailRateLimitError(RuntimeError):
     """Raised when an outbound email exceeds configured rate limits."""
 
 
-def _normalize_feature(feature: str | None) -> str:
+def _normalize_feature(feature: Optional[str]) -> str:
     """Return a normalized feature label used for logging."""
 
     value = (feature or "general").strip().lower()
@@ -329,7 +329,7 @@ def send_email(
                 smtp.login(smtp_user, smtp_password)
             smtp.send_message(msg)
 
-    def _retry_delay_seconds(attempt: int, base_delays: tuple[float, ...]) -> float:
+    def _retry_delay_seconds(attempt: int, base_delays: Tuple[float, ...]) -> float:
         """Return a jittered delay for a retry attempt.
 
         Args:

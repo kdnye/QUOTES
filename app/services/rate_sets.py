@@ -7,18 +7,25 @@ calculations can target the appropriate set for the requesting user.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Iterable, List, Set
+from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
 from sqlalchemy.exc import OperationalError
 
-from app.database import Session, HotshotRate, AirCostZone, ZipZone, CostZone, BeyondRate
+from app.database import (
+    Session,
+    HotshotRate,
+    AirCostZone,
+    ZipZone,
+    CostZone,
+    BeyondRate,
+)
 
 DEFAULT_RATE_SET = "default"
 
 # Known customer-specific rate sets that should always be available for admins to
 # manage even before any rates are uploaded. The keys are normalized
 # ``rate_set`` identifiers that appear in CSV uploads and database rows.
-PRECONFIGURED_RATE_SETS: dict[str, str] = {
+PRECONFIGURED_RATE_SETS: Dict[str, str] = {
     "agr": "Anatomy Gifts Registry",
     "inin": "Innoved Institute",
     "mdcr": "MedCure",
@@ -29,7 +36,7 @@ PRECONFIGURED_RATE_SETS: dict[str, str] = {
 }
 
 
-def normalize_rate_set(raw_value: str | None) -> str:
+def normalize_rate_set(raw_value: Optional[str]) -> str:
     """Return a sanitized rate-set identifier.
 
     Args:

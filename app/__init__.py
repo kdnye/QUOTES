@@ -17,7 +17,7 @@ from datetime import datetime
 import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
-from typing import Union
+from typing import Dict, List, Optional, Tuple, Union
 from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
 import redis as redispy
@@ -50,7 +50,7 @@ DEFAULT_HEALTHCHECK_DB_TIMEOUT = 2.0
 PRODUCTION_ENV_VALUES = {"production", "prod", "live"}
 
 
-def _is_truthy(value: str | bool | None) -> bool:
+def _is_truthy(value: Optional[Union[str, bool]]) -> bool:
     """Return whether a string or boolean represents a truthy value.
 
     Args:
@@ -84,7 +84,7 @@ def _is_production_environment() -> bool:
 
 
 def _coerce_timeout_seconds(
-    value: str | float | int | None,
+    value: Optional[Union[str, float, int]],
     default: float = DEFAULT_HEALTHCHECK_DB_TIMEOUT,
 ) -> float:
     """Return a positive timeout value in seconds.
@@ -108,7 +108,7 @@ def _coerce_timeout_seconds(
     return parsed
 
 
-def _resolve_healthcheck_db_settings(app: Flask) -> tuple[bool, float]:
+def _resolve_healthcheck_db_settings(app: Flask) -> Tuple[bool, float]:
     """Return the database health check flag and timeout.
 
     Args:
@@ -163,7 +163,7 @@ def _check_database_connectivity(timeout_seconds: float) -> bool:
         return False
 
 
-def _should_run_startup_db_checks(app: Flask, config_errors: list[str]) -> bool:
+def _should_run_startup_db_checks(app: Flask, config_errors: List[str]) -> bool:
     """Return whether database migrations and inspection should run at startup.
 
     Args:
@@ -208,7 +208,7 @@ def load_user(user_id):
     return db.session.get(User, int(user_id))
 
 
-def build_map_html(origin_zip: str, destination_zip: str) -> str | None:
+def build_map_html(origin_zip: str, destination_zip: str) -> Optional[str]:
     """Return an embedded Google Maps iframe for the given ZIP codes.
 
     Returns ``None`` if the API key is missing or the ZIPs are invalid.
@@ -235,8 +235,8 @@ def build_map_html(origin_zip: str, destination_zip: str) -> str | None:
 
 
 def _resolve_company_logo_url(
-    gcs_bucket_location: str | None, rate_set: str
-) -> str | None:
+    gcs_bucket_location: Optional[str], rate_set: str
+) -> Optional[str]:
     """Return a public URL for a rate set's branding logo.
 
     Args:
@@ -255,7 +255,7 @@ def _resolve_company_logo_url(
     return build_brand_logo_url(gcs_bucket_location, rate_set)
 
 
-def _verify_app_setup(app: Flask) -> list[str]:
+def _verify_app_setup(app: Flask) -> List[str]:
     """Check for required database tables and templates.
 
     Args:
@@ -271,7 +271,7 @@ def _verify_app_setup(app: Flask) -> list[str]:
         * Uses :mod:`jinja2` to verify required templates are available.
         * Logs database inspection errors via :attr:`flask.Flask.logger`.
     """
-    errors: list[str] = []
+    errors: List[str] = []
     try:
         inspector = inspect(db.engine)
         existing_tables = set(inspector.get_table_names())
@@ -368,7 +368,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             "on",
         )
         run_db_checks = _should_run_startup_db_checks(app, config_errors)
-        setup_errors: list[str] = []
+        setup_errors: List[str] = []
         if run_db_checks:
             if migrate_enabled or db.engine.url.get_backend_name() == "sqlite":
                 try:
@@ -399,7 +399,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         app.logger.error("Application setup failed: %s", message)
 
         @app.before_request
-        def _setup_failed() -> tuple[str, int]:
+        def _setup_failed() -> Tuple[str, int]:
             return (
                 render_template("500.html", message="Application is misconfigured."),
                 500,
@@ -422,7 +422,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         )
 
     @app.before_request
-    def _redirect_to_setup() -> ResponseReturnValue | None:
+    def _redirect_to_setup() -> Optional[ResponseReturnValue]:
         """Redirect to setup when no users exist in the database.
 
         Returns:
@@ -587,7 +587,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         return redirect(url_for("index"))
 
     @app.context_processor
-    def inject_company_logo() -> dict[str, str]:
+    def inject_company_logo() -> Dict[str, str]:
         """Expose ``company_logo_url`` for authenticated users.
 
         The processor resolves the caller's :attr:`~app.models.User.rate_set`

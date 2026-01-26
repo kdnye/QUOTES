@@ -34,7 +34,7 @@ class BrandingStorage(Protocol):
             str: Value to persist in ``app_settings`` for the brand logo.
         """
 
-    def delete_logo(self, rate_set: str, stored_value: str | None) -> None:
+    def delete_logo(self, rate_set: str, stored_value: Optional[str]) -> None:
         """Remove a branding logo from storage when present.
 
         Args:
@@ -47,7 +47,7 @@ class BrandingStorage(Protocol):
         """
 
 
-def _normalize_storage_backend(raw_value: str | None) -> str:
+def _normalize_storage_backend(raw_value: Optional[str]) -> str:
     """Normalize the branding storage backend setting.
 
     Args:
@@ -61,7 +61,7 @@ def _normalize_storage_backend(raw_value: str | None) -> str:
     return (raw_value or "local").strip().lower()
 
 
-def _normalize_gcs_prefix(prefix: str | None) -> str | None:
+def _normalize_gcs_prefix(prefix: Optional[str]) -> Optional[str]:
     """Return a normalized GCS object prefix or ``None`` when absent.
 
     Args:
@@ -108,7 +108,7 @@ class LocalBrandingStorage:
         file.save(str(save_path))
         return filename
 
-    def delete_logo(self, rate_set: str, stored_value: str | None) -> None:
+    def delete_logo(self, rate_set: str, stored_value: Optional[str]) -> None:
         """Remove a stored logo from local storage when present.
 
         Args:
@@ -145,8 +145,8 @@ class GCSBrandingStorage:
     """Store branding logos in Google Cloud Storage."""
 
     bucket_name: str
-    prefix: str | None = None
-    client: gcs_storage.Client | None = None
+    prefix: Optional[str] = None
+    client: Optional[gcs_storage.Client] = None
 
     def __post_init__(self) -> None:
         """Normalize the prefix and resolve a GCS client.
@@ -184,7 +184,7 @@ class GCSBrandingStorage:
         blob.upload_from_file(file.stream, content_type=content_type)
         return blob.public_url
 
-    def delete_logo(self, rate_set: str, stored_value: str | None) -> None:
+    def delete_logo(self, rate_set: str, stored_value: Optional[str]) -> None:
         """Delete an existing GCS logo object when possible.
 
         Args:
@@ -226,7 +226,7 @@ class GCSBrandingStorage:
             return f"{self.prefix}/{filename}"
         return filename
 
-    def _filename_from_value(self, stored_value: str) -> str | None:
+    def _filename_from_value(self, stored_value: str) -> Optional[str]:
         """Extract the filename from a stored URL or raw value."""
 
         cleaned = stored_value.strip()
@@ -283,7 +283,7 @@ def get_brand_logo_dir(app: Optional[Flask] = None) -> Path:
     return Path(target_app.instance_path) / LOGO_SUBDIR
 
 
-def resolve_brand_logo_url(raw_value: str | None) -> str | None:
+def resolve_brand_logo_url(raw_value: Optional[str]) -> Optional[str]:
     """Return a public URL for a stored company logo.
 
     Args:
@@ -309,7 +309,7 @@ def resolve_brand_logo_url(raw_value: str | None) -> str | None:
     return url_for("branding.logo_file", filename=filename)
 
 
-def _gcs_public_url_from_location(location: str) -> str | None:
+def _gcs_public_url_from_location(location: str) -> Optional[str]:
     """Convert a ``gs://`` location into a public HTTPS URL.
 
     Args:

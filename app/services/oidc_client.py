@@ -9,7 +9,7 @@ environment variables which keeps sensitive credentials out of source control.
 from __future__ import annotations
 
 import logging
-from typing import Any, Optional, Sequence
+from typing import Any, Dict, Optional, Sequence, Union
 
 from authlib.integrations.flask_client import OAuth
 from flask import Flask, current_app
@@ -18,7 +18,7 @@ from flask import Flask, current_app
 oauth: OAuth = OAuth()
 
 
-def _normalise_scope(scopes: Sequence[str] | str) -> str:
+def _normalise_scope(scopes: Union[Sequence[str], str]) -> str:
     """Return a space-delimited scope string understood by Authlib."""
 
     if isinstance(scopes, str):
@@ -26,7 +26,7 @@ def _normalise_scope(scopes: Sequence[str] | str) -> str:
     return " ".join(scope.strip() for scope in scopes if scope.strip())
 
 
-def _configuration_complete(config: dict[str, Any]) -> bool:
+def _configuration_complete(config: Dict[str, Any]) -> bool:
     """Return ``True`` when the minimum OIDC settings are present."""
 
     required_keys = (
@@ -63,7 +63,7 @@ def init_oidc_oauth(app: Flask) -> None:
     issuer = str(app.config["OIDC_ISSUER"]).rstrip("/")
     metadata_url = f"{issuer}/.well-known/openid-configuration"
     scope_value = _normalise_scope(app.config.get("OIDC_SCOPES", ()))
-    client_kwargs: dict[str, Any] = {
+    client_kwargs: Dict[str, Any] = {
         "scope": scope_value or "openid",
         "code_challenge_method": "S256",
     }
