@@ -20,9 +20,22 @@ from sqlalchemy.exc import OperationalError, ProgrammingError, SQLAlchemyError
 from app.database import ensure_database_schema
 from app.models import User, db
 from app.services.auth_utils import is_valid_email, is_valid_password
+from app.services.gcp_setup import update_cloud_run_service
 from app.services.settings import reload_overrides, set_setting
 
 setup_bp = Blueprint("setup", __name__)
+
+_INFRA_SETUP_KEYS = {
+    "DATABASE_URL",
+    "SECRET_KEY",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_USER",
+    "POSTGRES_DB",
+    "POSTGRES_HOST",
+    "POSTGRES_PORT",
+    "POSTGRES_OPTIONS",
+    "CLOUD_SQL_CONNECTION_NAME",
+}
 
 
 def _normalize_config_value(value: Any) -> str:
@@ -291,6 +304,8 @@ def _persist_setup_overrides(
         error messages to display in the UI.
 
     External dependencies:
+        * Calls :func:`app.services.gcp_setup.update_cloud_run_service` to update
+          infra settings on Cloud Run.
         * Calls :func:`app.services.settings.set_setting` to save overrides.
         * Calls :func:`app.services.settings.reload_overrides` to refresh
           ``current_app.config``.
@@ -298,15 +313,35 @@ def _persist_setup_overrides(
 
     updated_keys: list[str] = []
     errors: list[str] = []
-    fields = _get_setup_override_fields()
-    for field in fields:
-        raw_value = (form_data.get(field["name"]) or "").strip()
-        if not raw_value:
-            continue
+    app_fields, infra_fields = _split_setup_overrides(form_data)
+    use_cloud_run = bool(os.environ.get("K_SERVICE"))
+
+    if use_cloud_run and infra_fields:
+        infra_values = {
+            field["config_key"]: field["value"] for field in infra_fields
+        }
+        try:
+            update_cloud_run_service(infra_values)
+        except (RuntimeError, ValueError, ImportError) as exc:
+            current_app.logger.exception(
+                "Cloud Run update failed for %s: %s",
+                ", ".join(sorted(infra_values.keys())),
+                exc,
+            )
+            errors.append(
+                "Unable to update Cloud Run settings. Check the logs for details."
+            )
+        else:
+            updated_keys.extend(sorted(infra_values.keys()))
+    elif infra_fields:
+        app_fields.extend(infra_fields)
+
+    db_updates_made = False
+    for field in app_fields:
         try:
             set_setting(
                 field["config_key"],
-                raw_value,
+                field["value"],
                 is_secret=bool(field["is_secret"]),
             )
         except (OperationalError, ProgrammingError) as exc:
@@ -318,19 +353,58 @@ def _persist_setup_overrides(
             )
         else:
             updated_keys.append(field["config_key"])
+            db_updates_made = True
 
-    if updated_keys:
+    if db_updates_made:
         try:
             db.session.commit()
         except SQLAlchemyError as exc:
             db.session.rollback()
             current_app.logger.exception("Setup override commit failed: %s", exc)
             errors.append("Unable to save settings. Check the database connection.")
-            updated_keys = []
+            updated_keys = [key for key in updated_keys if key in _INFRA_SETUP_KEYS]
         else:
             reload_overrides(current_app)
 
     return updated_keys, errors
+
+
+def _split_setup_overrides(
+    form_data: Mapping[str, str],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Split setup overrides into app-only and infrastructure settings.
+
+    Args:
+        form_data: Submitted form payload containing configuration values.
+
+    Returns:
+        A tuple containing a list of app-only override field dictionaries and a
+        list of infrastructure override field dictionaries. Each dictionary
+        includes the ``config_key``, ``label``, ``is_secret`` flag, and cleaned
+        ``value``.
+
+    External dependencies:
+        * Calls :func:`_get_setup_override_fields` to load form definitions.
+    """
+
+    app_fields: list[dict[str, Any]] = []
+    infra_fields: list[dict[str, Any]] = []
+    for field in _get_setup_override_fields():
+        raw_value = (form_data.get(field["name"]) or "").strip()
+        if not raw_value:
+            continue
+        entry = {
+            "config_key": field["config_key"],
+            "label": field["label"],
+            "is_secret": field["is_secret"],
+            "value": raw_value,
+        }
+        if field["config_key"] in _INFRA_SETUP_KEYS:
+            infra_fields.append(entry)
+        else:
+            app_fields.append(entry)
+
+    return app_fields, infra_fields
 
 
 @setup_bp.route("/setup", methods=["GET", "POST"])

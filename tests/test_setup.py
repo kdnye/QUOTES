@@ -161,3 +161,54 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         assert app.config["POSTGRES_PORT"] == 5432
         assert app.config["POSTGRES_OPTIONS"] == "sslmode=require"
         assert app.config["CLOUD_SQL_CONNECTION_NAME"] == "project:region:instance"
+
+
+def test_setup_updates_cloud_run_for_infra_overrides(
+    app: Flask, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Send infra overrides to Cloud Run when running on Cloud Run."""
+
+    recorded: dict[str, dict[str, str]] = {}
+
+    def fake_update_cloud_run_service(env_vars_map: dict[str, str]) -> None:
+        """Capture infra updates for assertions."""
+
+        recorded["env_vars_map"] = env_vars_map
+
+    monkeypatch.setenv("K_SERVICE", "quote-service")
+    monkeypatch.setattr(
+        "app.setup.update_cloud_run_service",
+        fake_update_cloud_run_service,
+    )
+
+    response = client.post(
+        "/setup",
+        data={
+            "google_maps_api_key": "maps-key",
+            "gcs_bucket": "branding-bucket",
+            "database_url": "postgresql+psycopg2://user:pass@db/quote_tool",
+            "postgres_user": "db-user",
+            "postgres_password": "db-pass",
+            "postgres_db": "db-name",
+        },
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    assert recorded["env_vars_map"] == {
+        "DATABASE_URL": "postgresql+psycopg2://user:pass@db/quote_tool",
+        "POSTGRES_USER": "db-user",
+        "POSTGRES_PASSWORD": "db-pass",
+        "POSTGRES_DB": "db-name",
+    }
+
+    with app.app_context():
+        from app.models import AppSetting
+
+        settings = {setting.key: setting for setting in AppSetting.query.all()}
+        assert settings["google_maps_api_key"].value == "maps-key"
+        assert settings["gcs_bucket"].value == "branding-bucket"
+        assert "database_url" not in settings
+        assert "postgres_user" not in settings
+        assert "postgres_password" not in settings
+        assert "postgres_db" not in settings
