@@ -78,6 +78,16 @@ Services portal.
    settings table, initialize the database schema, and create the initial super
    admin account. Database connection changes take effect after restarting the
    app. The setup flow locks down the rest of the app until a user exists.
+   - The setup checklist can also persist infrastructure values by updating
+     the Cloud Run service and Secret Manager. When you use that path, the
+     runtime service account must have `roles/secretmanager.admin`,
+     `roles/run.admin`, and `roles/iam.serviceAccountUser` so the setup flow can
+     write secrets and update the service configuration.
+   - ⚠️ **Security warning – self-mutation risk:** granting those roles to the
+     running service means it can modify its own deployment and secrets. For
+     production, use the safer CLI workflow in `scripts/deploy.sh` and disable
+     the setup UI (for example, by blocking `/setup` at your ingress or removing
+     the setup blueprint in a production-only build).
 
 ### Database migrations
 
