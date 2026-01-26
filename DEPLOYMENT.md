@@ -177,6 +177,22 @@ required to read secrets and reach dependencies:
 - `roles/storage.objectAdmin` (or scoped `storage.objects.create/delete/get`)
   if branding uploads are stored in GCS.
 
+If you use the `/setup` checklist to persist configuration in the new setup
+flow, the runtime service account also needs to manage secrets and mutate the
+service during setup. Grant the following roles to the runtime service account
+so the setup UI can save secrets, update Cloud Run configuration, and bind the
+service account during the update:
+
+- `roles/secretmanager.admin`
+- `roles/run.admin`
+- `roles/iam.serviceAccountUser`
+
+> ⚠️ **Security warning – self-mutation risk:** granting these roles to the
+> running service allows it to modify its own deployment and secrets. Prefer
+> the safer CLI-based setup with `scripts/deploy.sh`, and disable the setup UI
+> in production (for example, by blocking `/setup` at your ingress or removing
+> the setup blueprint in a production-only build).
+
 ### Variable reference
 
 | Variable | Required | Purpose |
