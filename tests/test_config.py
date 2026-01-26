@@ -113,3 +113,46 @@ def test_config_requires_database_configuration(monkeypatch: Any) -> None:
 
     with pytest.raises(RuntimeError, match="Refusing to start"):
         importlib.reload(config)
+
+
+def test_cloud_run_defaults_to_local_branding_storage_without_bucket(
+    monkeypatch: Any,
+) -> None:
+    """Ensure branding storage falls back to local without a Cloud Run bucket.
+
+    Args:
+        monkeypatch: Pytest fixture for safely patching environment variables.
+
+    Returns:
+        None. Asserts the branding storage backend falls back to ``local``.
+    """
+
+    monkeypatch.setenv("K_SERVICE", "quote-tool")
+    monkeypatch.delenv("BRANDING_STORAGE", raising=False)
+    monkeypatch.delenv("GCS_BUCKET", raising=False)
+    reloaded = _reload_config(monkeypatch)
+
+    assert reloaded.Config.BRANDING_STORAGE == "local"
+    assert reloaded.Config.CONFIG_ERRORS == []
+
+
+def test_explicit_gcs_branding_without_bucket_falls_back_to_local(
+    monkeypatch: Any,
+) -> None:
+    """Ensure explicit GCS branding storage falls back without a bucket.
+
+    Args:
+        monkeypatch: Pytest fixture for safely patching environment variables.
+
+    Returns:
+        None. Asserts explicit GCS branding storage becomes ``local`` when the
+        bucket is missing.
+    """
+
+    monkeypatch.setenv("K_SERVICE", "quote-tool")
+    monkeypatch.setenv("BRANDING_STORAGE", "gcs")
+    monkeypatch.delenv("GCS_BUCKET", raising=False)
+    reloaded = _reload_config(monkeypatch)
+
+    assert reloaded.Config.BRANDING_STORAGE == "local"
+    assert reloaded.Config.CONFIG_ERRORS == []
