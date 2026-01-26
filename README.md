@@ -359,6 +359,14 @@ POSTGRES_OPTIONS=sslmode=require&application_name=quote-tool
 > ``POSTGRES_PASSWORD`` is encoded automatically, special characters do not need
 > manual escaping.
 
+When no PostgreSQL configuration is supplied, the application defaults to
+SQLite at `instance/app.db`. On Cloud Run, the default SQLite location switches
+to `/tmp/quote-tool/app.db` because only `/tmp` is writable. If the instance
+directory cannot be created (for example, on a read-only filesystem), startup
+falls back to `/tmp/quote-tool/app.db` and logs a warning. Set
+`CREATE_INSTANCE_DIR=true` to force creation of the local `instance/` directory
+even when SQLite is not selected.
+
 #### Cloud Run TLS guidance
 
 Cloud Run provisions managed TLS certificates automatically. For custom
