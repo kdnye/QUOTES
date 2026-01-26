@@ -1,7 +1,8 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PORT=8080
 
 WORKDIR /app
 
@@ -21,10 +22,11 @@ RUN addgroup --system app \
     && adduser --system --ingroup app app
 
 COPY . /app
-RUN chown -R app:app /app
+RUN chown -R app:app /app \
+    && chmod +x /app/scripts/start_gunicorn.sh
 
 USER app
 
 EXPOSE 8080
 
-CMD ["/bin/sh", "-c", "gunicorn -b 0.0.0.0:${PORT:-8080} \"app:create_app()\""]
+CMD ["/app/scripts/start_gunicorn.sh"]
