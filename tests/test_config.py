@@ -7,6 +7,8 @@ from pathlib import Path
 from types import ModuleType
 from typing import Any
 
+import pytest
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
@@ -85,3 +87,29 @@ def test_config_import_does_not_create_instance_dir(monkeypatch: Any) -> None:
     _reload_config(monkeypatch)
 
     assert instance_dir.exists() is False
+
+
+def test_config_requires_database_configuration(monkeypatch: Any) -> None:
+    """Assert config import fails without any database configuration.
+
+    Args:
+        monkeypatch: Pytest fixture for safely patching environment variables.
+
+    Returns:
+        None. Expects a ``RuntimeError`` when database settings are missing.
+    """
+
+    for var in (
+        "DATABASE_URL",
+        "CLOUD_SQL_CONNECTION_NAME",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER",
+        "POSTGRES_DB",
+        "POSTGRES_HOST",
+        "POSTGRES_PORT",
+        "POSTGRES_OPTIONS",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    with pytest.raises(RuntimeError, match="Refusing to start"):
+        importlib.reload(config)
