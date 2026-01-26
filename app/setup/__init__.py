@@ -38,6 +38,26 @@ _INFRA_SETUP_KEYS = {
 }
 
 
+def _is_setup_access_allowed() -> bool:
+    """Return whether setup routes should remain accessible.
+
+    Returns:
+        ``True`` when required configuration is missing or no users exist,
+        otherwise ``False`` to prevent the setup workflow from re-opening.
+
+    External dependencies:
+        * Reads :data:`flask.current_app.config` for configuration values.
+        * Reads environment variables via :func:`os.getenv`.
+        * Uses :class:`app.models.User` to check for existing users.
+    """
+
+    secret_key = _get_setup_config_value("SECRET_KEY") or os.getenv("SECRET_KEY")
+    database_url = _get_setup_config_value("DATABASE_URL") or os.getenv("DATABASE_URL")
+    if not secret_key or not database_url:
+        return True
+    return User.query.count() == 0
+
+
 def _normalize_config_value(value: Any) -> str:
     """Return a trimmed string value for setup configuration reads.
 
@@ -68,6 +88,25 @@ def _get_setup_config_value(config_key: str) -> str:
     """
 
     return _normalize_config_value(current_app.config.get(config_key))
+
+
+@setup_bp.before_request
+def _guard_configured_setup_routes() -> ResponseReturnValue | None:
+    """Block setup routes once configuration is complete.
+
+    Returns:
+        ``None`` when setup should proceed. Otherwise, redirects the user to
+        :func:`auth.login` with a friendly notice.
+
+    External dependencies:
+        * Calls :func:`_is_setup_access_allowed` to determine availability.
+        * Uses :func:`flask.flash` and :func:`flask.redirect`.
+    """
+
+    if _is_setup_access_allowed():
+        return None
+    flash("Setup is already complete. Please sign in.", "info")
+    return redirect(url_for("auth.login"))
 
 
 def _collect_env_checks() -> list[dict[str, Any]]:
@@ -319,9 +358,7 @@ def _persist_setup_overrides(
     use_cloud_run = bool(os.environ.get("K_SERVICE"))
 
     if use_cloud_run and infra_fields:
-        infra_values = {
-            field["config_key"]: field["value"] for field in infra_fields
-        }
+        infra_values = {field["config_key"]: field["value"] for field in infra_fields}
         try:
             update_cloud_run_service(infra_values)
         except (RuntimeError, ValueError, ImportError) as exc:
@@ -428,9 +465,7 @@ def setup_status() -> str:
     """
 
     if request.method == "POST":
-        updated_keys, errors, cloud_run_updated = _persist_setup_overrides(
-            request.form
-        )
+        updated_keys, errors, cloud_run_updated = _persist_setup_overrides(request.form)
         if errors:
             for message in errors:
                 flash(message, "danger")
