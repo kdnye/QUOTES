@@ -213,3 +213,51 @@ def test_setup_updates_cloud_run_for_infra_overrides(
         assert "postgres_user" not in settings
         assert "postgres_password" not in settings
         assert "postgres_db" not in settings
+
+
+def test_setup_cloud_run_skips_infra_settings_saves_app_fields(
+    app: Flask, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure infra fields skip set_setting when running on Cloud Run."""
+
+    recorded: dict[str, dict[str, str]] = {}
+    recorded_keys: list[str] = []
+
+    import app.setup as setup_module
+
+    original_set_setting = setup_module.set_setting
+
+    def spy_set_setting(key: str, value: str, is_secret: bool) -> None:
+        """Capture configuration keys sent to set_setting."""
+
+        recorded_keys.append(key)
+        original_set_setting(key, value, is_secret=is_secret)
+
+    def fake_update_cloud_run_service(env_vars_map: dict[str, str]) -> None:
+        """Capture Cloud Run updates for assertions."""
+
+        recorded["env_vars_map"] = env_vars_map
+
+    monkeypatch.setenv("K_SERVICE", "quote-service")
+    monkeypatch.setattr(setup_module, "set_setting", spy_set_setting)
+    monkeypatch.setattr(
+        setup_module, "update_cloud_run_service", fake_update_cloud_run_service
+    )
+
+    response = client.post(
+        "/setup",
+        data={
+            "google_maps_api_key": "maps-key",
+            "database_url": "postgresql+psycopg2://user:pass@db/quote_tool",
+            "postgres_user": "db-user",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert b"Applying Cloud Run updates" in response.data
+    assert recorded["env_vars_map"] == {
+        "DATABASE_URL": "postgresql+psycopg2://user:pass@db/quote_tool",
+        "POSTGRES_USER": "db-user",
+    }
+    assert recorded_keys == ["GOOGLE_MAPS_API_KEY"]
