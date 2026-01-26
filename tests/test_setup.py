@@ -191,10 +191,11 @@ def test_setup_updates_cloud_run_for_infra_overrides(
             "postgres_password": "db-pass",
             "postgres_db": "db-name",
         },
-        follow_redirects=True,
+        follow_redirects=False,
     )
 
     assert response.status_code == 200
+    assert b"Applying Cloud Run updates" in response.data
     assert recorded["env_vars_map"] == {
         "DATABASE_URL": "postgresql+psycopg2://user:pass@db/quote_tool",
         "POSTGRES_USER": "db-user",
