@@ -100,6 +100,21 @@ class FakeSecretManagerClient:
         return FakeSecretVersion(f"{request['parent']}/versions/1")
 
 
+class FailingSecretManagerClient(FakeSecretManagerClient):
+    """Secret Manager client fake that fails on create."""
+
+    def create_secret(self, request: dict[str, Any]) -> None:
+        """Raise a Google API error to exercise error handling.
+
+        Args:
+            request: Secret creation payload.
+        """
+
+        from google.api_core.exceptions import GoogleAPICallError
+
+        raise GoogleAPICallError("create failed")
+
+
 class FakeEnvVar:
     """Simple EnvVar fake for Cloud Run tests."""
 
@@ -254,6 +269,21 @@ class FakeServicesClient:
         return FakeOperation()
 
 
+class FailingServicesClient(FakeServicesClient):
+    """Services client fake that fails when updating."""
+
+    def update_service(self, request: dict[str, Any]) -> FakeOperation:
+        """Raise a Google API error to exercise error handling.
+
+        Args:
+            request: Update service request payload.
+        """
+
+        from google.api_core.exceptions import GoogleAPICallError
+
+        raise GoogleAPICallError("update failed")
+
+
 class FakeFieldMask:
     """Field mask fake for update requests."""
 
@@ -267,15 +297,47 @@ class FakeFieldMask:
         self.paths = paths
 
 
-def _install_fake_secretmanager(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Install a fake Secret Manager module into sys.modules.
+def _install_fake_google_api_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Install fake Google API exceptions into sys.modules.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
     """
 
+    fake_exceptions = types.ModuleType("google.api_core.exceptions")
+
+    class GoogleAPICallError(Exception):
+        """Fake base exception for Google API errors."""
+
+    class NotFound(GoogleAPICallError):
+        """Fake NotFound error."""
+
+    fake_exceptions.GoogleAPICallError = GoogleAPICallError
+    fake_exceptions.NotFound = NotFound
+
+    api_core_module = sys.modules.setdefault(
+        "google.api_core", types.ModuleType("google.api_core")
+    )
+    api_core_module.exceptions = fake_exceptions
+
+    monkeypatch.setitem(sys.modules, "google.api_core", api_core_module)
+    monkeypatch.setitem(sys.modules, "google.api_core.exceptions", fake_exceptions)
+
+
+def _install_fake_secretmanager(
+    monkeypatch: pytest.MonkeyPatch,
+    client_cls: type[FakeSecretManagerClient] = FakeSecretManagerClient,
+) -> None:
+    """Install a fake Secret Manager module into sys.modules.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture.
+        client_cls: Secret Manager client class to install.
+    """
+
+    _install_fake_google_api_exceptions(monkeypatch)
     fake_secretmanager = types.ModuleType("google.cloud.secretmanager")
-    fake_secretmanager.SecretManagerServiceClient = FakeSecretManagerClient
+    fake_secretmanager.SecretManagerServiceClient = client_cls
 
     google_module = sys.modules.setdefault("google", types.ModuleType("google"))
     cloud_module = sys.modules.setdefault(
@@ -289,15 +351,20 @@ def _install_fake_secretmanager(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "google.cloud.secretmanager", fake_secretmanager)
 
 
-def _install_fake_run_v2(monkeypatch: pytest.MonkeyPatch) -> None:
+def _install_fake_run_v2(
+    monkeypatch: pytest.MonkeyPatch,
+    services_client_cls: type[FakeServicesClient] = FakeServicesClient,
+) -> None:
     """Install a fake Cloud Run module into sys.modules.
 
     Args:
         monkeypatch: Pytest monkeypatch fixture.
+        services_client_cls: Service client class to install.
     """
 
+    _install_fake_google_api_exceptions(monkeypatch)
     fake_run_v2 = types.ModuleType("google.cloud.run_v2")
-    fake_run_v2.ServicesClient = FakeServicesClient
+    fake_run_v2.ServicesClient = services_client_cls
     fake_run_v2.EnvVar = FakeEnvVar
     fake_run_v2.EnvVarSource = FakeEnvVarSource
     fake_run_v2.SecretKeyRef = FakeSecretKeyRef
@@ -367,6 +434,28 @@ def test_get_project_details_falls_back_to_env(
     assert region == "us-east1"
 
 
+def test_get_project_details_logs_when_missing(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log warnings and errors when metadata and env are empty."""
+
+    def fake_get(*_: Any, **__: Any) -> FakeResponse:
+        return FakeResponse(500, "")
+
+    monkeypatch.setattr(gcp_setup.requests, "get", fake_get)
+    monkeypatch.delenv("PROJECT_ID", raising=False)
+    monkeypatch.delenv("REGION", raising=False)
+
+    with caplog.at_level("WARNING"):
+        project_id, region = gcp_setup.get_project_details()
+
+    assert project_id is None
+    assert region is None
+    assert "Metadata request returned status" in caplog.text
+    assert "PROJECT_ID is not set in metadata or environment" in caplog.text
+    assert "REGION is not set in metadata or environment" in caplog.text
+
+
 def test_upsert_secret_creates_and_versions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -384,6 +473,21 @@ def test_upsert_secret_creates_and_versions(
     assert client.created_secret["secret_id"] == "api-key"
     assert client.added_payload is not None
     assert client.added_payload["payload"]["data"] == b"value"
+
+
+def test_upsert_secret_logs_when_create_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log and surface errors when secret creation fails."""
+
+    _install_fake_secretmanager(monkeypatch, client_cls=FailingSecretManagerClient)
+    monkeypatch.setattr(gcp_setup, "get_project_details", lambda: ("proj", "us"))
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(Exception):
+            gcp_setup.upsert_secret("api-key", "value")
+
+    assert "Failed to create secret api-key" in caplog.text
 
 
 def test_update_cloud_run_service_updates_env_vars(
@@ -415,3 +519,21 @@ def test_update_cloud_run_service_updates_env_vars(
     )
     assert updated_env.value_source.secret_key_ref.version == "2"
     assert client.update_request["update_mask"].paths == ["template.containers"]
+
+
+def test_update_cloud_run_service_logs_when_update_fails(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log and surface errors when Cloud Run updates fail."""
+
+    _install_fake_run_v2(monkeypatch, services_client_cls=FailingServicesClient)
+    monkeypatch.setattr(gcp_setup, "get_project_details", lambda: ("proj", "us"))
+    monkeypatch.setenv("K_SERVICE", "my-service")
+
+    with caplog.at_level("ERROR"):
+        with pytest.raises(Exception):
+            gcp_setup.update_cloud_run_service(
+                {"API_KEY": "projects/proj/secrets/api-key/versions/2"}
+            )
+
+    assert "Failed to update Cloud Run service" in caplog.text
