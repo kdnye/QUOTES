@@ -25,4 +25,5 @@ substitutions:
   _SERVICE: quote-tool
   _REGION: us-central1
 options:
+  substitutionOption: ALLOW_LOOSE
   logging: CLOUD_LOGGING_ONLY
