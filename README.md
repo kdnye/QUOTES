@@ -60,7 +60,7 @@ Services portal.
    `python init_db.py` (uses the directory above by default).
 7. Run the app locally: `python flask_app.py`.
    - For production use
-     `hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app.app:create_app()"`
+     `hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app:create_app()"`
      (HTTP/2-capable when `h2` is installed) or the convenience launcher at
      `./scripts/start_gunicorn.sh` for a Gunicorn-based option
      (`PORT`, `GUNICORN_WORKERS`, and `GUNICORN_THREADS` tune concurrency).

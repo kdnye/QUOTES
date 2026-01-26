@@ -264,10 +264,10 @@ Hypercorn's application factory callable (HTTP/2-capable when `h2` is installed)
 For Cloud Run, set the entrypoint to:
 
 ```bash
-hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app.app:create_app()"
+hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app:create_app()"
 ```
 
-This entrypoint targets `app.app:create_app` and respects the platform-provided
+This entrypoint targets `app:create_app` and respects the platform-provided
 `PORT` value. Avoid passing `--factory` here; Gunicorn does not support that
 flag, and the `()` call syntax is the compatible way to invoke the factory
 function. Keep `flask_app.py` for local development only, as the production
