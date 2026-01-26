@@ -19,4 +19,4 @@ exec gunicorn \
     -k gthread \
     --threads "${threads}" \
     --bind "0.0.0.0:${port}" \
-    "app.app:create_app()"
+    "app:create_app()"
