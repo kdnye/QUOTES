@@ -1,7 +1,7 @@
 """Central configuration for the Quote Tool Flask application.
 
-The module resolves the application's base directory, ensures the default
-SQLite instance folder exists, and exposes the :class:`Config` settings class.
+The module resolves the application's base directory and exposes the
+:class:`Config` settings class.
 
 Key settings exposed by :class:`Config`:
 
@@ -64,10 +64,6 @@ def _record_startup_error(message: str) -> None:
 
     logging.getLogger("quote_tool.config").error(message)
     _CONFIG_ERRORS.append(message)
-
-
-# Ensure the default database directory exists so all tools share the same DB.
-DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _is_production_environment() -> bool:

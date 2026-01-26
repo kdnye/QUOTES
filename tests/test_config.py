@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import shutil
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -60,3 +61,27 @@ def test_csrf_disabled_when_secret_key_is_missing(monkeypatch: Any) -> None:
     reloaded = _reload_config(monkeypatch)
 
     assert reloaded.Config.WTF_CSRF_ENABLED is False
+
+
+def test_config_import_does_not_create_instance_dir(monkeypatch: Any) -> None:
+    """Ensure importing config does not create the instance directory.
+
+    Args:
+        monkeypatch: Pytest fixture for safely patching environment variables.
+
+    Returns:
+        None. Asserts the instance directory stays absent after reload.
+
+    External Dependencies:
+        Removes directories with :func:`shutil.rmtree` and reloads the
+        :mod:`config` module via :func:`importlib.reload`.
+    """
+
+    instance_dir = PROJECT_ROOT / "instance"
+    if instance_dir.exists():
+        shutil.rmtree(instance_dir)
+
+    monkeypatch.delenv("SECRET_KEY", raising=False)
+    _reload_config(monkeypatch)
+
+    assert instance_dir.exists() is False
