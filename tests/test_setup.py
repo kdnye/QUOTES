@@ -261,3 +261,23 @@ def test_setup_cloud_run_skips_infra_settings_saves_app_fields(
         "POSTGRES_USER": "db-user",
     }
     assert recorded_keys == ["GOOGLE_MAPS_API_KEY"]
+
+
+def test_setup_blocks_routes_when_configured(app: Flask, client: FlaskClient) -> None:
+    """Ensure setup routes are blocked once configuration and users exist."""
+
+    with app.app_context():
+        app.config["DATABASE_URL"] = "postgresql://user:pass@db/quotes"
+        user = User(
+            email="ready@example.com",
+            role="super_admin",
+            employee_approved=True,
+        )
+        user.set_password("StrongPassw0rd!")
+        db.session.add(user)
+        db.session.commit()
+
+    response = client.get("/setup", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert "/login" in response.headers.get("Location", "")

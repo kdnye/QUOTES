@@ -454,6 +454,8 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from app.quote.admin_view import admin_quotes_bp
 
     csrf.exempt(api_bp)
+    # Allow initial setup POSTs while SECRET_KEY is unstable across workers.
+    csrf.exempt(setup_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
