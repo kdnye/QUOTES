@@ -293,15 +293,16 @@ def _get_setup_override_fields() -> list[dict[str, Any]]:
 
 def _persist_setup_overrides(
     form_data: Mapping[str, str],
-) -> tuple[list[str], list[str]]:
+) -> tuple[list[str], list[str], bool]:
     """Persist setup overrides from the setup checklist form.
 
     Args:
         form_data: Submitted form payload containing configuration values.
 
     Returns:
-        A tuple containing the list of updated configuration keys and a list of
-        error messages to display in the UI.
+        A tuple containing the list of updated configuration keys, a list of
+        error messages to display in the UI, and a boolean indicating whether
+        Cloud Run was updated with new infra settings.
 
     External dependencies:
         * Calls :func:`app.services.gcp_setup.update_cloud_run_service` to update
@@ -313,6 +314,7 @@ def _persist_setup_overrides(
 
     updated_keys: list[str] = []
     errors: list[str] = []
+    cloud_run_updated = False
     app_fields, infra_fields = _split_setup_overrides(form_data)
     use_cloud_run = bool(os.environ.get("K_SERVICE"))
 
@@ -333,6 +335,7 @@ def _persist_setup_overrides(
             )
         else:
             updated_keys.extend(sorted(infra_values.keys()))
+            cloud_run_updated = True
     elif infra_fields:
         app_fields.extend(infra_fields)
 
@@ -366,7 +369,7 @@ def _persist_setup_overrides(
         else:
             reload_overrides(current_app)
 
-    return updated_keys, errors
+    return updated_keys, errors, cloud_run_updated
 
 
 def _split_setup_overrides(
@@ -411,12 +414,23 @@ def _split_setup_overrides(
 def setup_status() -> str:
     """Render a setup checklist for required environment configuration.
 
+    Inputs:
+        Reads form data from :data:`flask.request.form` when the request method
+        is ``POST``.
+
     Returns:
-        Rendered HTML for the setup landing page.
+        Rendered HTML for the setup landing page, or a restart notice when
+        Cloud Run settings are being applied.
+
+    External dependencies:
+        * Calls :func:`_persist_setup_overrides` to save submitted values.
+        * Calls :func:`flask.flash` to surface status messages to the UI.
     """
 
     if request.method == "POST":
-        updated_keys, errors = _persist_setup_overrides(request.form)
+        updated_keys, errors, cloud_run_updated = _persist_setup_overrides(
+            request.form
+        )
         if errors:
             for message in errors:
                 flash(message, "danger")
@@ -427,6 +441,12 @@ def setup_status() -> str:
             )
         elif not errors:
             flash("No configuration values were provided.", "info")
+        if cloud_run_updated:
+            return render_template(
+                "setup/restarting.html",
+                health_url=url_for("healthz"),
+                setup_url=url_for("setup.setup_status"),
+            )
         return redirect(url_for("setup.setup_status"))
 
     checks = _collect_env_checks()
