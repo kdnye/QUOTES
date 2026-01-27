@@ -87,6 +87,7 @@ POSTGRES_HOST=cloudsql-hostname
 # CACHE_TYPE=redis
 # CACHE_REDIS_URL=redis://redis-host:6379/0
 # RATELIMIT_STORAGE_URI=redis://redis-host:6379/1
+# BRANDING_LOGO_MOUNT_PATH=/logos
 # MAIL_DEFAULT_SENDER=quote@freightservices.net
 # MAIL_SERVER=smtp.gmail.com
 # MAIL_PORT=587
@@ -389,7 +390,8 @@ by the deployment must have `roles/storage.objectAdmin` or the scoped
 permissions `storage.objects.create` and `storage.objects.delete` (plus `get`
 if your bucket requires reads or you mount the bucket for logo serving). When
 you mount the bucket into the container and set
-`BRANDING_LOGO_MOUNT_PATH`, the application serves logos through
+`BRANDING_LOGO_MOUNT_PATH` (standard mount point: `/logos`), the application
+serves logos through
 `/branding_assets/<path>` (legacy `/branding_logos/<path>`) instead of public
 GCS URLs.
 
