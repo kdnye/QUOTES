@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -193,6 +194,49 @@ def test_resolve_brand_logo_url_supports_gcs_locations(app: Flask) -> None:
         url = resolve_brand_logo_url("gs://bucket/path/logo.png")
 
     assert url == "/branding_assets/path/logo.png"
+
+
+def test_resolve_brand_logo_url_uses_logos_mount(tmp_path: Path) -> None:
+    """Ensure /logos mount config maps to branding asset URLs.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions confirm the branding URL is resolved via the mount.
+
+    External dependencies:
+        * Creates a Flask app via :func:`app.create_app`.
+        * Calls :func:`app.services.branding.resolve_brand_logo_url` to compute
+          the branding logo URL.
+    """
+
+    mount_path = Path("/logos")
+    created_mount = False
+    if not mount_path.exists():
+        mount_path.mkdir(parents=True)
+        created_mount = True
+
+    class LogosMountConfig(TestConfig):
+        """Configuration overrides that enforce a /logos mount path."""
+
+        BRANDING_LOGO_MOUNT_PATH = "/logos"
+
+    LogosMountConfig.SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+    app = create_app(LogosMountConfig)
+
+    try:
+        with app.app_context():
+            url = resolve_brand_logo_url("gs://bucket/path/logo.png")
+
+        assert url == "/branding_assets/path/logo.png"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+        if created_mount:
+            shutil.rmtree(mount_path, ignore_errors=True)
 
 
 def test_build_brand_logo_url_uses_rate_set_naming(app: Flask) -> None:
