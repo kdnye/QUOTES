@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import List
+from urllib.parse import urlparse
 
 from app.models import BrandLogoLocation, db
-from app.services.branding import resolve_brand_logo_url
+from app.services.branding import IMAGE_EXTENSIONS, resolve_brand_logo_url
 from app.services.rate_sets import normalize_rate_set
 
 
@@ -35,12 +37,15 @@ def build_brand_logo_object_location(
 
     Args:
         gcs_bucket_location: Base GCS bucket location configured for branding,
-            such as ``gs://bucket/path``.
-        rate_set: Rate set identifier used to build the logo filename.
+            such as ``gs://bucket/path``. When an image filename is supplied
+            (for example, ``gs://bucket/path/logo.png``), the filename is used
+            as-is and the rate set is not appended.
+        rate_set: Rate set identifier used to build the logo filename when the
+            base location is a directory.
 
     Returns:
         Full ``gs://`` location for the expected logo asset, or ``None`` when
-        the input location is missing.
+        the input location is missing or invalid.
 
     External dependencies:
         * Calls :func:`app.services.rate_sets.normalize_rate_set` to normalize
@@ -49,11 +54,21 @@ def build_brand_logo_object_location(
 
     if not gcs_bucket_location:
         return None
-    cleaned_location = gcs_bucket_location.strip().rstrip("/")
+    cleaned_location = gcs_bucket_location.strip()
     if not cleaned_location:
         return None
+    parsed = urlparse(cleaned_location)
+    if parsed.scheme != "gs" or not parsed.netloc:
+        return None
+    object_path = parsed.path.lstrip("/")
+    if not object_path:
+        return None
+    suffix = Path(object_path).suffix.lower()
+    if suffix in IMAGE_EXTENSIONS:
+        return f"gs://{parsed.netloc}/{object_path}"
     normalized_rate_set = normalize_rate_set(rate_set)
-    return f"{cleaned_location}/{normalized_rate_set}.png"
+    normalized_prefix = object_path.rstrip("/")
+    return f"gs://{parsed.netloc}/{normalized_prefix}/{normalized_rate_set}.png"
 
 
 def build_brand_logo_url(gcs_bucket_location: str | None, rate_set: str) -> str | None:
@@ -65,8 +80,9 @@ def build_brand_logo_url(gcs_bucket_location: str | None, rate_set: str) -> str 
         rate_set: Rate set identifier used to build the logo filename.
 
     Returns:
-        Public HTTPS URL for the logo asset, or ``None`` when no location is
-        configured.
+        Public URL for the logo asset, or ``None`` when no location is
+        configured. When a mounted branding bucket is configured, the URL will
+        target the local branding route instead of the public GCS URL.
 
     External dependencies:
         * Calls :func:`build_brand_logo_object_location` for the GCS path.

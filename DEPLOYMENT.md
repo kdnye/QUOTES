@@ -382,11 +382,15 @@ Cloud Storage. Set the following environment variables:
 | `BRANDING_STORAGE` | Branding backend (`local` or `gcs`) | `local` (defaults to `gcs` on Cloud Run) |
 | `GCS_BUCKET` | Target bucket for branding uploads | (empty) |
 | `GCS_PREFIX` | Optional object prefix for branding uploads | (empty) |
+| `BRANDING_LOGO_MOUNT_PATH` | Local mount point for the branding bucket | `/logos` |
 
 When `BRANDING_STORAGE=gcs` (mandatory on Cloud Run), the service account used
-by the deployment must have `roles/storage.objectAdmin` or the scoped permissions
-`storage.objects.create` and `storage.objects.delete` (plus `get` if your
-bucket requires reads to resolve public URLs).
+by the deployment must have `roles/storage.objectAdmin` or the scoped
+permissions `storage.objects.create` and `storage.objects.delete` (plus `get`
+if your bucket requires reads or you mount the bucket for logo serving). When
+you mount the bucket into the container and set
+`BRANDING_LOGO_MOUNT_PATH`, the application serves logos through
+`/branding_logos/<path>` instead of public GCS URLs.
 
 ### Seed rate tables and admin user
 

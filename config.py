@@ -22,8 +22,9 @@ Key settings exposed by :class:`Config`:
 * ``API_AUTH_TOKEN`` and ``API_QUOTE_RATE_LIMIT``: Configure authentication
   and rate limiting for the JSON API endpoints.
 * ``WTF_CSRF_ENABLED``: Toggles CSRF protection across forms.
-* ``BRANDING_STORAGE``, ``GCS_BUCKET``, and ``GCS_PREFIX``: Configure branding
-  logo storage for local or Google Cloud Storage backends.
+* ``BRANDING_STORAGE``, ``GCS_BUCKET``, ``GCS_PREFIX``, and
+  ``BRANDING_LOGO_MOUNT_PATH``: Configure branding logo storage for local or
+  Google Cloud Storage backends, including optional mounted bucket access.
 
 All values default to development-friendly settings and can be overridden via
 environment variables so each deployment can customize behaviour without
@@ -698,6 +699,7 @@ class Config:
     BRANDING_STORAGE = _resolve_branding_storage()
     GCS_BUCKET = os.getenv("GCS_BUCKET")
     GCS_PREFIX = os.getenv("GCS_PREFIX")
+    BRANDING_LOGO_MOUNT_PATH = os.getenv("BRANDING_LOGO_MOUNT_PATH", "/logos")
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")
     OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
     OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")
