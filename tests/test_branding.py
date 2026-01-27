@@ -99,6 +99,25 @@ def _collect_template_context(app: Flask) -> dict[str, object]:
     return context
 
 
+def _ensure_setup_user(app: Flask) -> None:
+    """Ensure the app has a user record to bypass setup redirects.
+
+    Args:
+        app: Flask application needing a user record.
+
+    Returns:
+        None. The helper creates a user when the database is empty.
+
+    External dependencies:
+        * Calls :func:`tests.test_branding._create_super_admin` to insert a user.
+        * Reads :class:`app.models.User` via ``User.query.count``.
+    """
+
+    with app.app_context():
+        if User.query.count() == 0:
+            _create_super_admin()
+
+
 @pytest.mark.parametrize(
     "location",
     [
@@ -253,3 +272,121 @@ def test_company_logo_context_blank_and_populated(app: Flask) -> None:
         populated_context = _collect_template_context(app)
 
     assert populated_context["company_logo_url"] == "/branding_logos/path/default.png"
+
+
+@pytest.fixture()
+def app_without_logo_mount(tmp_path: Path) -> Flask:
+    """Create a Flask app without a branding logo mount path configured.
+
+    Args:
+        tmp_path: Temporary filesystem path injected by pytest.
+
+    Returns:
+        Flask app instance configured without ``BRANDING_LOGO_MOUNT_PATH``.
+
+    External dependencies:
+        * Calls :func:`app.create_app` to build the Flask application.
+    """
+
+    class MissingMountConfig(TestConfig):
+        """Configuration overrides without a logo mount path.
+
+        Attributes:
+            BRANDING_LOGO_MOUNT_PATH: Explicitly disabled mount path setting.
+        """
+
+        BRANDING_LOGO_MOUNT_PATH = None
+
+    MissingMountConfig.SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+    app = create_app(MissingMountConfig)
+
+    with app.app_context():
+        yield app
+        db.session.remove()
+        db.drop_all()
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/branding_logos/{filename}",
+        "/branding_assets/{filename}",
+    ],
+)
+def test_branding_mount_returns_404_when_missing(
+    app_without_logo_mount: Flask, path: str
+) -> None:
+    """Ensure mount-backed branding routes return 404 when unconfigured.
+
+    Args:
+        app_without_logo_mount: Flask app without a mount path.
+        path: Route template under test.
+
+    Returns:
+        None. Assertions validate that a missing mount path yields 404.
+    """
+
+    client = app_without_logo_mount.test_client()
+    _ensure_setup_user(app_without_logo_mount)
+    response = client.get(path.format(filename="logo.png"))
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/branding_logos/{filename}",
+        "/branding_assets/{filename}",
+    ],
+)
+def test_branding_mount_blocks_path_traversal(app: Flask, path: str) -> None:
+    """Ensure mount-backed branding routes reject path traversal attempts.
+
+    Args:
+        app: Flask app with a configured logo mount path.
+        path: Route template under test.
+
+    Returns:
+        None. Assertions validate that traversal attempts are rejected.
+    """
+
+    _ensure_setup_user(app)
+    client = app.test_client()
+    response = client.get(path.format(filename="../secret.txt"))
+
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/branding_logos/{filename}",
+        "/branding_assets/{filename}",
+    ],
+)
+def test_branding_mount_serves_existing_logo(app: Flask, path: str) -> None:
+    """Ensure mount-backed branding routes serve existing logo files.
+
+    Args:
+        app: Flask app with a configured logo mount path.
+        path: Route template under test.
+
+    Returns:
+        None. Assertions validate that existing files are served.
+
+    External dependencies:
+        * Writes test assets to the filesystem for Flask to serve.
+    """
+
+    mount_path = Path(app.config["BRANDING_LOGO_MOUNT_PATH"])
+    logo_path = mount_path / "customer" / "logo.png"
+    logo_path.parent.mkdir(parents=True, exist_ok=True)
+    logo_path.write_bytes(b"logo-content")
+
+    _ensure_setup_user(app)
+    client = app.test_client()
+    response = client.get(path.format(filename="customer/logo.png"))
+
+    assert response.status_code == 200
+    assert response.data == b"logo-content"

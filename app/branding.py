@@ -1,4 +1,8 @@
-"""Blueprint for serving branding assets stored on disk."""
+"""Blueprint for serving branding assets stored on disk.
+
+The mounted branding assets are available via both ``/branding_logos`` and the
+preferred public route ``/branding_assets`` for backward compatibility.
+"""
 
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ def logo_file(filename: str) -> ResponseReturnValue:
 
 
 @branding_bp.get("/branding_logos/<path:filename>")
+@branding_bp.get("/branding_assets/<path:filename>")
 def logo_mount_file(filename: str) -> ResponseReturnValue:
     """Return the requested branding logo from the mounted GCS bucket.
 
@@ -39,7 +44,8 @@ def logo_mount_file(filename: str) -> ResponseReturnValue:
 
     External dependencies:
         * :func:`app.services.branding.brand_logo_mount_response` to read the
-          file from the mounted GCS bucket path.
+          file from the mounted GCS bucket path for both the legacy
+          ``/branding_logos`` and preferred ``/branding_assets`` routes.
     """
 
     return brand_logo_mount_response(filename)
