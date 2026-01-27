@@ -257,7 +257,8 @@ When `BRANDING_STORAGE=gcs` (mandatory on Cloud Run), the application uploads
 logo objects and stores their public URLs in `app_settings` unless a mounted
 bucket is available. If you mount the branding bucket into the container (for
 example, at `/logos`), set `BRANDING_LOGO_MOUNT_PATH` and the app will serve
-logos through `/branding_logos/<path>` instead of public GCS URLs. Ensure the
+logos through `/branding_assets/<path>` (legacy `/branding_logos/<path>`)
+instead of public GCS URLs. Ensure the
 workload identity or service account has `roles/storage.objectAdmin` or at
 minimum `storage.objects.create` and `storage.objects.delete` (plus `get` if
 your bucket requires reads or the mount uses authenticated access).
