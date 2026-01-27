@@ -239,6 +239,48 @@ def test_resolve_brand_logo_url_uses_logos_mount(tmp_path: Path) -> None:
             shutil.rmtree(mount_path, ignore_errors=True)
 
 
+def test_resolve_brand_logo_url_uses_case_insensitive_mount(
+    tmp_path: Path,
+) -> None:
+    """Ensure mount path detection works when casing differs.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions confirm the case-insensitive mount is detected.
+
+    External dependencies:
+        * Creates a Flask app via :func:`app.create_app`.
+        * Calls :func:`app.services.branding.resolve_brand_logo_url` to compute
+          the branding logo URL.
+    """
+
+    mount_path = tmp_path / "Logos"
+    mount_path.mkdir(parents=True, exist_ok=True)
+    configured_path = tmp_path / "logos"
+
+    class CaseInsensitiveMountConfig(TestConfig):
+        """Configuration overrides that use a different path casing."""
+
+        BRANDING_LOGO_MOUNT_PATH = str(configured_path)
+
+    CaseInsensitiveMountConfig.SQLALCHEMY_DATABASE_URI = (
+        f"sqlite:///{tmp_path / 'test.db'}"
+    )
+    app = create_app(CaseInsensitiveMountConfig)
+
+    try:
+        with app.app_context():
+            url = resolve_brand_logo_url("gs://bucket/path/logo.png")
+
+        assert url == "/branding_assets/path/logo.png"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
+
+
 def test_build_brand_logo_url_uses_rate_set_naming(app: Flask) -> None:
     """Confirm rate set logos use the ``<bucket>/<rate_set>.png`` convention."""
 
