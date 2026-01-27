@@ -394,7 +394,7 @@ def _gcs_mounted_logo_url(location: str) -> str | None:
     if not object_path:
         return None
     encoded_path = "/".join(quote(part) for part in object_path.split("/"))
-    return f"/branding_logos/{encoded_path}"
+    return f"/branding_assets/{encoded_path}"
 
 
 def _is_safe_relative_path(path: Path) -> bool:

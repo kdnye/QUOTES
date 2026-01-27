@@ -390,7 +390,8 @@ permissions `storage.objects.create` and `storage.objects.delete` (plus `get`
 if your bucket requires reads or you mount the bucket for logo serving). When
 you mount the bucket into the container and set
 `BRANDING_LOGO_MOUNT_PATH`, the application serves logos through
-`/branding_logos/<path>` instead of public GCS URLs.
+`/branding_assets/<path>` (legacy `/branding_logos/<path>`) instead of public
+GCS URLs.
 
 ### Seed rate tables and admin user
 
