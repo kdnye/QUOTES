@@ -1,0 +1,12 @@
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# Local Config & Secrets
+instance/
+.env
+
+# Tools & Scripts
+cloud_sql_proxy
+migrate.py
