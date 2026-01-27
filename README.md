@@ -78,6 +78,28 @@ Services portal.
    schema, and create the initial super admin account. The setup flow locks
    down the rest of the app until a user exists.
 
+### Email (SMTP/Postmark)
+
+The quote summary and booking workflows send mail through SMTP. You can point
+the SMTP settings at Postmark by supplying the broadcast SMTP endpoint and a
+server token (as both username and password). Optionally configure the message
+stream header used by Postmark.
+
+```bash
+MAIL_SERVER=smtp-broadcasts.postmarkapp.com
+MAIL_PORT=587
+MAIL_USE_TLS=true
+MAIL_USERNAME=your-postmark-server-token
+MAIL_PASSWORD=your-postmark-server-token
+MAIL_MESSAGE_STREAM=broadcast
+MAIL_DEFAULT_SENDER=operations@freightservices.net
+```
+
+You can also save overrides in the admin settings UI using
+``mail_server``, ``mail_port``, ``mail_use_tls``, ``mail_username``,
+``mail_password``, and ``mail_message_stream`` so the application can update
+SMTP credentials without a redeploy.
+
 ### Database migrations
 
 Generate new Alembic migrations with the helper script, which accepts a message

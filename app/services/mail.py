@@ -231,6 +231,8 @@ def send_email(
         * Reads runtime overrides with :func:`services.settings.load_mail_settings`.
         * Retries transient SMTP failures with backoff using
           :func:`time.sleep` and jitter from :func:`random.uniform`.
+        * Adds the Postmark message stream header when configured via
+          ``MAIL_MESSAGE_STREAM`` or ``mail_message_stream`` overrides.
     """
 
     msg = EmailMessage()
@@ -283,6 +285,14 @@ def send_email(
         if getattr(overrides, "password", None)
         else current_app.config.get("MAIL_PASSWORD")
     )
+    message_stream = (
+        overrides.message_stream
+        if getattr(overrides, "message_stream", None)
+        else current_app.config.get("MAIL_MESSAGE_STREAM")
+    )
+
+    if message_stream:
+        msg["X-PM-Message-Stream"] = message_stream
 
     if use_ssl:
         smtp_cls = smtplib.SMTP_SSL
