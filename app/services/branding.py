@@ -5,14 +5,22 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Protocol
-from urllib.parse import urlparse
+from urllib.parse import quote, unquote, urlparse
 
-from flask import Flask, abort, current_app, send_from_directory, url_for
+from flask import (
+    Flask,
+    abort,
+    current_app,
+    has_app_context,
+    send_from_directory,
+    url_for,
+)
 from flask.typing import ResponseReturnValue
 from google.cloud import storage as gcs_storage
 from werkzeug.datastructures import FileStorage
 
 LOGO_SUBDIR = "company_logos"
+IMAGE_EXTENSIONS = {".gif", ".jpeg", ".jpg", ".png", ".svg", ".webp"}
 
 
 class BrandingStorage(Protocol):
@@ -289,7 +297,9 @@ def resolve_brand_logo_url(raw_value: str | None) -> str | None:
     Args:
         raw_value: Stored value from ``app_settings``. May be a filename in the
             instance ``company_logos`` directory, a ``gs://`` GCS location, or
-            an absolute URL.
+            an absolute URL. When a GCS bucket is mounted locally and the
+            configuration includes ``BRANDING_LOGO_MOUNT_PATH``, the URL is
+            translated to the mounted branding route.
 
     Returns:
         Public URL string for the logo or ``None`` when no logo is configured.
@@ -302,6 +312,10 @@ def resolve_brand_logo_url(raw_value: str | None) -> str | None:
         return None
     cleaned = raw_value.strip()
     if cleaned.lower().startswith("gs://"):
+        if has_app_context():
+            mounted_url = _gcs_mounted_logo_url(cleaned)
+            if mounted_url:
+                return mounted_url
         return _gcs_public_url_from_location(cleaned)
     if cleaned.lower().startswith("http"):
         return cleaned
@@ -330,6 +344,70 @@ def _gcs_public_url_from_location(location: str) -> str | None:
     if not object_path:
         return None
     return f"https://storage.googleapis.com/{bucket}/{object_path}"
+
+
+def _get_brand_logo_mount_path(app: Optional[Flask] = None) -> Path | None:
+    """Return the mounted branding logo directory when configured.
+
+    Args:
+        app: Optional Flask application to read configuration from.
+
+    Returns:
+        Path to the mounted logo directory if configured and present, otherwise
+        ``None``.
+
+    External dependencies:
+        * :data:`flask.current_app` for configuration access.
+    """
+
+    target_app = app or current_app
+    raw_path = (target_app.config.get("BRANDING_LOGO_MOUNT_PATH") or "").strip()
+    if not raw_path:
+        return None
+    mount_path = Path(raw_path)
+    if not mount_path.exists():
+        return None
+    return mount_path
+
+
+def _gcs_mounted_logo_url(location: str) -> str | None:
+    """Return the mounted branding logo URL for a ``gs://`` location.
+
+    Args:
+        location: GCS object location in ``gs://bucket/path`` format.
+
+    Returns:
+        URL path for the mounted branding logo route, or ``None`` when the
+        location cannot be parsed or no mount is available.
+
+    External dependencies:
+        * :func:`urllib.parse.quote` to safely encode path segments.
+        * :func:`_get_brand_logo_mount_path` to verify the mount is present.
+    """
+
+    if not _get_brand_logo_mount_path():
+        return None
+    parsed = urlparse(location)
+    if parsed.scheme != "gs" or not parsed.netloc or not parsed.path:
+        return None
+    object_path = parsed.path.lstrip("/")
+    if not object_path:
+        return None
+    encoded_path = "/".join(quote(part) for part in object_path.split("/"))
+    return f"/branding_logos/{encoded_path}"
+
+
+def _is_safe_relative_path(path: Path) -> bool:
+    """Return ``True`` when ``path`` is safe for directory-relative serving.
+
+    Args:
+        path: Relative path derived from the requested filename.
+
+    Returns:
+        ``True`` when the path is not absolute and does not traverse upward.
+    """
+
+    return not path.is_absolute() and ".." not in path.parts
 
 
 def _get_legacy_logo_dir() -> Path:
@@ -376,3 +454,31 @@ def brand_logo_response(filename: str) -> ResponseReturnValue:
         return send_from_directory(legacy_dir, normalized)
 
     abort(404)
+
+
+def brand_logo_mount_response(filename: str) -> ResponseReturnValue:
+    """Serve a logo file from the mounted GCS bucket directory.
+
+    Args:
+        filename: URL path for the requested logo relative to the mount path.
+
+    Returns:
+        ResponseReturnValue: A Flask response streaming the requested logo.
+
+    External dependencies:
+        * :func:`flask.abort` to raise 404 errors.
+        * :func:`flask.send_from_directory` for safe file serving.
+        * :func:`_get_brand_logo_mount_path` for mounted path resolution.
+        * :func:`urllib.parse.unquote` to decode URL-encoded file names.
+    """
+
+    mount_dir = _get_brand_logo_mount_path()
+    if not mount_dir:
+        abort(404)
+    decoded = unquote(filename)
+    normalized = Path(decoded)
+    if not decoded or not _is_safe_relative_path(normalized):
+        abort(404)
+    if not (mount_dir / normalized).exists():
+        abort(404)
+    return send_from_directory(mount_dir, normalized.as_posix())

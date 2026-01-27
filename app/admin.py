@@ -312,7 +312,8 @@ class LogoUploadForm(FlaskForm):
         rate_set: Dropdown of available rate sets populated from
             :func:`app.services.rate_sets.get_available_rate_sets`.
         gcs_bucket_location: Base location in GCS where rate set logos are
-            stored using the ``<rate_set>.png`` naming convention.
+            stored using the ``<rate_set>.png`` naming convention, or a full
+            object path when a single file should be used for all rate sets.
 
     External dependencies:
         * Calls :func:`app.admin._validate_gcs_bucket_location` for validation.

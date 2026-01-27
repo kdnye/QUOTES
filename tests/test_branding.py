@@ -46,6 +46,9 @@ def app(tmp_path: Path) -> Flask:
     """
 
     TestConfig.SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+    logo_mount = tmp_path / "logos"
+    logo_mount.mkdir()
+    TestConfig.BRANDING_LOGO_MOUNT_PATH = str(logo_mount)
     app = create_app(TestConfig)
 
     with app.app_context():
@@ -106,9 +109,7 @@ def _collect_template_context(app: Flask) -> dict[str, object]:
         "gs://bucket/",
     ],
 )
-def test_logo_form_rejects_invalid_gcs_location(
-    app: Flask, location: str
-) -> None:
+def test_logo_form_rejects_invalid_gcs_location(app: Flask, location: str) -> None:
     """Ensure the branding form rejects non-GCS locations."""
 
     with app.test_request_context(
@@ -166,21 +167,39 @@ def test_brand_logo_location_persists_per_rate_set(app: Flask) -> None:
         assert updated.gcs_bucket_location == updated_location
 
 
-def test_resolve_brand_logo_url_supports_gcs_locations() -> None:
-    """Confirm GCS locations are converted to public URLs."""
+def test_resolve_brand_logo_url_supports_gcs_locations(app: Flask) -> None:
+    """Confirm GCS locations are converted to mounted branding URLs."""
 
-    url = resolve_brand_logo_url("gs://bucket/path/logo.png")
-    assert url == "https://storage.googleapis.com/bucket/path/logo.png"
+    with app.app_context():
+        url = resolve_brand_logo_url("gs://bucket/path/logo.png")
+
+    assert url == "/branding_logos/path/logo.png"
 
 
-def test_build_brand_logo_url_uses_rate_set_naming() -> None:
+def test_build_brand_logo_url_uses_rate_set_naming(app: Flask) -> None:
     """Confirm rate set logos use the ``<bucket>/<rate_set>.png`` convention."""
 
     object_location = build_brand_logo_object_location("gs://bucket/path", "ININ")
     assert object_location == "gs://bucket/path/inin.png"
 
-    url = build_brand_logo_url("gs://bucket/path", "ININ")
-    assert url == "https://storage.googleapis.com/bucket/path/inin.png"
+    with app.app_context():
+        url = build_brand_logo_url("gs://bucket/path", "ININ")
+
+    assert url == "/branding_logos/path/inin.png"
+
+
+def test_build_brand_logo_url_accepts_full_object_paths(app: Flask) -> None:
+    """Ensure file paths are not duplicated when already provided."""
+
+    object_location = build_brand_logo_object_location(
+        "gs://bucket/path/logo.png", "ININ"
+    )
+    assert object_location == "gs://bucket/path/logo.png"
+
+    with app.app_context():
+        url = build_brand_logo_url("gs://bucket/path/logo.png", "ININ")
+
+    assert url == "/branding_logos/path/logo.png"
 
 
 def test_build_brand_logo_location_returns_none_for_blank_input() -> None:
@@ -212,9 +231,7 @@ def test_branding_payload_includes_blank_and_populated_logos(app: Flask) -> None
 
     assert captured, "Expected branding template context to be captured."
     logos = captured[0]["logos"]
-    assert logos[DEFAULT_RATE_SET]["url"] == (
-        "https://storage.googleapis.com/bucket/path/default.png"
-    )
+    assert logos[DEFAULT_RATE_SET]["url"] == "/branding_logos/path/default.png"
     assert logos[DEFAULT_RATE_SET]["object_location"] == (
         "gs://bucket/path/default.png"
     )
@@ -235,6 +252,4 @@ def test_company_logo_context_blank_and_populated(app: Flask) -> None:
         db.session.commit()
         populated_context = _collect_template_context(app)
 
-    assert populated_context["company_logo_url"] == (
-        "https://storage.googleapis.com/bucket/path/default.png"
-    )
+    assert populated_context["company_logo_url"] == "/branding_logos/path/default.png"
