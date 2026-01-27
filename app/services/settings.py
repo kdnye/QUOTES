@@ -47,7 +47,18 @@ class SettingRecord:
 
 @dataclass(frozen=True)
 class MailSettings:
-    """Structured SMTP overrides stored in :class:`AppSetting` rows."""
+    """Structured SMTP overrides stored in :class:`AppSetting` rows.
+
+    Attributes:
+        server: SMTP server hostname override.
+        port: SMTP port override.
+        use_tls: Whether to negotiate TLS after connecting.
+        use_ssl: Whether to use an SSL-wrapped SMTP connection.
+        username: SMTP username override.
+        password: SMTP password override.
+        message_stream: Postmark message stream header value applied by
+            :func:`app.services.mail.send_email`.
+    """
 
     server: Optional[str] = None
     port: Optional[int] = None
@@ -55,6 +66,7 @@ class MailSettings:
     use_ssl: Optional[bool] = None
     username: Optional[str] = None
     password: Optional[str] = None
+    message_stream: Optional[str] = None
 
 
 _MAIL_SETTING_KEYS = (
@@ -64,6 +76,7 @@ _MAIL_SETTING_KEYS = (
     "mail_use_ssl",
     "mail_username",
     "mail_password",
+    "mail_message_stream",
 )
 
 _TRUE_VALUES = {"true", "1", "yes", "y", "on"}
@@ -239,6 +252,7 @@ def load_mail_settings() -> MailSettings:
         use_ssl=_parse_bool(raw.get("mail_use_ssl")),
         username=_clean_value(raw.get("mail_username")),
         password=_clean_value(raw.get("mail_password")),
+        message_stream=_clean_value(raw.get("mail_message_stream")),
     )
 
 

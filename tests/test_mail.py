@@ -181,6 +181,125 @@ def test_send_email_retries_transient_error(
     )
 
 
+def test_send_email_sets_postmark_message_stream(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Attach the Postmark message stream header when configured."""
+
+    captured: dict[str, str] = {}
+
+    class CaptureSMTP:
+        """SMTP fake that captures the message headers.
+
+        Args:
+            host: SMTP hostname requested by the mail helper.
+            port: SMTP port requested by the mail helper.
+
+        External dependencies:
+            * Mimics :class:`smtplib.SMTP` behavior for tests.
+        """
+
+        def __init__(self, host: str, port: int) -> None:
+            self.host = host
+            self.port = port
+
+        def __enter__(self) -> "CaptureSMTP":
+            """Return the SMTP fake for context manager usage.
+
+            Returns:
+                ``self`` so the caller can call ``send_message``.
+
+            External dependencies:
+                * Implements the context manager protocol used by
+                  :func:`app.services.mail.send_email`.
+            """
+
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> bool:
+            """Exit the context manager without suppressing exceptions.
+
+            Args:
+                exc_type: Exception type raised inside the context, if any.
+                exc: Exception instance raised inside the context, if any.
+                tb: Traceback for the raised exception, if any.
+
+            Returns:
+                ``False`` to propagate exceptions to the caller.
+
+            External dependencies:
+                * Matches the context manager contract expected by
+                  :class:`smtplib.SMTP`.
+            """
+
+            return False
+
+        def starttls(self) -> None:
+            """No-op TLS upgrade for compatibility with the mail helper.
+
+            Returns:
+                ``None`` because the fake SMTP server does not perform TLS.
+
+            External dependencies:
+                * Mirrors the :meth:`smtplib.SMTP.starttls` interface.
+            """
+
+            return None
+
+        def login(self, user: str, password: str) -> None:
+            """No-op authentication for compatibility with the mail helper.
+
+            Args:
+                user: Username provided by the mail helper.
+                password: Password provided by the mail helper.
+
+            Returns:
+                ``None`` because authentication is not simulated.
+
+            External dependencies:
+                * Mirrors the :meth:`smtplib.SMTP.login` interface.
+            """
+
+            return None
+
+        def send_message(self, message: object) -> None:
+            """Capture Postmark headers from the outgoing message.
+
+            Args:
+                message: Email message object passed by the mail helper.
+
+            Returns:
+                ``None`` after capturing the header for assertions.
+
+            External dependencies:
+                * Reads headers from :class:`email.message.EmailMessage`.
+            """
+
+            captured["stream"] = message["X-PM-Message-Stream"]
+
+    from app.services import settings as settings_service
+
+    monkeypatch.setattr(mail_service.smtplib, "SMTP", CaptureSMTP)
+    monkeypatch.setattr(
+        settings_service, "load_mail_settings", lambda: settings_service.MailSettings()
+    )
+
+    with app.app_context():
+        app.config["MAIL_MESSAGE_STREAM"] = "broadcast"
+        mail_service.send_email(
+            "recipient@example.com",
+            "Subject",
+            "Body",
+        )
+
+    assert captured["stream"] == "broadcast"
+
+
 def test_send_email_raises_after_retries(
     app: Flask, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:

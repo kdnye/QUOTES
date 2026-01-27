@@ -660,6 +660,7 @@ class Config:
     }
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_MESSAGE_STREAM = os.getenv("MAIL_MESSAGE_STREAM")
     MAIL_ALLOWED_SENDER_DOMAIN = _resolve_mail_allowed_sender_domain(
         MAIL_DEFAULT_SENDER
     )
