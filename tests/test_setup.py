@@ -6,11 +6,12 @@ from pathlib import Path
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from sqlalchemy.exc import SQLAlchemyError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from app import create_app
+from app import _is_setup_required, create_app
 from app.models import User, db
 
 
@@ -71,6 +72,28 @@ def test_setup_redirects_when_no_users(client: FlaskClient) -> None:
 
     setup_page = client.get("/setup")
     assert setup_page.status_code == 200
+
+
+def test_setup_check_handles_database_error(
+    app: Flask, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ensure setup checks default to False when the database is unavailable."""
+
+    class DummyQuery:
+        """Stub query object that simulates a database outage."""
+
+        def count(self) -> int:
+            """Raise a SQLAlchemy error to simulate a failed count."""
+
+            raise SQLAlchemyError("db down")
+
+    monkeypatch.setattr(User, "query", DummyQuery(), raising=False)
+
+    with app.app_context(), caplog.at_level("WARNING"):
+        result = _is_setup_required()
+
+    assert result is False
+    assert "Setup check skipped: database unavailable." in caplog.text
 
 
 def test_setup_admin_creates_super_admin(app: Flask, client: FlaskClient) -> None:
