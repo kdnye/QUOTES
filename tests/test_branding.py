@@ -15,7 +15,11 @@ sys.path.append(str(PROJECT_ROOT))
 from app import create_app
 from app.admin import LogoUploadForm, branding
 from app.models import User, db
-from app.services.branding import resolve_brand_logo_url
+from app.services.branding import (
+    LOGO_SUBDIR,
+    _get_legacy_logo_dir,
+    resolve_brand_logo_url,
+)
 from app.services.branding_locations import (
     build_brand_logo_object_location,
     build_brand_logo_url,
@@ -117,6 +121,84 @@ def _ensure_setup_user(app: Flask) -> None:
     with app.app_context():
         if User.query.count() == 0:
             _create_super_admin()
+
+
+def test_theme_static_folder_prefers_repo_root(tmp_path: Path) -> None:
+    """Ensure the theme static folder prefers repository-root assets.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions validate the static folder selection behavior.
+
+    External dependencies:
+        * Calls :func:`app.quote.theme._resolve_theme_static_folder` to select
+          the theme static folder based on candidate paths.
+    """
+
+    from app.quote import theme as theme_mod
+
+    repo_root = tmp_path / "repo"
+    app_root = repo_root / "app"
+    theme_file = app_root / "quote" / "theme.py"
+    (repo_root / "theme" / "static").mkdir(parents=True)
+    (app_root / "theme" / "static").mkdir(parents=True)
+
+    selected = theme_mod._resolve_theme_static_folder(theme_file)
+    assert selected == repo_root / "theme" / "static"
+
+
+def test_theme_static_folder_falls_back_to_app_root(tmp_path: Path) -> None:
+    """Ensure the theme static folder falls back to the app root path.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions validate the fallback selection behavior.
+
+    External dependencies:
+        * Calls :func:`app.quote.theme._resolve_theme_static_folder` to select
+          the theme static folder based on candidate paths.
+    """
+
+    from app.quote import theme as theme_mod
+
+    repo_root = tmp_path / "repo"
+    app_root = repo_root / "app"
+    theme_file = app_root / "quote" / "theme.py"
+    (app_root / "theme" / "static").mkdir(parents=True)
+
+    selected = theme_mod._resolve_theme_static_folder(theme_file)
+    assert selected == app_root / "theme" / "static"
+
+
+def test_get_legacy_logo_dir_uses_theme_static_folder(tmp_path: Path) -> None:
+    """Ensure legacy logo paths derive from the theme static folder.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions confirm legacy logo directory resolution.
+
+    External dependencies:
+        * Reads :data:`app.quote.theme.bp` for the static folder value.
+        * Calls :func:`app.services.branding._get_legacy_logo_dir` to confirm
+          the derived legacy logo directory.
+    """
+
+    from app.quote import theme as theme_mod
+
+    custom_static = tmp_path / "theme" / "static"
+    custom_static.mkdir(parents=True)
+    original_static = theme_mod.bp.static_folder
+    try:
+        theme_mod.bp.static_folder = str(custom_static)
+        assert _get_legacy_logo_dir() == custom_static / LOGO_SUBDIR
+    finally:
+        theme_mod.bp.static_folder = original_static
 
 
 @pytest.mark.parametrize(

@@ -1,12 +1,42 @@
 """Reusable theme blueprint and helpers for the Flask UI."""
 
 from pathlib import Path
+from typing import Optional
+
 from flask import Blueprint, render_template_string, url_for
+
+
+def _resolve_theme_static_folder(current_file: Optional[Path] = None) -> Path:
+    """Resolve the filesystem path to the theme static assets.
+
+    Args:
+        current_file: Optional path to ``theme.py`` for test overrides. Defaults
+            to :data:`__file__` when omitted.
+
+    Returns:
+        Path: Path to the ``theme/static`` directory used by the blueprint.
+
+    External dependencies:
+        * Uses :class:`pathlib.Path` to resolve filesystem paths.
+    """
+
+    module_path = (current_file or Path(__file__)).resolve()
+    app_root = module_path.parents[1]
+    repo_root = app_root.parent
+    repo_candidate = repo_root / "theme" / "static"
+    app_candidate = app_root / "theme" / "static"
+
+    if repo_candidate.exists():
+        return repo_candidate
+    if app_candidate.exists():
+        return app_candidate
+    return repo_candidate
+
 
 bp = Blueprint(
     "theme",
     __name__,
-    static_folder=str(Path(__file__).resolve().parent.parent / "theme" / "static"),
+    static_folder=str(_resolve_theme_static_folder()),
     static_url_path="/theme/static",  # final URL will be /theme/static/…
 )
 
