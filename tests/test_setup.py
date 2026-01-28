@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from app import _is_setup_required, create_app
+from app import _is_setup_required, _should_run_startup_db_checks, create_app
 from app.models import User, db
 
 
@@ -94,6 +94,44 @@ def test_setup_check_handles_database_error(
 
     assert result is False
     assert "Setup check skipped: database unavailable." in caplog.text
+
+
+def test_startup_db_checks_skip_on_cloud_run(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ensure startup DB checks default to False on Cloud Run."""
+
+    app = Flask(__name__)
+    monkeypatch.setenv("K_SERVICE", "quotes-service")
+    monkeypatch.delenv("STARTUP_DB_CHECKS", raising=False)
+
+    with caplog.at_level("INFO"):
+        result = _should_run_startup_db_checks(app, [])
+
+    assert result is False
+    assert (
+        "Startup database checks skipped on Cloud Run unless STARTUP_DB_CHECKS "
+        "is enabled." in caplog.text
+    )
+
+
+def test_startup_db_checks_env_override_on_cloud_run(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Ensure STARTUP_DB_CHECKS overrides Cloud Run defaults."""
+
+    app = Flask(__name__)
+    monkeypatch.setenv("K_SERVICE", "quotes-service")
+    monkeypatch.setenv("STARTUP_DB_CHECKS", "true")
+
+    with caplog.at_level("INFO"):
+        result = _should_run_startup_db_checks(app, [])
+
+    assert result is True
+    assert (
+        "Startup database checks skipped on Cloud Run unless STARTUP_DB_CHECKS "
+        "is enabled." not in caplog.text
+    )
 
 
 def test_setup_admin_creates_super_admin(app: Flask, client: FlaskClient) -> None:
