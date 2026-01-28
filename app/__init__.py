@@ -84,6 +84,23 @@ def _is_production_environment() -> bool:
     return normalized in PRODUCTION_ENV_VALUES
 
 
+def _is_cloud_run_environment() -> bool:
+    """Return ``True`` when running in a Cloud Run environment.
+
+    Cloud Run sets ``K_SERVICE`` and ``K_REVISION`` environment variables for
+    each deployment. The helper uses their presence to identify the platform
+    and drive Cloud Run-specific defaults.
+
+    Returns:
+        ``True`` when Cloud Run environment variables are detected.
+
+    External dependencies:
+        * Reads environment variables via :func:`os.getenv`.
+    """
+
+    return bool(os.getenv("K_SERVICE") or os.getenv("K_REVISION"))
+
+
 def _coerce_timeout_seconds(
     value: str | float | int | None,
     default: float = DEFAULT_HEALTHCHECK_DB_TIMEOUT,
@@ -173,10 +190,12 @@ def _should_run_startup_db_checks(app: Flask, config_errors: list[str]) -> bool:
 
     Returns:
         ``True`` when startup database checks should run, ``False`` when they
-        should be skipped.
+        should be skipped. Defaults to ``False`` on Cloud Run unless explicitly
+        enabled via ``STARTUP_DB_CHECKS``.
 
     External dependencies:
         * Reads environment variables via :func:`os.getenv`.
+        * Calls :func:`_is_cloud_run_environment` to detect Cloud Run.
     """
 
     raw_setting = os.getenv("STARTUP_DB_CHECKS")
@@ -184,6 +203,12 @@ def _should_run_startup_db_checks(app: Flask, config_errors: list[str]) -> bool:
         raw_setting = app.config.get("STARTUP_DB_CHECKS")
     if raw_setting is not None:
         return _is_truthy(raw_setting)
+    if _is_cloud_run_environment():
+        app.logger.info(
+            "Startup database checks skipped on Cloud Run unless STARTUP_DB_CHECKS "
+            "is enabled."
+        )
+        return False
     if config_errors:
         return False
     return True
