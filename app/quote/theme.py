@@ -1,14 +1,16 @@
-"""Reusable theme blueprint and helpers for the Flask UI."""
+"""Reusable theme blueprint and helpers for the Flask UI.
 
-from pathlib import Path
+The theme assets are resolved from ``../../theme/static`` relative to
+``app/quote`` so the blueprint can be loaded without filesystem path
+manipulation.
+"""
+
 from flask import Blueprint, render_template_string, url_for
 
 bp = Blueprint(
     "theme",
     __name__,
-    static_folder=str(
-        Path(__file__).resolve().parent.parent.parent / "theme" / "static"
-    ),
+    static_folder="../../theme/static",
     static_url_path="/theme/static",  # final URL will be /theme/static/…
 )
 
