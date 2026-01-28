@@ -222,11 +222,16 @@ case "${auth_response,,}" in
         ;;
 esac
 
+branding_mount_env=""
+if [[ -n "${BRANDING_LOGO_MOUNT_PATH:-}" ]]; then
+    branding_mount_env=",BRANDING_LOGO_MOUNT_PATH=${BRANDING_LOGO_MOUNT_PATH}"
+fi
+
 gcloud run deploy "${SERVICE_NAME}" \
     --project="${PROJECT_ID}" \
     --region="${REGION}" \
     --platform=managed \
     "${auth_flag}" \
     --image="${IMAGE_URI}" \
-    --set-env-vars="POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs,BRANDING_LOGO_MOUNT_PATH=/logos" \
+    --set-env-vars="POSTGRES_USER=${POSTGRES_USER},POSTGRES_DB=${POSTGRES_DB},CLOUD_SQL_CONNECTION_NAME=${CLOUD_SQL_CONNECTION_NAME},FLASK_APP=app:create_app,BRANDING_STORAGE=gcs${branding_mount_env}" \
     --update-secrets="POSTGRES_PASSWORD=${POSTGRES_PASSWORD_SECRET}:latest,SECRET_KEY=${SECRET_KEY_SECRET}:latest,GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY_SECRET}:latest"
