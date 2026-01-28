@@ -3,6 +3,7 @@ from flask import (
     Flask,
     current_app,
     flash,
+    has_app_context,
     redirect,
     render_template,
     request,
@@ -21,6 +22,7 @@ from typing import Union
 from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
 import redis as redispy
+import logging
 
 from app.quote.distance import get_distance_miles
 from app.quote.theme import init_fsi_theme
@@ -193,14 +195,23 @@ def _is_setup_required() -> bool:
 
     Returns:
         ``True`` when no :class:`app.models.User` records exist, otherwise
-        ``False``.
+        ``False``. Returns ``False`` when the database cannot be reached so the
+        application can continue in a safe, maintenance-ready state.
 
     External dependencies:
         * Uses :class:`app.models.User` and ``User.query.count`` to inspect the
           database.
+        * Logs warnings via :attr:`flask.Flask.logger` or the module logger.
     """
 
-    return User.query.count() == 0
+    try:
+        return User.query.count() == 0
+    except Exception as exc:  # pragma: no cover - depends on database state
+        logger = (
+            current_app.logger if has_app_context() else logging.getLogger(__name__)
+        )
+        logger.warning("Unable to check setup status due to database error: %s", exc)
+        return False
 
 
 @login_manager.user_loader

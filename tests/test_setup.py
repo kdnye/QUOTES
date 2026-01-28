@@ -10,7 +10,7 @@ from flask.testing import FlaskClient
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
-from app import create_app
+from app import _is_setup_required, create_app
 from app.models import User, db
 
 
@@ -123,3 +123,21 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         assert settings["gcs_bucket"].is_secret is False
         assert app.config["GOOGLE_MAPS_API_KEY"] == "maps-key"
         assert app.config["GCS_BUCKET"] == "branding-bucket"
+
+
+def test_setup_required_handles_database_errors(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Ensure setup checks fail open when the database is unavailable."""
+
+    class BrokenQuery:
+        """Stub query object that simulates a database error."""
+
+        def count(self) -> int:
+            """Raise an error to simulate database connectivity failures."""
+
+            raise RuntimeError("Database unavailable")
+
+    monkeypatch.setattr(User, "query", BrokenQuery())
+    with app.app_context():
+        assert _is_setup_required() is False
