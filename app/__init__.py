@@ -17,6 +17,7 @@ from datetime import datetime
 import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import SQLAlchemyError
 from typing import Union
 from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
@@ -192,15 +193,30 @@ def _is_setup_required() -> bool:
     """Return whether the first-run setup flow should be enforced.
 
     Returns:
-        ``True`` when no :class:`app.models.User` records exist, otherwise
-        ``False``.
+        ``True`` when no :class:`app.models.User` records exist. Returns
+        ``False`` when the database is unavailable so the app does not redirect
+        users into the setup flow during outages.
 
     External dependencies:
         * Uses :class:`app.models.User` and ``User.query.count`` to inspect the
           database.
+        * Logs warnings via :data:`flask.current_app.logger` when the database
+          is unavailable.
     """
 
-    return User.query.count() == 0
+    try:
+        return User.query.count() == 0
+    except SQLAlchemyError as exc:  # pragma: no cover - depends on DB state
+        current_app.logger.warning(
+            "Setup check skipped: database unavailable.",
+            exc_info=exc,
+        )
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        current_app.logger.warning(
+            "Setup check skipped: database unavailable.",
+            exc_info=exc,
+        )
+    return False
 
 
 @login_manager.user_loader
