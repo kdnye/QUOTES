@@ -6,7 +6,9 @@ from flask import Blueprint, render_template_string, url_for
 bp = Blueprint(
     "theme",
     __name__,
-    static_folder=str(Path(__file__).resolve().parent.parent / "theme" / "static"),
+    static_folder=str(
+        Path(__file__).resolve().parent.parent.parent / "theme" / "static"
+    ),
     static_url_path="/theme/static",  # final URL will be /theme/static/…
 )
 

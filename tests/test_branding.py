@@ -15,7 +15,11 @@ sys.path.append(str(PROJECT_ROOT))
 from app import create_app
 from app.admin import LogoUploadForm, branding
 from app.models import User, db
-from app.services.branding import resolve_brand_logo_url
+from app.services.branding import (
+    LOGO_SUBDIR,
+    _get_legacy_logo_dir,
+    resolve_brand_logo_url,
+)
 from app.services.branding_locations import (
     build_brand_logo_object_location,
     build_brand_logo_url,
@@ -117,6 +121,26 @@ def _ensure_setup_user(app: Flask) -> None:
     with app.app_context():
         if User.query.count() == 0:
             _create_super_admin()
+
+
+def test_theme_static_folder_resolves_from_repo_root() -> None:
+    """Ensure theme static paths resolve from the repository root.
+
+    Returns:
+        None. Assertions validate the static folder and legacy logo directory
+        alignment with the repository layout.
+
+    External dependencies:
+        * Reads :data:`app.quote.theme.bp` for the static folder value.
+        * Calls :func:`app.services.branding._get_legacy_logo_dir` to confirm
+          the derived legacy logo directory.
+    """
+
+    from app.quote import theme as theme_mod
+
+    expected_static = (PROJECT_ROOT / "theme" / "static").resolve()
+    assert Path(theme_mod.bp.static_folder).resolve() == expected_static
+    assert _get_legacy_logo_dir().resolve() == expected_static / LOGO_SUBDIR
 
 
 @pytest.mark.parametrize(
