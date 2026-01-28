@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import shutil
 import sys
 from pathlib import Path
@@ -56,6 +57,29 @@ def app(tmp_path: Path) -> Flask:
         yield app
         db.session.remove()
         db.drop_all()
+
+
+def test_default_branding_logo_mount_path_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Ensure the branding logo mount path default is empty when unset.
+
+    Args:
+        monkeypatch: Pytest fixture for mutating environment variables.
+
+    Returns:
+        None. Assertions validate the default configuration value.
+
+    External dependencies:
+        * Reloads the :mod:`config` module via :func:`importlib.reload`.
+    """
+
+    monkeypatch.delenv("BRANDING_LOGO_MOUNT_PATH", raising=False)
+    import config as config_module
+
+    reloaded_config = importlib.reload(config_module)
+
+    assert reloaded_config.Config.BRANDING_LOGO_MOUNT_PATH == ""
 
 
 def _create_super_admin(rate_set: str = DEFAULT_RATE_SET) -> User:
