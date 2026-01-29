@@ -632,18 +632,6 @@ def _resolve_branding_storage() -> str:
 
 
 class Config:
-    print("--- STARTUP DEBUG LOGS ---")
-    print(f"FLASK_ENV: {os.getenv('FLASK_ENV')}")
-    print(f"ENVIRONMENT: {os.getenv('ENVIRONMENT')}")
-    print(f"DATABASE_URL: {os.getenv('DATABASE_URL')}")
-    print(f"CLOUD_SQL_CONNECTION_NAME: {os.getenv('CLOUD_SQL_CONNECTION_NAME')}")
-    print(f"POSTGRES_USER: {os.getenv('POSTGRES_USER')}")
-    print(f"POSTGRES_DB: {os.getenv('POSTGRES_DB')}")
-    print(f"POSTGRES_HOST: {os.getenv('POSTGRES_HOST')}")
-    print(f"POSTGRES_PORT: {os.getenv('POSTGRES_PORT')}")
-    print(f"POSTGRES_PASSWORD set: {'yes' if os.getenv('POSTGRES_PASSWORD') else 'no'}")
-    print("--------------------------")
-
     SECRET_KEY = _resolve_secret_key()
     _sanitized_database_url = _sanitize_database_url(os.getenv("DATABASE_URL"))
     _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
