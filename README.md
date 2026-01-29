@@ -172,6 +172,12 @@ boot. This speeds container readiness but requires you to run migrations (for
 example, `alembic upgrade head`) separately and validate connectivity via the
 `/healthz` endpoint once the database is online.
 
+Cloud Run mounts the container filesystem as read-only. When the application
+falls back to its SQLite database (for example, in non-production testing), it
+stores the database under `/tmp/quote_tool/instance`. Override the fallback by
+setting `APP_INSTANCE_DIR` to a writable path. Production deployments should
+still use PostgreSQL per the guidance above.
+
 ### Windows executable
 
 Administrators who prefer a self-contained Windows build can package the app

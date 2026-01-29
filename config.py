@@ -41,7 +41,6 @@ from typing import Iterable, Optional, Set, Tuple
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "instance" / "app.db"
 # Capture configuration errors so the application can start in a safe
 # maintenance mode instead of crashing during import time.
 _CONFIG_ERRORS: list[str] = []
@@ -64,8 +63,50 @@ def _record_startup_error(message: str) -> None:
     _CONFIG_ERRORS.append(message)
 
 
-# Ensure the default database directory exists so all tools share the same DB.
-DEFAULT_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+def _resolve_default_db_path(base_dir: Path) -> Path:
+    """Return a writable SQLite database path for local usage.
+
+    Args:
+        base_dir: Repository root used for the default ``instance`` directory.
+
+    Returns:
+        Path: Filesystem path to the SQLite database file.
+
+    External Dependencies:
+        * Calls :meth:`pathlib.Path.mkdir` to create instance directories.
+        * Reads ``APP_INSTANCE_DIR`` via :func:`os.getenv` for fallback storage.
+        * Logs warnings via :mod:`logging` when falling back to ``/tmp``.
+    """
+
+    instance_dir = base_dir / "instance"
+    try:
+        instance_dir.mkdir(parents=True, exist_ok=True)
+        return instance_dir / "app.db"
+    except OSError as exc:
+        fallback_dir = Path(os.getenv("APP_INSTANCE_DIR", "/tmp/quote_tool/instance"))
+        try:
+            fallback_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as fallback_exc:
+            logging.getLogger("quote_tool.config").error(
+                "Failed to create instance directories %s and %s: %s",
+                instance_dir,
+                fallback_dir,
+                fallback_exc,
+            )
+            _record_startup_error(
+                "Unable to create instance directories for the SQLite database."
+            )
+        else:
+            logging.getLogger("quote_tool.config").warning(
+                "Instance directory %s is not writable (%s). Falling back to %s.",
+                instance_dir,
+                exc,
+                fallback_dir,
+            )
+        return fallback_dir / "app.db"
+
+
+DEFAULT_DB_PATH = _resolve_default_db_path(BASE_DIR)
 
 
 def _is_production_environment() -> bool:
