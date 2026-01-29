@@ -700,7 +700,7 @@ class Config:
     BRANDING_STORAGE = _resolve_branding_storage()
     GCS_BUCKET = os.getenv("GCS_BUCKET")
     GCS_PREFIX = os.getenv("GCS_PREFIX")
-    BRANDING_LOGO_MOUNT_PATH = os.getenv("BRANDING_LOGO_MOUNT_PATH", "/logos")
+    BRANDING_LOGO_MOUNT_PATH = os.getenv("BRANDING_LOGO_MOUNT_PATH", "")
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")
     OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
     OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")
