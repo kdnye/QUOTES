@@ -104,6 +104,7 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
         rendered_url = str(url)
 
     config.set_main_option("sqlalchemy.url", rendered_url)
+    config.attributes['target_engine'] = active_engine
 
     inspector = inspect(active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]
