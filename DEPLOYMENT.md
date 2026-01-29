@@ -358,6 +358,13 @@ CLOUD_SQL_CONNECTION_NAME=quote-tool-483716:us-central1:quotetool-postgres-insta
 For Cloud SQL, ensure the instance is running **PostgreSQL**, not MySQL, because
 the application relies on PostgreSQL-specific drivers and migrations.
 
+Cloud Run runs containers on a read-only filesystem. If the application falls
+back to its SQLite database (for example, during non-production smoke tests),
+the database is stored under `/tmp/quote_tool/instance`. Set
+`APP_INSTANCE_DIR` to override the fallback with another writable directory.
+Production Cloud Run deployments should still use PostgreSQL per the guidance
+above.
+
 ### Apply database migrations
 
 Run Alembic migrations using a Cloud Run job or a temporary container that has
