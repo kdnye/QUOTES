@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 from flask import Flask
 from flask.testing import FlaskClient
+from sqlalchemy.exc import OperationalError
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
@@ -161,3 +162,59 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         assert app.config["POSTGRES_PORT"] == 5432
         assert app.config["POSTGRES_OPTIONS"] == "sslmode=require"
         assert app.config["CLOUD_SQL_CONNECTION_NAME"] == "project:region:instance"
+
+
+def test_setup_validation_db_error_enables_maintenance_mode(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Ensure setup validation errors enable maintenance mode safely.
+
+    Args:
+        monkeypatch: Pytest fixture used to override database query behavior.
+        tmp_path: Temporary path injected by pytest for the SQLite database.
+
+    External dependencies:
+        * Calls :func:`app.create_app` to construct the Flask application.
+        * Overrides :class:`app.models.User` query behavior via ``monkeypatch``.
+        * Initializes :data:`app.models.db` with a temporary
+          :class:`flask.Flask` app via :meth:`flask_sqlalchemy.SQLAlchemy.init_app`.
+    """
+
+    class DummyQuery:
+        """Provide a query stub that raises an OperationalError.
+
+        External dependencies:
+            * Raises :class:`sqlalchemy.exc.OperationalError` to emulate a
+              database failure.
+        """
+
+        def count(self) -> int:
+            """Raise an OperationalError to simulate database failure.
+
+            Returns:
+                Never returns because the method always raises.
+            """
+
+            raise OperationalError("SELECT 1", {}, Exception("db down"))
+
+    class ErrorConfig(TestConfig):
+        """Configuration overrides for database error validation.
+
+        External dependencies:
+            * Inherits from :class:`TestConfig` to reuse setup configuration.
+        """
+
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+
+    temp_app = Flask("setup-validation")
+    temp_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{tmp_path / 'patch.db'}"
+    temp_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(temp_app)
+    with temp_app.app_context():
+        monkeypatch.setattr(User, "query", DummyQuery())
+
+    app = create_app(ErrorConfig)
+
+    client = app.test_client()
+    response = client.get("/healthz")
+    assert response.status_code == 500
