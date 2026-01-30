@@ -32,3 +32,21 @@ def test_alembic_env_sets_metadata_and_sys_path() -> None:
     assert "target_metadata = Base.metadata" in env_contents
     assert "project_root = Path(__file__).resolve().parent.parent" in env_contents
     assert "sys.path.insert(0, str(project_root))" in env_contents
+
+
+def test_alembic_env_escapes_percent_in_database_url() -> None:
+    """Verify Alembic env escapes `%` when setting the database URL.
+
+    Returns:
+        None. Ensures the env file sets ``sqlalchemy.url`` from the app config
+        while escaping percent signs for ConfigParser interpolation.
+
+    External Dependencies:
+        Reads ``migrations/env.py`` from disk via :class:`pathlib.Path`.
+    """
+
+    env_py = PROJECT_ROOT / "migrations" / "env.py"
+    env_contents = env_py.read_text(encoding="utf-8")
+
+    assert 'db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")' in env_contents
+    assert 'config.set_main_option("sqlalchemy.url", str(db_url).replace("%", "%%"))' in env_contents
