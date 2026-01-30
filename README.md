@@ -255,7 +255,11 @@ When `BRANDING_STORAGE=gcs`, the application uploads logo objects and stores
 their public URLs in `app_settings`. Ensure the workload identity or service
 account has `roles/storage.objectAdmin` or at minimum `storage.objects.create`
 and `storage.objects.delete` (plus `get` if your bucket requires reads to
-resolve public URLs). Bucket mounts are not supported.
+resolve public URLs). Bucket mounts are not supported; the service uses the
+Cloud Storage API directly. If you see Cloud Run startup failures referencing
+`gcsfuse` or IP filtering, remove any GCS bucket mount from the service
+configuration and allow the runtime service account to access the bucket over
+the Storage API instead.
 
 Admins can also configure per-rate-set logo locations by visiting **Admin >
 Branding** and entering a base GCS bucket location in the form

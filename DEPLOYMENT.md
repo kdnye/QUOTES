@@ -388,6 +388,13 @@ have `roles/storage.objectAdmin` or the scoped permissions
 bucket requires reads to resolve public URLs). Branding assets must be stored
 via the Google Cloud Storage API; bucket mounts are not supported.
 
+If Cloud Run startup logs mention `gcsfuse` or `PermissionDenied` IP filtering,
+remove any configured GCS bucket mount from the service definition and ensure
+the runtime service account has Storage API access to the bucket. GCS bucket
+mounts introduce extra networking requirements (for example VPC egress or IP
+allow lists) that are unnecessary for this application because the branding
+flows use the Google Cloud Storage API.
+
 ### Seed rate tables and admin user
 
 The `init_db.py` helper imports base rate data and optionally creates an initial
