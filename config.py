@@ -38,6 +38,7 @@ from pathlib import Path
 from secrets import token_urlsafe
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
 from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
+from sqlalchemy.engine import make_url
 
 BASE_DIR = Path(__file__).resolve().parent
 DEFAULT_DB_PATH = BASE_DIR / "instance" / "app.db"
@@ -475,6 +476,31 @@ def _sanitize_database_url(raw_url: Optional[str]) -> Optional[str]:
     return raw_url
 
 
+def _rebuild_database_url(raw_url: str | None) -> str | None:
+    """Return a database URL with the password re-encoded.
+
+    This function is a workaround for situations where the DATABASE_URL
+    is constructed with a password containing special characters that have
+    not been properly URL-encoded.
+
+    Args:
+        raw_url: Optional URL sourced from ``DATABASE_URL``.
+
+    Returns:
+        Sanitized URL string or ``None`` when the input is unusable.
+    """
+    if not raw_url:
+        return None
+
+    try:
+        url = make_url(raw_url)
+        if url.password:
+            url = url.set(password=quote_plus(url.password))
+        return str(url)
+    except Exception:
+        return raw_url
+
+
 def _is_postgres_dsn(database_uri: str) -> bool:
     """Return ``True`` when ``database_uri`` points at a PostgreSQL database.
 
@@ -765,7 +791,8 @@ def _resolve_branding_storage() -> str:
 
 class Config:
     SECRET_KEY = _resolve_secret_key()
-    _sanitized_database_url = _sanitize_database_url(os.getenv("DATABASE_URL"))
+    _raw_database_url = os.getenv("DATABASE_URL")
+    _sanitized_database_url = _rebuild_database_url(_raw_database_url)
     _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
     _postgres_uri = build_postgres_database_uri_from_env()
     _default_sqlite_path = _resolve_default_sqlite_path()
