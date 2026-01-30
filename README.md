@@ -242,23 +242,20 @@ your proxy or monitoring stack expects them.
 
 ### Branding logo storage
 
-Branding logos are stored on the local filesystem by default. Cloud Run
-deployments must use Google Cloud Storage for branding assets. To upload logos
-to Google Cloud Storage instead, configure the following environment
-variables:
+Branding logos are stored in Google Cloud Storage. Configure the following
+environment variables to enable uploads and URL generation:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `BRANDING_STORAGE` | Branding backend (`local` or `gcs`) | `local` (defaults to `gcs` on Cloud Run) |
+| `BRANDING_STORAGE` | Branding backend (`gcs`) | `gcs` |
 | `GCS_BUCKET` | Target bucket for GCS branding logos | (empty) |
 | `GCS_PREFIX` | Optional object prefix for branding logos | (empty) |
 
-When `BRANDING_STORAGE=gcs` (mandatory on Cloud Run), the application uploads
-logo objects and stores their public URLs in `app_settings`. Ensure the
-workload identity or service account has `roles/storage.objectAdmin` or at
-minimum
-`storage.objects.create` and `storage.objects.delete` (plus `get` if your
-bucket requires reads to resolve public URLs).
+When `BRANDING_STORAGE=gcs`, the application uploads logo objects and stores
+their public URLs in `app_settings`. Ensure the workload identity or service
+account has `roles/storage.objectAdmin` or at minimum `storage.objects.create`
+and `storage.objects.delete` (plus `get` if your bucket requires reads to
+resolve public URLs). Bucket mounts are not supported.
 
 Admins can also configure per-rate-set logo locations by visiting **Admin >
 Branding** and entering a base GCS bucket location in the form

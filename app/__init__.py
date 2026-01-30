@@ -474,7 +474,6 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from app.api import api_bp
     from .auth import auth_bp
     from .admin import admin_bp
-    from .branding import branding_bp
     from .help import help_bp
     from app.setup import setup_bp
     from .quotes import quotes_bp
@@ -484,7 +483,6 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(api_bp, url_prefix="/api")
     app.register_blueprint(auth_bp)
     app.register_blueprint(admin_bp, url_prefix="/admin")
-    app.register_blueprint(branding_bp)
     app.register_blueprint(admin_quotes_bp, url_prefix="/admin")
     app.register_blueprint(quotes_bp, url_prefix="/quotes")
     app.register_blueprint(help_bp, url_prefix="/help")
