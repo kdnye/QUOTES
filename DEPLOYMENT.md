@@ -388,6 +388,29 @@ by the deployment must have `roles/storage.objectAdmin` or the scoped permission
 `storage.objects.create` and `storage.objects.delete` (plus `get` if your
 bucket requires reads to resolve public URLs).
 
+#### Troubleshooting GCSFuse mount failures
+
+Some deployments mount Cloud Storage buckets as a Cloud Run volume (for example,
+to serve static logo assets). If the bucket enforces IP filtering, Cloud Run
+instances can fail to start with errors like:
+
+```
+PermissionDenied: There is an IP filtering condition that is preventing access
+to the resource.
+```
+
+To resolve the issue:
+
+1. **Allow Cloud Run egress IPs** – If your bucket uses an IP allowlist, route
+   Cloud Run traffic through a Serverless VPC Connector and Cloud NAT so you can
+   provide static egress IP addresses. Add those IPs to the bucket allowlist.
+2. **Relax the IP filter** – Remove or broaden the IP filtering condition on
+   the bucket if you do not need strict IP-based access control.
+3. **Avoid GCSFuse volumes** – Use the application’s built-in GCS branding
+   storage (`BRANDING_STORAGE=gcs`) instead of a mounted volume when possible.
+   This uses the Google Cloud Storage API directly and avoids GCSFuse startup
+   dependencies.
+
 ### Seed rate tables and admin user
 
 The `init_db.py` helper imports base rate data and optionally creates an initial
