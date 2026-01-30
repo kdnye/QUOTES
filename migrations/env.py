@@ -4,6 +4,7 @@ from logging.config import fileConfig
 from pathlib import Path
 import sys
 
+from flask import current_app
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
@@ -66,6 +67,11 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
+    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    if db_url:
+        # ConfigParser treats `%` as interpolation, so `%` must be escaped.
+        config.set_main_option("sqlalchemy.url", str(db_url).replace("%", "%%"))
+
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",

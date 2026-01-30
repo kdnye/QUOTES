@@ -90,6 +90,10 @@ argument or prompts you interactively:
 
 Run `alembic upgrade head` after creating a revision to apply it locally.
 
+Alembic uses the app's `SQLALCHEMY_DATABASE_URI` setting when running online
+migrations. If the URL contains percent-encoded values, the migration setup
+escapes `%` so ConfigParser interpolation does not corrupt the URL.
+
 ### Docker (production-style container)
 
 1. Build the container image:
