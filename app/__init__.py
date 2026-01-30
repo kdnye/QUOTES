@@ -17,6 +17,7 @@ from datetime import datetime
 import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import OperationalError, SQLAlchemyError
 from typing import Dict, List, Optional, Tuple, Union
 from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
@@ -192,15 +193,26 @@ def _is_setup_required() -> bool:
     """Return whether the first-run setup flow should be enforced.
 
     Returns:
-        ``True`` when no :class:`app.models.User` records exist, otherwise
-        ``False``.
+        ``True`` when no :class:`app.models.User` records exist, ``False`` when
+        a user is present, and ``False`` when database errors prevent
+        validation. When database errors occur, sets
+        ``SETUP_VALIDATION_FAILED`` on the active app configuration.
 
     External dependencies:
         * Uses :class:`app.models.User` and ``User.query.count`` to inspect the
           database.
+        * Logs warnings via :attr:`flask.current_app.logger` when database
+          errors occur.
     """
 
-    return User.query.count() == 0
+    try:
+        return User.query.count() == 0
+    except (OperationalError, SQLAlchemyError) as exc:
+        current_app.logger.warning(
+            "Setup validation skipped due to database error: %s", exc
+        )
+        current_app.config["SETUP_VALIDATION_FAILED"] = True
+        return False
 
 
 @login_manager.user_loader
@@ -315,7 +327,9 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
           migration failures are captured so the app can start in maintenance
           mode.
         * Computes ``SETUP_REQUIRED`` based on :func:`_is_setup_required` so the
-          setup flow can redirect until an administrator account exists.
+          setup flow can redirect until an administrator account exists. When
+          database validation fails, setup errors are recorded so the app starts
+          in maintenance mode.
         * Loads override settings via :func:`app.services.settings.reload_overrides`.
     """
     app = Flask(__name__, template_folder="../templates")
@@ -390,7 +404,20 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         if config_errors:
             setup_errors.extend(config_errors)
         reload_overrides(app)
-        app.config["SETUP_REQUIRED"] = _is_setup_required()
+        try:
+            app.config["SETUP_REQUIRED"] = _is_setup_required()
+            if app.config.pop("SETUP_VALIDATION_FAILED", False):
+                setup_errors.append(
+                    "Unable to validate setup status due to database errors."
+                )
+        except Exception as exc:  # pragma: no cover - defensive guard
+            app.logger.warning(
+                "Setup validation failed; enabling maintenance mode: %s", exc
+            )
+            setup_errors.append(
+                "Unable to validate setup status due to database errors."
+            )
+            app.config["SETUP_REQUIRED"] = False
 
     limiter.init_app(app)
 
