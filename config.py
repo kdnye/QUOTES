@@ -37,7 +37,7 @@ import socket
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
-from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, unquote
 from sqlalchemy.engine import make_url
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -604,7 +604,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
     if not connection_name:
         return None
 
-    password = os.getenv("POSTGRES_PASSWORD")
+    password = unquote(os.getenv("POSTGRES_PASSWORD"))
     if not password:
         return None
 
