@@ -14,7 +14,7 @@ sys.path.append(str(PROJECT_ROOT))
 from app import create_app
 from app.admin import LogoUploadForm, branding
 from app.models import User, db
-from app.services.branding import resolve_brand_logo_url
+from app.services.branding import get_branding_storage, resolve_brand_logo_url
 from app.services.branding_locations import (
     build_brand_logo_object_location,
     build_brand_logo_url,
@@ -173,6 +173,12 @@ def test_resolve_brand_logo_url_supports_gcs_locations() -> None:
     assert url == "https://storage.googleapis.com/bucket/path/logo.png"
 
 
+def test_resolve_brand_logo_url_rejects_local_filenames() -> None:
+    """Ensure local filenames do not resolve to public URLs."""
+
+    assert resolve_brand_logo_url("default.png") is None
+
+
 def test_build_brand_logo_url_uses_rate_set_naming() -> None:
     """Confirm rate set logos use the ``<bucket>/<rate_set>.png`` convention."""
 
@@ -188,6 +194,22 @@ def test_build_brand_logo_location_returns_none_for_blank_input() -> None:
 
     assert build_brand_logo_object_location("   ", "ININ") is None
     assert build_brand_logo_url("", "ININ") is None
+
+
+def test_get_branding_storage_rejects_non_gcs_backend(app: Flask) -> None:
+    """Ensure non-GCS branding storage backends are rejected safely.
+
+    Args:
+        app: Application instance configured for tests.
+
+    External dependencies:
+        * Calls :func:`app.services.branding.get_branding_storage` for selection.
+    """
+
+    app.config["BRANDING_STORAGE"] = "local"
+    app.config["GCS_BUCKET"] = "branding-bucket"
+    with app.app_context(), pytest.raises(RuntimeError, match="bucket mounts"):
+        get_branding_storage(app)
 
 
 def test_branding_payload_includes_blank_and_populated_logos(app: Flask) -> None:

@@ -23,7 +23,7 @@ Key settings exposed by :class:`Config`:
   and rate limiting for the JSON API endpoints.
 * ``WTF_CSRF_ENABLED``: Toggles CSRF protection across forms.
 * ``BRANDING_STORAGE``, ``GCS_BUCKET``, and ``GCS_PREFIX``: Configure branding
-  logo storage for local or Google Cloud Storage backends.
+  logo storage in Google Cloud Storage.
 
 All values default to development-friendly settings and can be overridden via
 environment variables so each deployment can customize behaviour without
@@ -747,24 +747,20 @@ def _resolve_oidc_allowed_domain() -> str:
 
 
 def _resolve_branding_storage() -> str:
-    """Return the branding storage backend, defaulting to GCS on Cloud Run.
+    """Return the branding storage backend, defaulting to GCS.
 
     Returns:
         str: Normalized branding storage backend identifier.
 
     External Dependencies:
-        Calls :func:`os.getenv` to read ``BRANDING_STORAGE`` and Cloud Run
-        environment markers.
+        Calls :func:`os.getenv` to read ``BRANDING_STORAGE``.
     """
 
     configured = os.getenv("BRANDING_STORAGE")
     if configured:
         return configured.strip().lower()
 
-    if _is_cloud_run_environment():
-        return "gcs"
-
-    return "local"
+    return "gcs"
 
 
 class Config:
@@ -887,7 +883,6 @@ class Config:
     )
     API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
     API_QUOTE_RATE_LIMIT = os.getenv("API_QUOTE_RATE_LIMIT", "30 per minute")
-    _cloud_run = _is_cloud_run_environment()
     BRANDING_STORAGE = _resolve_branding_storage()
     GCS_BUCKET = os.getenv("GCS_BUCKET")
     GCS_PREFIX = os.getenv("GCS_PREFIX")
@@ -900,19 +895,19 @@ class Config:
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
 
-    if _cloud_run:
-        if BRANDING_STORAGE not in {
-            "gcs",
-            "google",
-            "google_cloud_storage",
-            "googlecloudstorage",
-        }:
-            _record_startup_error(
-                "Cloud Run requires BRANDING_STORAGE=gcs for branding assets."
-            )
-        if not (GCS_BUCKET or "").strip():
-            _record_startup_error(
-                "GCS_BUCKET must be set for branding storage on Cloud Run."
-            )
+    if BRANDING_STORAGE not in {
+        "gcs",
+        "google",
+        "google_cloud_storage",
+        "googlecloudstorage",
+    }:
+        _record_startup_error(
+            "Branding storage must use Google Cloud Storage; bucket mounts are "
+            "not supported."
+        )
+    if not (GCS_BUCKET or "").strip():
+        _record_startup_error(
+            "GCS_BUCKET must be set for branding storage using GCS."
+        )
 
     CONFIG_ERRORS = list(_CONFIG_ERRORS)
