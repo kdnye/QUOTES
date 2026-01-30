@@ -346,6 +346,47 @@ def _gcs_public_url_from_location(location: str) -> str | None:
     return f"https://storage.googleapis.com/{bucket}/{object_path}"
 
 
+def _resolve_case_insensitive_path(path: Path) -> Path | None:
+    """Return a filesystem path when only casing differs.
+
+    Args:
+        path: Absolute or relative path to resolve with case-insensitive
+            matching.
+
+    Returns:
+        A resolved :class:`pathlib.Path` when a case-insensitive match exists,
+        otherwise ``None``.
+
+    External dependencies:
+        * Uses :meth:`pathlib.Path.iterdir` to check directory entries.
+    """
+
+    try:
+        resolved_parts: list[str] = []
+        current = Path(path.root or ".")
+        for part in path.parts:
+            if part in {"/", ""}:
+                resolved_parts.append(part)
+                continue
+            if not current.exists():
+                return None
+            match = next(
+                (
+                    entry.name
+                    for entry in current.iterdir()
+                    if entry.name.lower() == part.lower()
+                ),
+                None,
+            )
+            if match is None:
+                return None
+            resolved_parts.append(match)
+            current = current / match
+        return Path(*resolved_parts)
+    except OSError:
+        return None
+
+
 def _get_brand_logo_mount_path(app: Optional[Flask] = None) -> Path | None:
     """Return the mounted branding logo directory when configured.
 
@@ -354,10 +395,13 @@ def _get_brand_logo_mount_path(app: Optional[Flask] = None) -> Path | None:
 
     Returns:
         Path to the mounted logo directory if configured and present, otherwise
-        ``None``.
+        ``None``. If the configured path differs only by casing (for example,
+        ``/logos`` vs ``/Logos``), the on-disk path is returned.
 
     External dependencies:
         * :data:`flask.current_app` for configuration access.
+        * Calls :func:`app.services.branding._resolve_case_insensitive_path` to
+          recover mounts with different casing.
     """
 
     target_app = app or current_app
@@ -365,9 +409,9 @@ def _get_brand_logo_mount_path(app: Optional[Flask] = None) -> Path | None:
     if not raw_path:
         return None
     mount_path = Path(raw_path)
-    if not mount_path.exists():
-        return None
-    return mount_path
+    if mount_path.exists():
+        return mount_path
+    return _resolve_case_insensitive_path(mount_path)
 
 
 def _gcs_mounted_logo_url(location: str) -> str | None:

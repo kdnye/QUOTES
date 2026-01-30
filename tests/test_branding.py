@@ -16,7 +16,11 @@ sys.path.append(str(PROJECT_ROOT))
 from app import create_app
 from app.admin import LogoUploadForm, branding
 from app.models import User, db
-from app.services.branding import resolve_brand_logo_url
+from app.services.branding import (
+    LOGO_SUBDIR,
+    _get_legacy_logo_dir,
+    resolve_brand_logo_url,
+)
 from app.services.branding_locations import (
     build_brand_logo_object_location,
     build_brand_logo_url,
@@ -143,6 +147,84 @@ def _ensure_setup_user(app: Flask) -> None:
             _create_super_admin()
 
 
+def test_theme_static_folder_prefers_repo_root(tmp_path: Path) -> None:
+    """Ensure the theme static folder prefers repository-root assets.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions validate the static folder selection behavior.
+
+    External dependencies:
+        * Calls :func:`app.quote.theme._resolve_theme_static_folder` to select
+          the theme static folder based on candidate paths.
+    """
+
+    from app.quote import theme as theme_mod
+
+    repo_root = tmp_path / "repo"
+    app_root = repo_root / "app"
+    theme_file = app_root / "quote" / "theme.py"
+    (repo_root / "theme" / "static").mkdir(parents=True)
+    (app_root / "theme" / "static").mkdir(parents=True)
+
+    selected = theme_mod._resolve_theme_static_folder(theme_file)
+    assert selected == repo_root / "theme" / "static"
+
+
+def test_theme_static_folder_falls_back_to_app_root(tmp_path: Path) -> None:
+    """Ensure the theme static folder falls back to the app root path.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions validate the fallback selection behavior.
+
+    External dependencies:
+        * Calls :func:`app.quote.theme._resolve_theme_static_folder` to select
+          the theme static folder based on candidate paths.
+    """
+
+    from app.quote import theme as theme_mod
+
+    repo_root = tmp_path / "repo"
+    app_root = repo_root / "app"
+    theme_file = app_root / "quote" / "theme.py"
+    (app_root / "theme" / "static").mkdir(parents=True)
+
+    selected = theme_mod._resolve_theme_static_folder(theme_file)
+    assert selected == app_root / "theme" / "static"
+
+
+def test_get_legacy_logo_dir_uses_theme_static_folder(tmp_path: Path) -> None:
+    """Ensure legacy logo paths derive from the theme static folder.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions confirm legacy logo directory resolution.
+
+    External dependencies:
+        * Reads :data:`app.quote.theme.bp` for the static folder value.
+        * Calls :func:`app.services.branding._get_legacy_logo_dir` to confirm
+          the derived legacy logo directory.
+    """
+
+    from app.quote import theme as theme_mod
+
+    custom_static = tmp_path / "theme" / "static"
+    custom_static.mkdir(parents=True)
+    original_static = theme_mod.bp.static_folder
+    try:
+        theme_mod.bp.static_folder = str(custom_static)
+        assert _get_legacy_logo_dir() == custom_static / LOGO_SUBDIR
+    finally:
+        theme_mod.bp.static_folder = original_static
+
+
 @pytest.mark.parametrize(
     "location",
     [
@@ -261,6 +343,48 @@ def test_resolve_brand_logo_url_uses_logos_mount(tmp_path: Path) -> None:
 
         if created_mount:
             shutil.rmtree(mount_path, ignore_errors=True)
+
+
+def test_resolve_brand_logo_url_uses_case_insensitive_mount(
+    tmp_path: Path,
+) -> None:
+    """Ensure mount path detection works when casing differs.
+
+    Args:
+        tmp_path: Temporary path injected by pytest.
+
+    Returns:
+        None. Assertions confirm the case-insensitive mount is detected.
+
+    External dependencies:
+        * Creates a Flask app via :func:`app.create_app`.
+        * Calls :func:`app.services.branding.resolve_brand_logo_url` to compute
+          the branding logo URL.
+    """
+
+    mount_path = tmp_path / "Logos"
+    mount_path.mkdir(parents=True, exist_ok=True)
+    configured_path = tmp_path / "logos"
+
+    class CaseInsensitiveMountConfig(TestConfig):
+        """Configuration overrides that use a different path casing."""
+
+        BRANDING_LOGO_MOUNT_PATH = str(configured_path)
+
+    CaseInsensitiveMountConfig.SQLALCHEMY_DATABASE_URI = (
+        f"sqlite:///{tmp_path / 'test.db'}"
+    )
+    app = create_app(CaseInsensitiveMountConfig)
+
+    try:
+        with app.app_context():
+            url = resolve_brand_logo_url("gs://bucket/path/logo.png")
+
+        assert url == "/branding_assets/path/logo.png"
+    finally:
+        with app.app_context():
+            db.session.remove()
+            db.drop_all()
 
 
 def test_build_brand_logo_url_uses_rate_set_naming(app: Flask) -> None:
