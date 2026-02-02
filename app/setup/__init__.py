@@ -295,7 +295,7 @@ def _persist_setup_overrides(
         * Calls :func:`app.services.settings.reload_overrides` to refresh
           ``current_app.config``.
     """
-
+    current_app.logger.info("Entering _persist_setup_overrides()")
     updated_keys: list[str] = []
     errors: list[str] = []
     fields = _get_setup_override_fields()
@@ -304,6 +304,7 @@ def _persist_setup_overrides(
         if not raw_value:
             continue
         try:
+            current_app.logger.info(f"Saving setting: {field['config_key']}")
             set_setting(
                 field["config_key"],
                 raw_value,
@@ -321,6 +322,7 @@ def _persist_setup_overrides(
 
     if updated_keys:
         try:
+            current_app.logger.info("Committing setup overrides to database.")
             db.session.commit()
         except SQLAlchemyError as exc:
             db.session.rollback()
@@ -328,6 +330,7 @@ def _persist_setup_overrides(
             errors.append("Unable to save settings. Check the database connection.")
             updated_keys = []
         else:
+            current_app.logger.info("Reloading overrides.")
             reload_overrides(current_app)
 
     return updated_keys, errors
@@ -340,23 +343,30 @@ def setup_status() -> str:
     Returns:
         Rendered HTML for the setup landing page.
     """
-
+    current_app.logger.info("Entering setup_status()")
     if request.method == "POST":
+        current_app.logger.info(f"setup_status() POST request with form data: {request.form}")
         updated_keys, errors = _persist_setup_overrides(request.form)
         if errors:
             for message in errors:
+                current_app.logger.error(f"Error persisting setup overrides: {message}")
                 flash(message, "danger")
         if updated_keys:
+            current_app.logger.info(f"Saved configuration overrides: {', '.join(sorted(updated_keys))}")
             flash(
                 "Saved configuration overrides: " + ", ".join(sorted(updated_keys)),
                 "success",
             )
         elif not errors:
+            current_app.logger.info("No configuration values were provided.")
             flash("No configuration values were provided.", "info")
         return redirect(url_for("setup.setup_status"))
 
     checks = _collect_env_checks()
+    current_app.logger.info(f"Environment checks: {checks}")
     missing = [check for check in checks if not check["configured"]]
+    if missing:
+        current_app.logger.warning(f"Missing environment variables: {missing}")
     override_fields = _get_setup_override_fields()
     return render_template(
         "setup/index.html",
@@ -378,14 +388,16 @@ def setup_db_init() -> ResponseReturnValue:
         * Calls :func:`app.database.ensure_database_schema` to run migrations or
           create tables for SQLite databases.
     """
-
+    current_app.logger.info("Entering setup_db_init()")
     if request.method == "POST":
+        current_app.logger.info("setup_db_init() POST request")
         try:
             ensure_database_schema(db.engine)
         except Exception as exc:  # pragma: no cover - depends on database state
             current_app.logger.exception("Setup database init failed: %s", exc)
             flash("Database initialization failed. Check logs for details.", "danger")
         else:
+            current_app.logger.info("Database initialization completed.")
             flash("Database initialization completed.", "success")
         return redirect(url_for("setup.setup_db_init"))
 
@@ -405,13 +417,15 @@ def setup_admin() -> ResponseReturnValue:
           :func:`app.services.auth_utils.is_valid_password` for validation.
         * Stores passwords using :meth:`app.models.User.set_password`.
     """
-
+    current_app.logger.info("Entering setup_admin()")
     if User.query.count() > 0:
+        current_app.logger.info("Setup is already complete. Redirecting to login.")
         flash("Setup is already complete. Please sign in.", "info")
         return redirect(url_for("auth.login"))
 
     email_value = (request.form.get("email") or "").strip().lower()
     if request.method == "POST":
+        current_app.logger.info(f"setup_admin() POST request with email: {email_value}")
         password = request.form.get("password") or ""
         errors: list[str] = []
 
@@ -431,8 +445,10 @@ def setup_admin() -> ResponseReturnValue:
 
         if errors:
             for error in errors:
+                current_app.logger.error(f"Error creating admin user: {error}")
                 flash(error, "warning")
         else:
+            current_app.logger.info(f"Creating super admin user: {email_value}")
             user = User(
                 email=email_value,
                 role="super_admin",
@@ -441,6 +457,7 @@ def setup_admin() -> ResponseReturnValue:
             user.set_password(password)
             db.session.add(user)
             db.session.commit()
+            current_app.logger.info("Super admin user created.")
             flash("Super admin account created.", "success")
             return redirect(url_for("setup.setup_complete"))
 
