@@ -773,7 +773,7 @@ def _resolve_oidc_allowed_domain() -> str:
 
 
 def _resolve_branding_storage() -> str:
-    """Return the branding storage backend, defaulting to GCS.
+    """Return the branding storage backend, defaulting to disabled.
 
     Returns:
         str: Normalized branding storage backend identifier.
@@ -784,9 +784,12 @@ def _resolve_branding_storage() -> str:
 
     configured = os.getenv("BRANDING_STORAGE")
     if configured:
-        return configured.strip().lower()
+        normalized = configured.strip().lower()
+        if normalized in {"none", "disabled", "off"}:
+            return "disabled"
+        return normalized
 
-    return "gcs"
+    return "disabled"
 
 
 class Config:
@@ -922,19 +925,22 @@ class Config:
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
 
-    if BRANDING_STORAGE not in {
+    _disabled_branding_backends = {"disabled", "none", "off"}
+    _gcs_branding_backends = {
         "gcs",
         "google",
         "google_cloud_storage",
         "googlecloudstorage",
-    }:
+    }
+    if BRANDING_STORAGE in _gcs_branding_backends:
+        if not (GCS_BUCKET or "").strip():
+            _record_startup_error(
+                "GCS_BUCKET must be set for branding storage using GCS."
+            )
+    elif BRANDING_STORAGE not in _disabled_branding_backends:
         _record_startup_error(
-            "Branding storage must use Google Cloud Storage; bucket mounts are "
-            "not supported."
-        )
-    if not (GCS_BUCKET or "").strip():
-        _record_startup_error(
-            "GCS_BUCKET must be set for branding storage using GCS."
+            "Branding storage must use Google Cloud Storage or be disabled; "
+            "bucket mounts are not supported."
         )
 
     CONFIG_ERRORS = list(_CONFIG_ERRORS)

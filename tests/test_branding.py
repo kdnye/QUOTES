@@ -32,6 +32,7 @@ class TestConfig:
     SQLALCHEMY_DATABASE_URI = ""
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
+    BRANDING_STORAGE = "gcs"
 
 
 @pytest.fixture()
@@ -212,6 +213,21 @@ def test_get_branding_storage_rejects_non_gcs_backend(app: Flask) -> None:
         get_branding_storage(app)
 
 
+def test_get_branding_storage_rejects_disabled_backend(app: Flask) -> None:
+    """Ensure disabled branding storage is rejected safely.
+
+    Args:
+        app: Application instance configured for tests.
+
+    External dependencies:
+        * Calls :func:`app.services.branding.get_branding_storage` for selection.
+    """
+
+    app.config["BRANDING_STORAGE"] = "disabled"
+    with app.app_context(), pytest.raises(RuntimeError, match="disabled"):
+        get_branding_storage(app)
+
+
 def test_branding_payload_includes_blank_and_populated_logos(app: Flask) -> None:
     """Confirm branding payload renders both populated and blank logo data."""
 
@@ -260,3 +276,26 @@ def test_company_logo_context_blank_and_populated(app: Flask) -> None:
     assert populated_context["company_logo_url"] == (
         "https://storage.googleapis.com/bucket/path/default.png"
     )
+
+
+def test_company_logo_context_disabled_returns_empty(app: Flask) -> None:
+    """Ensure company logo context stays empty when branding is disabled.
+
+    Args:
+        app: Application instance configured for tests.
+
+    External dependencies:
+        * Calls :func:`flask_login.login_user` to authenticate the user.
+        * Calls :func:`app.services.branding_locations.upsert_brand_logo_location`
+          to persist a logo location.
+    """
+
+    app.config["BRANDING_STORAGE"] = "disabled"
+    with app.test_request_context("/"):
+        user = _create_super_admin()
+        login_user(user)
+        upsert_brand_logo_location(DEFAULT_RATE_SET, "gs://bucket/path")
+        db.session.commit()
+        context = _collect_template_context(app)
+
+    assert "company_logo_url" not in context

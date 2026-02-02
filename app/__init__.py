@@ -34,6 +34,7 @@ from app.services.mail import (
     user_has_mail_privileges,
 )
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
+from app.services.branding import is_branding_enabled
 from app.services.branding_locations import (
     build_brand_logo_url,
     get_brand_logo_location,
@@ -260,10 +261,14 @@ def _resolve_company_logo_url(
         Public URL string for the logo or ``None`` when no logo is configured.
 
     External dependencies:
+        * Calls :func:`app.services.branding.is_branding_enabled` to confirm
+          branding storage is enabled.
         * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
           construct the public URL.
     """
 
+    if not is_branding_enabled(current_app.config.get("BRANDING_STORAGE")):
+        return None
     return build_brand_logo_url(gcs_bucket_location, rate_set)
 
 

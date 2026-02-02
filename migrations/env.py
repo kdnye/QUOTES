@@ -4,7 +4,7 @@ from logging.config import fileConfig
 from pathlib import Path
 import sys
 
-from flask import current_app
+from flask import current_app, has_app_context
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
@@ -66,6 +66,10 @@ def run_migrations_online() -> None:
     In this scenario we need to create an Engine
     and associate a connection with the context.
 
+    External dependencies:
+        * Reads :data:`flask.current_app` when an application context exists.
+        * Reads environment variables via :func:`os.getenv` for URI fallbacks.
+
     """
     # Import necessary functions from config.py
     from config import (
@@ -75,20 +79,25 @@ def run_migrations_online() -> None:
     )
     import os
 
-    # Determine the database URI from environment variables
-    _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
-    _postgres_uri = build_postgres_database_uri_from_env()
-    _raw_database_url = os.getenv("DATABASE_URL")
-    _sanitized_database_url = _rebuild_database_url(_raw_database_url)
-
-    if _cloud_sql_uri:
-        db_url = _cloud_sql_uri
-    elif _postgres_uri:
-        db_url = _postgres_uri
-    elif _sanitized_database_url:
-        db_url = _sanitized_database_url
+    if has_app_context():
+        db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
     else:
-        db_url = config.get_main_option("sqlalchemy.url")
+        db_url = None
+    if not db_url:
+        # Determine the database URI from environment variables
+        _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
+        _postgres_uri = build_postgres_database_uri_from_env()
+        _raw_database_url = os.getenv("DATABASE_URL")
+        _sanitized_database_url = _rebuild_database_url(_raw_database_url)
+
+        if _cloud_sql_uri:
+            db_url = _cloud_sql_uri
+        elif _postgres_uri:
+            db_url = _postgres_uri
+        elif _sanitized_database_url:
+            db_url = _sanitized_database_url
+        else:
+            db_url = config.get_main_option("sqlalchemy.url")
 
     if db_url:
         # ConfigParser treats `%` as interpolation, so `%` must be escaped.
