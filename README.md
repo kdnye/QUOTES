@@ -246,27 +246,27 @@ your proxy or monitoring stack expects them.
 
 ### Branding logo storage
 
-Branding logos are stored in Google Cloud Storage. Configure the following
-environment variables to enable uploads and URL generation:
+Branding logos are stored in Google Cloud Storage when enabled. Configure the
+following environment variables to enable uploads and URL generation:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `BRANDING_STORAGE` | Branding backend (`gcs`) | `gcs` |
+| `BRANDING_STORAGE` | Branding backend (`gcs` or `disabled`) | `disabled` |
 | `GCS_BUCKET` | Target bucket for GCS branding logos | (empty) |
 | `GCS_PREFIX` | Optional object prefix for branding logos | (empty) |
 
 When `BRANDING_STORAGE=gcs`, the application uploads logo objects and stores
-their public URLs in `app_settings`. Ensure the workload identity or service
-account has `roles/storage.objectAdmin` or at minimum `storage.objects.create`
-and `storage.objects.delete` (plus `get` if your bucket requires reads to
-resolve public URLs). Bucket mounts are not supported; the service uses the
-Cloud Storage API directly. If you see Cloud Run startup failures referencing
-`gcsfuse` or IP filtering (for example, `PermissionDenied` messages mentioning
-an IP filtering condition), remove any GCS bucket mount from the service
-configuration. Cloud Run volume mounts add VPC egress and IP allow list
-requirements that are unnecessary for this application because the branding
-flows call the Storage API directly. Allow the runtime service account to
-access the bucket over the Storage API instead.
+their public URLs in `app_settings`, and `GCS_BUCKET` becomes required. Ensure
+the workload identity or service account has `roles/storage.objectAdmin` or at
+minimum `storage.objects.create` and `storage.objects.delete` (plus `get` if
+your bucket requires reads to resolve public URLs). Bucket mounts are not
+supported; the service uses the Cloud Storage API directly. If you see Cloud
+Run startup failures referencing `gcsfuse` or IP filtering (for example,
+`PermissionDenied` messages mentioning an IP filtering condition), remove any
+GCS bucket mount from the service configuration. Cloud Run volume mounts add
+VPC egress and IP allow list requirements that are unnecessary for this
+application because the branding flows call the Storage API directly. Allow
+the runtime service account to access the bucket over the Storage API instead.
 
 Admins can also configure per-rate-set logo locations by visiting **Admin >
 Branding** and entering a base GCS bucket location in the form

@@ -51,11 +51,35 @@ def _normalize_storage_backend(raw_value: Optional[str]) -> str:
         raw_value: Raw backend string from configuration or environment.
 
     Returns:
-        Normalized storage backend identifier. Defaults to ``"gcs"`` and
+        Normalized storage backend identifier. Defaults to ``"disabled"`` and
         accepts values like ``"gcs"`` or ``"google_cloud_storage"`` for GCS.
     """
 
-    return (raw_value or "gcs").strip().lower()
+    if not raw_value:
+        return "disabled"
+
+    normalized = raw_value.strip().lower()
+    if normalized in {"none", "disabled", "off"}:
+        return "disabled"
+    return normalized
+
+
+def is_branding_enabled(raw_value: Optional[str]) -> bool:
+    """Return ``True`` when branding storage is enabled.
+
+    Args:
+        raw_value: Raw branding storage setting from configuration.
+
+    Returns:
+        bool: ``True`` when branding is enabled for a supported backend,
+        otherwise ``False``.
+
+    External dependencies:
+        * Calls :func:`_normalize_storage_backend` to normalize the setting.
+    """
+
+    backend = _normalize_storage_backend(raw_value)
+    return backend in {"gcs", "google", "google_cloud_storage", "googlecloudstorage"}
 
 
 def _normalize_gcs_prefix(prefix: Optional[str]) -> Optional[str]:
@@ -72,9 +96,6 @@ def _normalize_gcs_prefix(prefix: Optional[str]) -> Optional[str]:
         return None
     cleaned = prefix.strip().strip("/")
     return cleaned or None
-
-
-
 
 @dataclass
 class GCSBrandingStorage:
@@ -184,6 +205,7 @@ def get_branding_storage(app: Optional[Flask] = None) -> BrandingStorage:
         BrandingStorage implementation configured for the environment.
 
     Raises:
+        RuntimeError: If branding storage is disabled.
         RuntimeError: If GCS storage is selected without ``GCS_BUCKET``.
         RuntimeError: If an unsupported branding storage backend is selected.
 
@@ -193,6 +215,8 @@ def get_branding_storage(app: Optional[Flask] = None) -> BrandingStorage:
 
     target_app = app or current_app
     backend = _normalize_storage_backend(target_app.config.get("BRANDING_STORAGE"))
+    if backend == "disabled":
+        raise RuntimeError("Branding storage is disabled.")
     if backend in {"gcs", "google", "google_cloud_storage", "googlecloudstorage"}:
         bucket = (target_app.config.get("GCS_BUCKET") or "").strip()
         if not bucket:
@@ -251,4 +275,3 @@ def _gcs_public_url_from_location(location: str) -> Optional[str]:
     if not object_path:
         return None
     return f"https://storage.googleapis.com/{bucket}/{object_path}"
-

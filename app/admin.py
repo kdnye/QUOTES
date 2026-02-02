@@ -57,6 +57,7 @@ from .models import (
 )
 from . import csrf
 from .policies import employee_required, super_admin_required
+from app.services.branding import is_branding_enabled
 from app.services.branding_locations import (
     build_brand_logo_object_location,
     build_brand_logo_url,
@@ -384,10 +385,15 @@ def _logo_url_from_location(raw_value: str | None, rate_set: str) -> str | None:
         value is empty.
 
     External dependencies:
+        * Reads ``BRANDING_STORAGE`` via :data:`flask.current_app`.
+        * Calls :func:`app.services.branding.is_branding_enabled` to confirm
+          branding storage is enabled.
         * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
           construct the public URL.
     """
 
+    if not is_branding_enabled(current_app.config.get("BRANDING_STORAGE")):
+        return None
     return build_brand_logo_url(raw_value, rate_set)
 
 
