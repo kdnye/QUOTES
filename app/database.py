@@ -64,6 +64,23 @@ def ensure_database_schema(active_engine: Optional[Engine] = None) -> None:
     _run_alembic_upgrade(selected_engine)
 
 
+def _escape_alembic_url(rendered_url: str) -> str:
+    """Prepare database URLs for Alembic's ConfigParser interpolation rules.
+
+    Args:
+        rendered_url: Fully rendered SQLAlchemy database URL.
+
+    Returns:
+        str: URL with literal percent signs escaped as ``%%`` so the Alembic
+        configuration parser treats URL-encoded values literally.
+
+    External Dependencies:
+        None. This helper performs string manipulation only.
+    """
+
+    return rendered_url.replace("%", "%%")
+
+
 def _run_alembic_upgrade(active_engine: Engine) -> None:
     """Apply Alembic migrations for the database bound to ``active_engine``.
 
@@ -81,6 +98,10 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
         repository root derived from :data:`__file__`, making the upgrade
         process independent of the current working directory or Docker-specific
         volume mounts.
+
+    External Dependencies:
+        Calls :func:`app.database._escape_alembic_url` to sanitize the URL for
+        Alembic's :class:`configparser.ConfigParser`.
     """
 
     project_root = Path(__file__).resolve().parent.parent
@@ -100,8 +121,7 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
         rendered_url = str(url)
 
     # Escape '%' so ConfigParser treats URL-encoded values literally.
-    escaped_url = rendered_url.replace("%", "%%")
-    config.set_main_option("sqlalchemy.url", escaped_url)
+    config.set_main_option("sqlalchemy.url", _escape_alembic_url(rendered_url))
 
     inspector = inspect(active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]
