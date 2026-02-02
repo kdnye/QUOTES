@@ -1,8 +1,10 @@
 # app/__init__.py
 from flask import (
     Flask,
+    abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -83,6 +85,29 @@ def _is_production_environment() -> bool:
     raw_environment = os.getenv("ENVIRONMENT") or os.getenv("FLASK_ENV") or ""
     normalized = raw_environment.strip().lower()
     return normalized in PRODUCTION_ENV_VALUES
+
+
+def _should_show_config_errors(app: Flask) -> bool:
+    """Return whether configuration errors may be displayed to operators.
+
+    Args:
+        app: Flask application used to read configuration defaults.
+
+    Returns:
+        ``True`` when configuration errors should be exposed to operators.
+
+    External dependencies:
+        * Reads ``SHOW_CONFIG_ERRORS`` from :func:`os.getenv`.
+        * Calls :func:`_is_truthy` to interpret the flag.
+        * Calls :func:`_is_production_environment` to detect production.
+    """
+
+    raw_flag = os.getenv("SHOW_CONFIG_ERRORS")
+    if raw_flag is None:
+        raw_flag = app.config.get("SHOW_CONFIG_ERRORS")
+    if _is_truthy(raw_flag):
+        return True
+    return not _is_production_environment()
 
 
 def _coerce_timeout_seconds(
@@ -339,7 +364,13 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     """
     app = Flask(__name__, template_folder="../templates")
     app.config.from_object(config_class)
-    config_errors = list(app.config.get("CONFIG_ERRORS", []))
+    raw_config_errors = list(app.config.get("CONFIG_ERRORS", []))
+    show_config_errors = _should_show_config_errors(app)
+    app.config["SHOW_CONFIG_ERRORS"] = show_config_errors
+    app.config["CONFIG_ERROR_DETAILS"] = raw_config_errors
+    if raw_config_errors:
+        app.logger.error("CONFIG_ERRORS: %s", raw_config_errors)
+    config_errors = raw_config_errors
     if config_errors and not _is_production_environment():
         app.logger.info(
             "Ignoring startup configuration errors because ENVIRONMENT/FLASK_ENV "
@@ -431,9 +462,31 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         app.logger.error("Application setup failed: %s", message)
 
         @app.before_request
-        def _setup_failed() -> Tuple[str, int]:
+        def _setup_failed() -> Optional[Tuple[str, int]]:
+            """Return a maintenance response when startup validation fails.
+
+            Inputs:
+                None. Reads request context for path inspection.
+
+            Returns:
+                ``None`` when diagnostics should proceed, otherwise a rendered
+                500 response tuple.
+
+            External dependencies:
+                * Reads :data:`flask.request.path` to allow diagnostics access.
+                * Renders :mod:`templates/500.html` via
+                  :func:`flask.render_template`.
+            """
+
+            if request.path == "/healthz/config":
+                return None
+            error_details = raw_config_errors if show_config_errors else None
             return (
-                render_template("500.html", message="Application is misconfigured."),
+                render_template(
+                    "500.html",
+                    message="Application is misconfigured.",
+                    error_details=error_details,
+                ),
                 500,
             )
 
@@ -451,6 +504,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             path.startswith("/setup")
             or path.startswith("/static")
             or path == "/healthz"
+            or path == "/healthz/config"
         )
 
     @app.before_request
@@ -520,6 +574,26 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         if require_db and not _check_database_connectivity(timeout_seconds):
             return "db unavailable", 500
         return "ok", 200
+
+    @app.route("/healthz/config", methods=["GET"])
+    def healthz_config() -> ResponseReturnValue:
+        """Return configuration error diagnostics when explicitly allowed.
+
+        Inputs:
+            None. Uses the current request context and application config.
+
+        Returns:
+            A JSON payload with configuration errors when diagnostics are
+            enabled, otherwise a 404 response to avoid exposing secrets.
+
+        External dependencies:
+            * Reads :attr:`flask.Flask.config` to determine diagnostic access.
+            * Uses :func:`flask.jsonify` to format the response.
+        """
+
+        if not show_config_errors:
+            abort(404)
+        return jsonify({"errors": raw_config_errors})
 
     @app.route("/map", methods=["POST"])
     def map_view():

@@ -155,6 +155,12 @@ boot. This speeds container readiness but requires you to run migrations (for
 example, `alembic upgrade head`) separately and validate connectivity via the
 `/healthz` endpoint once the database is online.
 
+When configuration validation fails, operators can opt into diagnostics by
+setting `SHOW_CONFIG_ERRORS=true`. In non-production environments the app
+exposes configuration error details in the 500 error page and via the
+`/healthz/config` endpoint. Production deployments only expose this diagnostic
+data when the explicit opt-in flag is enabled.
+
 ### Windows executable
 
 Administrators who prefer a self-contained Windows build can package the app
