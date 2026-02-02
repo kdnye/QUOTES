@@ -583,6 +583,9 @@ def build_cloud_sql_unix_socket_uri_from_env(
     ``POSTGRES_*`` credentials, this helper builds a SQLAlchemy URI that points
     at the Unix socket path. Optional ``POSTGRES_OPTIONS`` values are appended
     as query parameters so SSL settings or application names can be enforced.
+    The socket path is preserved with literal slashes to avoid a ``%2F``
+    sequence in the resulting DSN while still safely encoding other query
+    parameter values.
 
     Args:
         driver: SQLAlchemy driver prefix used when constructing the URI. The
@@ -596,8 +599,9 @@ def build_cloud_sql_unix_socket_uri_from_env(
     External Dependencies:
         Calls :func:`os.getenv` to read Cloud SQL and PostgreSQL environment
         variables. Uses :func:`urllib.parse.quote_plus` and
-        :func:`urllib.parse.urlencode` to encode credentials, query options, and
-        the Unix socket host path for SQLAlchemy.
+        :func:`urllib.parse.urlencode` with a ``safe="/"`` override to encode
+        credentials and query options while keeping the Unix socket host path
+        readable for SQLAlchemy.
     """
 
     connection_name = os.getenv("CLOUD_SQL_CONNECTION_NAME", "").strip()
@@ -617,7 +621,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
         query_pairs.extend(_parse_postgres_options(options))
 
     query_pairs.append(("host", f"/cloudsql/{connection_name}"))
-    query = urlencode(query_pairs)
+    query = urlencode(query_pairs, safe="/")
     return (
         f"{driver}://{quote_plus(user)}:{quote_plus(password).replace('%', '%%')}@/"
         f"{quote_plus(db_name)}?{query}"
