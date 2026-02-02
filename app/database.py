@@ -104,7 +104,9 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
     else:  # pragma: no cover - compatibility fallback for older SQLAlchemy
         rendered_url = str(url)
 
-    config.set_main_option("sqlalchemy.url", rendered_url)
+    # Escape '%' so ConfigParser treats URL-encoded values literally.
+    escaped_url = rendered_url.replace("%", "%%")
+    config.set_main_option("sqlalchemy.url", escaped_url)
 
     inspector = inspect(active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]

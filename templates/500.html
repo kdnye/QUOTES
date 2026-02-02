@@ -3,4 +3,12 @@
 {% block content %}
   <h1>Something went wrong</h1>
   <p>{{ message or 'The application is misconfigured or encountered an error. Please contact the administrator.' }}</p>
+  {% if error_details %}
+    <h2>Configuration details</h2>
+    <ul>
+      {% for error in error_details %}
+        <li>{{ error }}</li>
+      {% endfor %}
+    </ul>
+  {% endif %}
 {% endblock %}
