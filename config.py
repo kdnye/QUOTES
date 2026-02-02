@@ -820,8 +820,6 @@ class Config:
         SQLALCHEMY_DATABASE_URI = _cloud_sql_uri
     elif _postgres_uri:
         SQLALCHEMY_DATABASE_URI = _postgres_uri
-    elif _compose_env_present:
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{_default_sqlite_path}"
     elif _sanitized_database_url:
         SQLALCHEMY_DATABASE_URI = _sanitized_database_url
     else:
