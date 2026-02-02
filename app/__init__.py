@@ -362,8 +362,20 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
           in maintenance mode.
         * Loads override settings via :func:`app.services.settings.reload_overrides`.
     """
+    import logging
+    from logging.handlers import RotatingFileHandler
+    
     app = Flask(__name__, template_folder="../templates")
     app.config.from_object(config_class)
+    
+    # Configure file-based logging
+    log_file = '/tmp/app.log'
+    file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 10, backupCount=5)
+    file_handler.setLevel(logging.INFO)
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    app.logger.addHandler(file_handler)
+    
     raw_config_errors = list(app.config.get("CONFIG_ERRORS", []))
     show_config_errors = _should_show_config_errors(app)
     app.config["SHOW_CONFIG_ERRORS"] = show_config_errors
