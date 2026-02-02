@@ -24,9 +24,8 @@ documentation set, consult [docs/README.md](docs/README.md).
    load balancers automatically issue and renew TLS certificates for custom
    domains.
 5. **External services** – Provision the dependencies used by the Quote Tool:
-   - **Database** – Cloud SQL for PostgreSQL 13+ is required for production.
-     SQLite works for local development but is not suited for multi-user
-     deployments.
+   - **Database** – Cloud SQL for PostgreSQL 13+ is required. The application
+     depends on PostgreSQL in all environments, including local development.
    - **Google Maps API access** – Enable the Distance Matrix API and obtain an
      API key.
    - **Redis (optional)** – Use a managed Redis provider (for example, Cloud

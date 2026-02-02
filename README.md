@@ -374,13 +374,10 @@ POSTGRES_OPTIONS=sslmode=require&application_name=quote-tool
 > ``POSTGRES_PASSWORD`` is encoded automatically, special characters do not need
 > manual escaping.
 
-When no PostgreSQL configuration is supplied, the application defaults to
-SQLite at `instance/app.db`. On Cloud Run, the default SQLite location switches
-to `/tmp/quote-tool/app.db` because only `/tmp` is writable. If the instance
-directory cannot be created (for example, on a read-only filesystem), startup
-falls back to `/tmp/quote-tool/app.db` and logs a warning. Set
-`CREATE_INSTANCE_DIR=true` to force creation of the local `instance/` directory
-even when SQLite is not selected.
+PostgreSQL configuration is required in all environments. If no PostgreSQL
+settings are supplied, the application starts in maintenance mode and surfaces
+a configuration error. Provide `DATABASE_URL` or the `POSTGRES_*` environment
+variables before launching the service.
 
 #### Cloud Run TLS guidance
 
@@ -415,9 +412,10 @@ across multiple workers.
 ## Troubleshooting
 
 If you see `no such table` errors, the database is missing required tables.
-Delete `instance/app.db`, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (the script
-loads this file automatically), then run `python init_db.py` to recreate the
-full schema.
+Confirm the PostgreSQL connection details are correct, then run
+`alembic upgrade head` to apply migrations. If you are initializing a fresh
+environment, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (the script loads
+this file automatically), then run `python init_db.py` to seed the schema.
 
 If quotes warn that "Air rate table(s) missing or empty", ensure the CSV
 directory is present or specify its path via `RATE_DATA_DIR` before initializing

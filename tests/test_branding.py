@@ -36,17 +36,23 @@ class TestConfig:
 
 
 @pytest.fixture()
-def app(tmp_path: Path) -> Flask:
-    """Create a Flask app wired to a temporary SQLite database.
+def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
+    """Create a Flask app wired to a PostgreSQL test database.
 
     Args:
-        tmp_path: Temporary path injected by pytest.
+        postgres_database_url: PostgreSQL connection string for tests.
+        monkeypatch: Pytest fixture for environment overrides.
 
     Returns:
         A configured Flask application for tests.
+
+    External dependencies:
+        * Sets ``MIGRATE_ON_STARTUP`` via :func:`monkeypatch.setenv`.
+        * Calls :func:`app.create_app` to build the Flask application.
     """
 
-    TestConfig.SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+    TestConfig.SQLALCHEMY_DATABASE_URI = postgres_database_url
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "true")
     app = create_app(TestConfig)
 
     with app.app_context():
@@ -107,9 +113,7 @@ def _collect_template_context(app: Flask) -> dict[str, object]:
         "gs://bucket/",
     ],
 )
-def test_logo_form_rejects_invalid_gcs_location(
-    app: Flask, location: str
-) -> None:
+def test_logo_form_rejects_invalid_gcs_location(app: Flask, location: str) -> None:
     """Ensure the branding form rejects non-GCS locations."""
 
     with app.test_request_context(

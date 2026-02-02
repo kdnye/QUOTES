@@ -1,14 +1,12 @@
+import logging
 import os
 import socket
-from pathlib import Path
 from secrets import token_urlsafe
 from typing import Dict, Iterable, List, Optional, Set, Tuple, Union
-from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse, unquote
+from urllib.parse import parse_qsl, quote_plus, urlencode, urlparse
+
 from sqlalchemy.engine import make_url
 
-BASE_DIR = Path(__file__).resolve().parent
-DEFAULT_DB_PATH = BASE_DIR / "instance" / "app.db"
-SQLITE_FALLBACK_PATH = Path("/tmp/quote-tool/app.db")
 # Capture configuration errors so the application can start in a safe
 # maintenance mode instead of crashing during import time.
 _CONFIG_ERRORS: List[str] = []
@@ -29,204 +27,6 @@ def _record_startup_error(message: str) -> None:
 
     logging.getLogger("quote_tool.config").error(message)
     _CONFIG_ERRORS.append(message)
-
-
-def _is_cloud_run_environment() -> bool:
-    """Return ``True`` when running in a Cloud Run environment.
-
-    Cloud Run sets ``K_SERVICE`` and ``K_REVISION`` environment variables for
-    each deployment. The helper uses their presence to identify the platform
-    and enable Cloud Run-specific defaults.
-
-    Returns:
-        bool: ``True`` when Cloud Run environment variables are detected.
-
-    External Dependencies:
-        Calls :func:`os.getenv` to read ``K_SERVICE`` and ``K_REVISION``.
-    """
-
-    return bool(os.getenv("K_SERVICE") or os.getenv("K_REVISION"))
-
-
-def _resolve_default_sqlite_path() -> Path:
-    """Return the default SQLite database path for the current environment.
-
-    Cloud Run container filesystems are read-only except for ``/tmp``, so the
-    helper redirects SQLite to ``/tmp`` when Cloud Run variables are present.
-
-    Returns:
-        Path: Absolute path to the SQLite database file.
-
-    External Dependencies:
-        Calls :func:`os.getenv` via :func:`_is_cloud_run_environment` to detect
-        Cloud Run environment markers.
-    """
-
-    if _is_cloud_run_environment():
-        return SQLITE_FALLBACK_PATH
-
-    return DEFAULT_DB_PATH
-
-
-def _should_create_instance_dir() -> bool:
-    """Return ``True`` when the instance directory should be created explicitly.
-
-    Returns:
-        bool: ``True`` when ``CREATE_INSTANCE_DIR`` is set to a truthy value.
-
-    External Dependencies:
-        Calls :func:`os.getenv` to read ``CREATE_INSTANCE_DIR``.
-    """
-
-    return os.getenv("CREATE_INSTANCE_DIR", "").strip().lower() in {
-        "true",
-        "1",
-        "yes",
-        "y",
-    }
-
-
-def _ensure_directory_exists(path: Path, *, description: str) -> bool:
-    """Ensure a directory exists, logging a warning when creation fails.
-
-    Args:
-        path: Directory path to create.
-        description: Human-readable label used in warning messages.
-
-    Returns:
-        bool: ``True`` when the directory exists or was created successfully.
-
-    External Dependencies:
-        Logs warnings via :func:`logging.getLogger`.
-    """
-
-    try:
-        path.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        logging.getLogger("quote_tool.config").warning(
-            "Unable to create %s directory %s (%s).", description, path, exc
-        )
-        return False
-
-    return True
-
-
-def _ensure_sqlite_directory(
-    sqlite_path: Path, *, fallback_path: Optional[Path] = None
-) -> Path:
-    """Ensure the SQLite parent directory exists, falling back when needed.
-
-    Args:
-        sqlite_path: Preferred SQLite database file path.
-        fallback_path: Alternate SQLite database file path used when the
-            preferred directory cannot be created.
-
-    Returns:
-        Path: SQLite database path to use after ensuring directories.
-
-    External Dependencies:
-        Logs warnings via :func:`logging.getLogger`.
-    """
-
-    resolved_fallback = fallback_path or SQLITE_FALLBACK_PATH
-
-    if _ensure_directory_exists(sqlite_path.parent, description="SQLite instance"):
-        return sqlite_path
-
-    if sqlite_path == resolved_fallback:
-        return sqlite_path
-
-    if _ensure_directory_exists(
-        resolved_fallback.parent, description="SQLite fallback"
-    ):
-        logging.getLogger("quote_tool.config").warning(
-            "Default SQLite directory is unavailable; using %s instead.",
-            resolved_fallback,
-        )
-        return resolved_fallback
-
-    return sqlite_path
-
-
-def _is_sqlite_database_uri(database_uri: str) -> bool:
-    """Return ``True`` when ``database_uri`` points at a SQLite database.
-
-    Args:
-        database_uri: SQLAlchemy database URI to inspect.
-
-    Returns:
-        bool: ``True`` when the URI uses a SQLite scheme, ``False`` otherwise.
-
-    External Dependencies:
-        Calls :func:`urllib.parse.urlparse` to inspect the URI scheme.
-    """
-
-    return urlparse(database_uri).scheme == "sqlite"
-
-
-def _extract_sqlite_path(database_uri: str) -> Optional[Path]:
-    """Return the filesystem path referenced by a SQLite SQLAlchemy URI.
-
-    Args:
-        database_uri: SQLAlchemy SQLite URI to inspect.
-
-    Returns:
-        Optional[Path]: Parsed filesystem path or ``None`` for non-SQLite URIs.
-
-    External Dependencies:
-        Calls :func:`urllib.parse.urlparse` to extract the URI path.
-    """
-
-    parsed = urlparse(database_uri)
-    if parsed.scheme != "sqlite":
-        return None
-
-    if not parsed.path:
-        return None
-
-    return Path(parsed.path).resolve(strict=False)
-
-
-def _prepare_sqlite_database_uri(
-    database_uri: str,
-    default_sqlite_path: Path,
-    *,
-    force_instance_dir: bool,
-) -> str:
-    """Ensure SQLite directories exist and return the final database URI.
-
-    Args:
-        database_uri: SQLAlchemy database URI selected for this deployment.
-        default_sqlite_path: Default SQLite path used when no override exists.
-        force_instance_dir: When ``True``, attempt to create the instance
-            directory even when SQLite is not selected.
-
-    Returns:
-        str: SQLite URI updated to use a fallback path when needed.
-
-    External Dependencies:
-        Calls :func:`_ensure_sqlite_directory` to create directories and
-        :func:`_extract_sqlite_path` to parse SQLite paths.
-    """
-
-    if force_instance_dir:
-        _ensure_directory_exists(DEFAULT_DB_PATH.parent, description="instance")
-
-    if not _is_sqlite_database_uri(database_uri):
-        return database_uri
-
-    sqlite_path = _extract_sqlite_path(database_uri)
-    if sqlite_path is None:
-        return database_uri
-
-    if sqlite_path != default_sqlite_path.resolve(strict=False):
-        return database_uri
-
-    resolved_path = _ensure_sqlite_directory(default_sqlite_path)
-    if resolved_path != default_sqlite_path:
-        return f"sqlite:///{resolved_path}"
-
-    return database_uri
 
 
 def _is_production_environment() -> bool:
@@ -418,25 +218,30 @@ def _is_hostname_resolvable(hostname: str) -> bool:
 
 
 def _sanitize_database_url(raw_url: Optional[str]) -> Optional[str]:
-    """Return a safe database URL or ``None`` when the value should be ignored.
+    """Return a safe PostgreSQL database URL or ``None`` when it is unusable.
 
     The helper filters out PostgreSQL URLs that omit passwords to avoid the
-    connection errors observed when Compose injects incomplete DSNs. Other
-    schemes are returned unchanged so SQLite- or MSSQL-style URLs still work as
-    expected.
+    connection errors observed when Compose injects incomplete DSNs. URLs that
+    do not use a PostgreSQL scheme are ignored because the application only
+    supports PostgreSQL.
 
     Args:
         raw_url: Optional URL sourced from ``DATABASE_URL``.
 
     Returns:
-        Sanitized URL string or ``None`` when the input is unusable.
+        Sanitized PostgreSQL URL string or ``None`` when the input is unusable.
+
+    External Dependencies:
+        Calls :func:`urllib.parse.urlparse` to inspect the URI scheme.
     """
 
     if not raw_url:
         return None
 
     parsed = urlparse(raw_url)
-    if parsed.scheme.startswith("postgres") and not parsed.password:
+    if not parsed.scheme.startswith("postgres"):
+        return None
+    if not parsed.password:
         return None
 
     return raw_url
@@ -484,6 +289,40 @@ def _is_postgres_dsn(database_uri: str) -> bool:
     return urlparse(database_uri).scheme.startswith("postgres")
 
 
+def _select_postgres_database_uri(
+    *,
+    cloud_sql_uri: Optional[str],
+    postgres_uri: Optional[str],
+    database_url: Optional[str],
+) -> str:
+    """Return the PostgreSQL database URI selected for this deployment.
+
+    Args:
+        cloud_sql_uri: PostgreSQL DSN built from Cloud SQL socket settings.
+        postgres_uri: PostgreSQL DSN built from Compose-style environment vars.
+        database_url: PostgreSQL DSN sourced from ``DATABASE_URL``.
+
+    Returns:
+        str: PostgreSQL SQLAlchemy database URI to use for this deployment.
+
+    External Dependencies:
+        Calls :func:`_record_startup_error` to surface missing configuration.
+    """
+
+    if cloud_sql_uri:
+        return cloud_sql_uri
+    if postgres_uri:
+        return postgres_uri
+    if database_url:
+        return database_url
+
+    _record_startup_error(
+        "PostgreSQL database configuration is required. Set DATABASE_URL or "
+        "POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB, and POSTGRES_HOST."
+    )
+    return "postgresql+psycopg2://localhost/postgres"
+
+
 def build_postgres_database_uri_from_env(
     *, driver: str = "postgresql+psycopg2"
 ) -> Optional[str]:
@@ -495,8 +334,8 @@ def build_postgres_database_uri_from_env(
     ``POSTGRES_DB``, ``POSTGRES_HOST`` (defaulting to ``"postgres"`` for the
     Compose network), ``POSTGRES_PORT``, and optional ``POSTGRES_OPTIONS`` to
     build a connection string. When ``POSTGRES_PASSWORD`` is unset the function
-    returns ``None`` so callers can fall back to the SQLite default provided by
-    :class:`Config`.
+    returns ``None`` so callers can report a configuration error and keep the
+    application in maintenance mode.
 
     Args:
         driver: SQLAlchemy driver prefix used when constructing the URI. The
@@ -761,11 +600,11 @@ def _resolve_branding_storage() -> str:
 class Config:
     SECRET_KEY = _resolve_secret_key()
     _raw_database_url = os.getenv("DATABASE_URL")
-    _sanitized_database_url = _rebuild_database_url(_raw_database_url)
+    _sanitized_database_url = _sanitize_database_url(
+        _rebuild_database_url(_raw_database_url)
+    )
     _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
     _postgres_uri = build_postgres_database_uri_from_env()
-    _default_sqlite_path = _resolve_default_sqlite_path()
-    _force_instance_dir = _should_create_instance_dir()
     _compose_env_present = any(
         os.getenv(var)
         for var in (
@@ -777,19 +616,15 @@ class Config:
             "POSTGRES_OPTIONS",
         )
     )
+    if _raw_database_url and not _sanitized_database_url:
+        _record_startup_error(
+            "DATABASE_URL must be a valid PostgreSQL DSN that includes a " "password."
+        )
 
-    if _cloud_sql_uri:
-        SQLALCHEMY_DATABASE_URI = _cloud_sql_uri
-    elif _postgres_uri:
-        SQLALCHEMY_DATABASE_URI = _postgres_uri
-    elif _sanitized_database_url:
-        SQLALCHEMY_DATABASE_URI = _sanitized_database_url
-    else:
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{_default_sqlite_path}"
-    SQLALCHEMY_DATABASE_URI = _prepare_sqlite_database_uri(
-        SQLALCHEMY_DATABASE_URI,
-        default_sqlite_path=_default_sqlite_path,
-        force_instance_dir=_force_instance_dir,
+    SQLALCHEMY_DATABASE_URI = _select_postgres_database_uri(
+        cloud_sql_uri=_cloud_sql_uri,
+        postgres_uri=_postgres_uri,
+        database_url=_sanitized_database_url,
     )
     if _is_production_environment() and not _is_postgres_dsn(SQLALCHEMY_DATABASE_URI):
         _record_startup_error(

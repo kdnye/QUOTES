@@ -3,10 +3,9 @@
 The script reads the database location from :class:`config.Config`, defaulting
 to the host provided by ``POSTGRES_HOST`` (``"postgres"`` in Docker Compose)
 when ``POSTGRES_PASSWORD`` is defined. It uses :func:`sqlalchemy.create_engine`
-so the migration works with both PostgreSQL and legacy SQLite deployments.
-``app.models.QUOTES_TABLE`` is
-ensured to contain the ``quote_id`` and ``weight_method`` columns, and existing
-rows receive generated UUIDs via :func:`uuid.uuid4` with a default
+so the migration works with PostgreSQL deployments. ``app.models.QUOTES_TABLE``
+is ensured to contain the ``quote_id`` and ``weight_method`` columns, and
+existing rows receive generated UUIDs via :func:`uuid.uuid4` with a default
 ``"actual"`` weight method. The script is idempotent and may be run multiple
 times without creating duplicate data.
 """
@@ -16,6 +15,7 @@ from __future__ import annotations
 import os
 import uuid
 from typing import Dict, List
+from urllib.parse import urlparse
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, inspect, text
@@ -38,21 +38,39 @@ def _resolve_database_url() -> str:
     :func:`config.build_postgres_database_uri_from_env` so maintenance scripts
     share Docker Compose's defaults and honour overrides like
     ``POSTGRES_HOST``. Otherwise the function falls back to
-    :class:`config.Config` which provides the legacy SQLite default.
+    :class:`config.Config` which provides the configured PostgreSQL default.
 
     Returns:
         str: SQLAlchemy-compatible connection string.
+
+    Raises:
+        ValueError: If the resolved database URL is not a PostgreSQL DSN.
+
+    External Dependencies:
+        * Calls :func:`os.getenv` to read ``DATABASE_URL``.
+        * Calls :func:`config.build_postgres_database_uri_from_env` to build
+          a Compose-style PostgreSQL DSN.
+        * Reads :data:`config.Config.SQLALCHEMY_DATABASE_URI` for the fallback.
+        * Uses :func:`urllib.parse.urlparse` to validate the DSN scheme.
     """
 
     configured_url = os.getenv("DATABASE_URL")
     if configured_url:
-        return configured_url
+        candidate_url = configured_url
+    else:
+        compose_url = build_postgres_database_uri_from_env()
+        if compose_url:
+            candidate_url = compose_url
+        else:
+            candidate_url = Config.SQLALCHEMY_DATABASE_URI
 
-    compose_url = build_postgres_database_uri_from_env()
-    if compose_url:
-        return compose_url
+    parsed = urlparse(candidate_url)
+    if not parsed.scheme.startswith("postgres"):
+        raise ValueError(
+            "PostgreSQL database configuration is required for quote migration."
+        )
 
-    return Config.SQLALCHEMY_DATABASE_URI
+    return candidate_url
 
 
 def column_exists(engine: Engine, table: str, column: str) -> bool:

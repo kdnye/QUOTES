@@ -42,22 +42,24 @@ def test_create_engine_receives_configured_options(monkeypatch) -> None:
         return object()
 
     monkeypatch.setattr(sqlalchemy, "create_engine", fake_create_engine)
-    monkeypatch.setattr(config.Config, "SQLALCHEMY_DATABASE_URI", "sqlite:///test.db")
+    monkeypatch.setattr(
+        config.Config,
+        "SQLALCHEMY_DATABASE_URI",
+        "postgresql+psycopg2://user:pass@localhost:5432/test_db",
+    )
     expected_options = {
         "pool_pre_ping": True,
         "pool_recycle": 1800,
         "max_overflow": 5,
         "pool_size": 3,
     }
-    monkeypatch.setattr(
-        config.Config, "SQLALCHEMY_ENGINE_OPTIONS", expected_options
-    )
+    monkeypatch.setattr(config.Config, "SQLALCHEMY_ENGINE_OPTIONS", expected_options)
 
     import app.database as database
 
     importlib.reload(database)
 
-    assert captured["url"] == "sqlite:///test.db"
+    assert captured["url"] == "postgresql+psycopg2://user:pass@localhost:5432/test_db"
     assert captured["kwargs"] == expected_options
 
     monkeypatch.setattr(sqlalchemy, "create_engine", real_create_engine)

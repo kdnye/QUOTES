@@ -8,8 +8,8 @@
       <h1 class="h3 mb-3">Initialize the database</h1>
       <p class="text-muted">
         Run the schema migration task to ensure the database is ready for the
-        application. This will create tables in SQLite or run Alembic migrations
-        for other backends.
+        application. This runs Alembic migrations against the configured
+        PostgreSQL database.
       </p>
 
       <form method="post" action="{{ url_for('setup.setup_db_init') }}" class="card">
