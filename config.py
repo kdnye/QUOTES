@@ -619,7 +619,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
     query_pairs.append(("host", f"/cloudsql/{connection_name}"))
     query = urlencode(query_pairs)
     return (
-        f"{driver}://{quote_plus(user)}:{password}@/"
+        f"{driver}://{quote_plus(user)}:{quote_plus(password)}@/"
         f"{quote_plus(db_name)}?{query}"
     )
 
