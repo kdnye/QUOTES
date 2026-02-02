@@ -1,37 +1,3 @@
-"""Central configuration for the Quote Tool Flask application.
-
-The module resolves the application's base directory, selects a safe default
-SQLite path, and exposes the :class:`Config` settings class.
-
-Key settings exposed by :class:`Config`:
-
-* ``SECRET_KEY``: Secures Flask sessions and form submissions. Generated at
-  startup when the ``SECRET_KEY`` environment variable is missing in
-  development and test environments so each deployment receives a unique value.
-* ``SQLALCHEMY_DATABASE_URI`` and ``SQLALCHEMY_ENGINE_OPTIONS``: Provide the
-  SQLAlchemy connection string and optional connection pooling behaviour.
-* ``DB_POOL_RECYCLE`` and ``DB_POOL_MAX_OVERFLOW``: Tune SQLAlchemy connection
-  recycling to avoid Cloud Run idle timeouts and control burst capacity.
-* ``GOOGLE_MAPS_API_KEY``: Supplies credentials for distance calculations and
-  address lookups.
-* ``CACHE_TYPE`` and ``CACHE_REDIS_URL``: Configure the caching backend.
-* ``MAIL_*`` fields: Enable optional outbound mail integration for password
-  resets and notifications.
-* ``RATELIMIT_*`` and ``AUTH_*_RATE_LIMIT``: Configure global and endpoint
-  rate limiting enforced by :mod:`flask_limiter`.
-* ``API_AUTH_TOKEN`` and ``API_QUOTE_RATE_LIMIT``: Configure authentication
-  and rate limiting for the JSON API endpoints.
-* ``WTF_CSRF_ENABLED``: Toggles CSRF protection across forms.
-* ``BRANDING_STORAGE``, ``GCS_BUCKET``, and ``GCS_PREFIX``: Configure branding
-  logo storage in Google Cloud Storage.
-
-All values default to development-friendly settings and can be overridden via
-environment variables so each deployment can customize behaviour without
-modifying code.
-"""
-
-# config.py
-import logging
 import os
 import socket
 from pathlib import Path
@@ -596,7 +562,7 @@ def build_cloud_sql_unix_socket_uri_from_env(
         Optional[str]: Fully assembled SQLAlchemy connection string or ``None``
         when required environment variables are missing.
 
-    External Dependencies:
+    External dependencies:
         Calls :func:`os.getenv` to read Cloud SQL and PostgreSQL environment
         variables. Uses :func:`urllib.parse.quote_plus` and
         :func:`urllib.parse.urlencode` with a ``safe="/"`` override to encode
@@ -727,10 +693,6 @@ def _resolve_mail_allowed_sender_domain(default_sender: str) -> str:
         str: Lowercase domain enforced by :func:`services.mail.validate_sender_domain`,
         defaulting to the domain portion of ``default_sender`` when no explicit
         override is provided.
-
-    External Dependencies:
-        Calls :func:`os.getenv` to honour the ``MAIL_ALLOWED_SENDER_DOMAIN``
-        override supplied via environment variables.
     """
 
     override = os.getenv("MAIL_ALLOWED_SENDER_DOMAIN")
