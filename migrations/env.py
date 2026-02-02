@@ -67,7 +67,29 @@ def run_migrations_online() -> None:
     and associate a connection with the context.
 
     """
-    db_url = current_app.config.get("SQLALCHEMY_DATABASE_URI")
+    # Import necessary functions from config.py
+    from config import (
+        build_cloud_sql_unix_socket_uri_from_env,
+        build_postgres_database_uri_from_env,
+        _rebuild_database_url
+    )
+    import os
+
+    # Determine the database URI from environment variables
+    _cloud_sql_uri = build_cloud_sql_unix_socket_uri_from_env()
+    _postgres_uri = build_postgres_database_uri_from_env()
+    _raw_database_url = os.getenv("DATABASE_URL")
+    _sanitized_database_url = _rebuild_database_url(_raw_database_url)
+
+    if _cloud_sql_uri:
+        db_url = _cloud_sql_uri
+    elif _postgres_uri:
+        db_url = _postgres_uri
+    elif _sanitized_database_url:
+        db_url = _sanitized_database_url
+    else:
+        db_url = config.get_main_option("sqlalchemy.url")
+
     if db_url:
         # ConfigParser treats `%` as interpolation, so `%` must be escaped.
         config.set_main_option("sqlalchemy.url", str(db_url).replace("%", "%%"))
