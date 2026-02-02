@@ -17,8 +17,20 @@ def _session_scope() -> Generator[SASession, None, None]:
     Falls back to the legacy standalone :class:`~sqlalchemy.orm.Session`
     when no Flask application context is available. This design prevents
     "no such table" errors when the legacy session is bound to a different
-    engine than the Flask app, such as when using an in-memory SQLite
-    database.
+    engine than the Flask app, such as when a standalone worker connects with
+    its own engine configuration.
+
+    Args:
+        None.
+
+    Returns:
+        Generator[:class:`sqlalchemy.orm.Session`, None, None]: Context manager
+        yielding an active SQLAlchemy session.
+
+    External dependencies:
+        * Calls :func:`flask.has_app_context` to detect a Flask context.
+        * Uses :data:`app.models.db.session` for Flask-managed sessions.
+        * Instantiates :data:`app.database.Session` for standalone sessions.
     """
 
     if has_app_context():

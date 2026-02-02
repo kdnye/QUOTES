@@ -45,10 +45,7 @@ Base = db.Model
 def ensure_database_schema(active_engine: Optional[Engine] = None) -> None:
     """Provision required tables for the configured database backend.
 
-    The helper inspects the SQLAlchemy engine to determine the active backend.
-    SQLite environments rely on :meth:`sqlalchemy.sql.schema.MetaData.create_all`
-    because the test suite pre-populates fixtures directly through the ORM. All
-    other backends invoke :func:`_run_alembic_upgrade` to ensure Alembic
+    The helper always invokes :func:`_run_alembic_upgrade` to ensure Alembic
     migrations reach the latest revision automatically.
 
     Args:
@@ -58,14 +55,12 @@ def ensure_database_schema(active_engine: Optional[Engine] = None) -> None:
 
     Returns:
         None. The function performs schema creation as a side effect.
+
+    External Dependencies:
+        Calls :func:`app.database._run_alembic_upgrade` to apply migrations.
     """
 
     selected_engine = active_engine or engine
-    backend = selected_engine.url.get_backend_name()
-    if backend == "sqlite":
-        Base.metadata.create_all(bind=selected_engine)
-        return
-
     _run_alembic_upgrade(selected_engine)
 
 

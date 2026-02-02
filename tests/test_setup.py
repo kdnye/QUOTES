@@ -27,17 +27,23 @@ class TestConfig:
 
 
 @pytest.fixture()
-def app(tmp_path: Path) -> Flask:
-    """Create a Flask app wired to a temporary SQLite database.
+def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
+    """Create a Flask app wired to a PostgreSQL test database.
 
     Args:
-        tmp_path: Temporary path injected by pytest.
+        postgres_database_url: PostgreSQL connection string for tests.
+        monkeypatch: Pytest fixture for environment overrides.
 
     Returns:
         A configured Flask application for tests.
+
+    External dependencies:
+        * Sets ``MIGRATE_ON_STARTUP`` via :func:`monkeypatch.setenv`.
+        * Calls :func:`app.create_app` to build the Flask application.
     """
 
-    TestConfig.SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+    TestConfig.SQLALCHEMY_DATABASE_URI = postgres_database_url
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "true")
     app = create_app(TestConfig)
 
     with app.app_context():
@@ -165,13 +171,13 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
 
 
 def test_setup_validation_db_error_enables_maintenance_mode(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, postgres_database_url: str
 ) -> None:
     """Ensure setup validation errors enable maintenance mode safely.
 
     Args:
         monkeypatch: Pytest fixture used to override database query behavior.
-        tmp_path: Temporary path injected by pytest for the SQLite database.
+        postgres_database_url: PostgreSQL connection string for tests.
 
     External dependencies:
         * Calls :func:`app.create_app` to construct the Flask application.
@@ -204,15 +210,16 @@ def test_setup_validation_db_error_enables_maintenance_mode(
             * Inherits from :class:`TestConfig` to reuse setup configuration.
         """
 
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+        SQLALCHEMY_DATABASE_URI = postgres_database_url
 
     temp_app = Flask("setup-validation")
-    temp_app.config["SQLALCHEMY_DATABASE_URI"] = f"sqlite:///{tmp_path / 'patch.db'}"
+    temp_app.config["SQLALCHEMY_DATABASE_URI"] = postgres_database_url
     temp_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     db.init_app(temp_app)
     with temp_app.app_context():
         monkeypatch.setattr(User, "query", DummyQuery())
 
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "false")
     app = create_app(ErrorConfig)
 
     client = app.test_client()

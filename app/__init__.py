@@ -364,18 +364,22 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     """
     import logging
     from logging.handlers import RotatingFileHandler
-    
+
     app = Flask(__name__, template_folder="../templates")
     app.config.from_object(config_class)
-    
+
     # Configure file-based logging
-    log_file = '/tmp/app.log'
-    file_handler = RotatingFileHandler(log_file, maxBytes=1024 * 1024 * 10, backupCount=5)
+    log_file = "/tmp/app.log"
+    file_handler = RotatingFileHandler(
+        log_file, maxBytes=1024 * 1024 * 10, backupCount=5
+    )
     file_handler.setLevel(logging.INFO)
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    formatter = logging.Formatter(
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     file_handler.setFormatter(formatter)
     app.logger.addHandler(file_handler)
-    
+
     raw_config_errors = list(app.config.get("CONFIG_ERRORS", []))
     show_config_errors = _should_show_config_errors(app)
     app.config["SHOW_CONFIG_ERRORS"] = show_config_errors
@@ -419,8 +423,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     )  # Local import avoids circular imports.
 
     with app.app_context():
-        # Run migrations/schema creation when explicitly enabled or when using
-        # SQLite (common for tests and local development).
+        # Run migrations/schema creation when explicitly enabled.
         migrate_enabled = os.getenv("MIGRATE_ON_STARTUP", "false").strip().lower() in (
             "1",
             "true",
@@ -432,7 +435,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         run_db_checks = _should_run_startup_db_checks(app, config_errors)
         setup_errors: List[str] = []
         if run_db_checks:
-            if migrate_enabled or db.engine.url.get_backend_name() == "sqlite":
+            if migrate_enabled:
                 try:
                     ensure_database_schema(db.engine)
                 except Exception as exc:  # pragma: no cover - depends on database

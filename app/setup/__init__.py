@@ -345,14 +345,18 @@ def setup_status() -> str:
     """
     current_app.logger.info("Entering setup_status()")
     if request.method == "POST":
-        current_app.logger.info(f"setup_status() POST request with form data: {request.form}")
+        current_app.logger.info(
+            f"setup_status() POST request with form data: {request.form}"
+        )
         updated_keys, errors = _persist_setup_overrides(request.form)
         if errors:
             for message in errors:
                 current_app.logger.error(f"Error persisting setup overrides: {message}")
                 flash(message, "danger")
         if updated_keys:
-            current_app.logger.info(f"Saved configuration overrides: {', '.join(sorted(updated_keys))}")
+            current_app.logger.info(
+                f"Saved configuration overrides: {', '.join(sorted(updated_keys))}"
+            )
             flash(
                 "Saved configuration overrides: " + ", ".join(sorted(updated_keys)),
                 "success",
@@ -385,8 +389,8 @@ def setup_db_init() -> ResponseReturnValue:
         back to it after invoking :func:`app.database.ensure_database_schema`.
 
     External dependencies:
-        * Calls :func:`app.database.ensure_database_schema` to run migrations or
-          create tables for SQLite databases.
+        * Calls :func:`app.database.ensure_database_schema` to run Alembic
+          migrations for PostgreSQL.
     """
     current_app.logger.info("Entering setup_db_init()")
     if request.method == "POST":

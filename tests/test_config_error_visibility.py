@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Optional
 
 import pytest
@@ -11,7 +10,6 @@ from app import create_app
 
 
 def _build_error_app(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     *,
     environment: str,
@@ -20,11 +18,9 @@ def _build_error_app(
     """Create an application configured with startup configuration errors.
 
     Args:
-        tmp_path: Temporary path injected by pytest for SQLite storage.
         monkeypatch: Pytest fixture used to manage environment overrides.
         environment: Environment name used to emulate production or development.
         show_flag: Optional ``SHOW_CONFIG_ERRORS`` flag value.
-
     Returns:
         A Flask application configured with a startup configuration error.
 
@@ -32,7 +28,8 @@ def _build_error_app(
         * Calls :func:`app.create_app` to build the Flask application.
         * Uses :func:`monkeypatch.setenv` and :func:`monkeypatch.delenv` to
           manage environment variables.
-        * Relies on :mod:`flask_sqlalchemy` to initialize a SQLite database.
+        * Relies on :mod:`flask_sqlalchemy` to initialize a PostgreSQL database
+          connection string for the app configuration.
     """
 
     monkeypatch.setenv("ENVIRONMENT", environment)
@@ -56,10 +53,12 @@ def _build_error_app(
 
         TESTING = True
         SECRET_KEY = "test-secret-key"
-        SQLALCHEMY_DATABASE_URI = f"sqlite:///{tmp_path / 'test.db'}"
+        SQLALCHEMY_DATABASE_URI = (
+            "postgresql+psycopg2://user:pass@localhost:5432/quote_tool"
+        )
         SQLALCHEMY_TRACK_MODIFICATIONS = False
         WTF_CSRF_ENABLED = False
-        STARTUP_DB_CHECKS = True
+        STARTUP_DB_CHECKS = False
         CONFIG_ERRORS = ["Missing POSTGRES_PASSWORD"]
 
     return create_app(ErrorConfig)
@@ -74,7 +73,6 @@ def _build_error_app(
     ],
 )
 def test_config_error_visibility_respects_environment_and_flag(
-    tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     environment: str,
     show_flag: Optional[str],
@@ -83,12 +81,10 @@ def test_config_error_visibility_respects_environment_and_flag(
     """Ensure config error diagnostics obey environment and opt-in flags.
 
     Args:
-        tmp_path: Temporary path injected by pytest for SQLite storage.
         monkeypatch: Pytest fixture used to manage environment overrides.
         environment: Environment name used to emulate production or development.
         show_flag: Optional ``SHOW_CONFIG_ERRORS`` flag value.
         expect_visible: Expected flag for diagnostics visibility.
-
     Returns:
         None. Assertions validate the response behavior.
 
@@ -98,7 +94,6 @@ def test_config_error_visibility_respects_environment_and_flag(
     """
 
     app = _build_error_app(
-        tmp_path,
         monkeypatch,
         environment=environment,
         show_flag=show_flag,
