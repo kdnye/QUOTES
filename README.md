@@ -123,7 +123,8 @@ valid Postgres DSN. Configure Cloud SQL using one of these options:
 - **Unix socket** – Set `CLOUD_SQL_CONNECTION_NAME` alongside
   `POSTGRES_USER`, `POSTGRES_PASSWORD`, and `POSTGRES_DB`. Cloud Run mounts the
   socket at `/cloudsql/<connection-name>`, and the app builds the socket-based
-  DSN automatically. Optional `POSTGRES_OPTIONS` are appended as query
+  DSN automatically with the socket path preserved (no `%2F` encoding in the
+  host query parameter). Optional `POSTGRES_OPTIONS` are appended as query
   parameters.
 
 Use `./scripts/setup_gcp.sh PROJECT_ID` to bootstrap required Google Cloud
