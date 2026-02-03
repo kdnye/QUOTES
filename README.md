@@ -128,10 +128,10 @@ valid Postgres DSN. Configure Cloud SQL using one of these options:
   parameters.
 
 Use `./scripts/setup_gcp.sh PROJECT_ID` to bootstrap required Google Cloud
-services, a public branding bucket, an Artifact Registry repo, and a Cloud SQL
-Postgres instance with the `quote_tool` database. Set `REGION` (defaults to
-`us-central1`), `CLOUD_SQL_INSTANCE_NAME`, `ARTIFACT_REPO_NAME`, or
-`POSTGRES_PASSWORD` to override defaults before running the script.
+services, an Artifact Registry repo, and a Cloud SQL Postgres instance with
+the `quote_tool` database. Set `REGION` (defaults to `us-central1`),
+`CLOUD_SQL_INSTANCE_NAME`, `ARTIFACT_REPO_NAME`, or `POSTGRES_PASSWORD` to
+override defaults before running the script.
 
 For the Quote Tool Cloud SQL instance, configure either of the following:
 
@@ -250,37 +250,6 @@ combination. Override the defaults with environment variables as needed:
 
 Set `RATELIMIT_HEADERS_ENABLED=true` to expose standard rate-limit headers if
 your proxy or monitoring stack expects them.
-
-### Branding logo storage
-
-Branding logos are stored in Google Cloud Storage when enabled. Configure the
-following environment variables to enable uploads and URL generation:
-
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `BRANDING_STORAGE` | Branding backend (`gcs` or `disabled`) | `disabled` |
-| `GCS_BUCKET` | Target bucket for GCS branding logos | (empty) |
-| `GCS_PREFIX` | Optional object prefix for branding logos | (empty) |
-
-When `BRANDING_STORAGE=gcs`, the application uploads logo objects and stores
-their public URLs in `app_settings`, and `GCS_BUCKET` becomes required. Ensure
-the workload identity or service account has `roles/storage.objectAdmin` or at
-minimum `storage.objects.create` and `storage.objects.delete` (plus `get` if
-your bucket requires reads to resolve public URLs). Bucket mounts are not
-supported; the service uses the Cloud Storage API directly. If you see Cloud
-Run startup failures referencing `gcsfuse` or IP filtering (for example,
-`PermissionDenied` messages mentioning an IP filtering condition), remove any
-GCS bucket mount from the service configuration. Cloud Run volume mounts add
-VPC egress and IP allow list requirements that are unnecessary for this
-application because the branding flows call the Storage API directly. Allow
-the runtime service account to access the bucket over the Storage API instead.
-
-Admins can also configure per-rate-set logo locations by visiting **Admin >
-Branding** and entering a base GCS bucket location in the form
-`gs://bucket/path`. The application expects each rate set logo to be stored as
-`<rate_set>.png` under that base path (for example,
-`gs://bucket/path/default.png`). The branding screen will preview the
-calculated public URLs so you can verify the configuration before saving.
 
 ### Rate CSV formats
 

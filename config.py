@@ -577,26 +577,6 @@ def _resolve_oidc_allowed_domain() -> str:
     return configured.lower() or "freightservices.net"
 
 
-def _resolve_branding_storage() -> str:
-    """Return the branding storage backend, defaulting to disabled.
-
-    Returns:
-        str: Normalized branding storage backend identifier.
-
-    External Dependencies:
-        Calls :func:`os.getenv` to read ``BRANDING_STORAGE``.
-    """
-
-    configured = os.getenv("BRANDING_STORAGE")
-    if configured:
-        normalized = configured.strip().lower()
-        if normalized in {"none", "disabled", "off"}:
-            return "disabled"
-        return normalized
-
-    return "disabled"
-
-
 class Config:
     SECRET_KEY = _resolve_secret_key()
     _raw_database_url = os.getenv("DATABASE_URL")
@@ -712,9 +692,6 @@ class Config:
     )
     API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
     API_QUOTE_RATE_LIMIT = os.getenv("API_QUOTE_RATE_LIMIT", "30 per minute")
-    BRANDING_STORAGE = _resolve_branding_storage()
-    GCS_BUCKET = os.getenv("GCS_BUCKET")
-    GCS_PREFIX = os.getenv("GCS_PREFIX")
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")
     OIDC_CLIENT_ID = os.getenv("OIDC_CLIENT_ID")
     OIDC_CLIENT_SECRET = os.getenv("OIDC_CLIENT_SECRET")
@@ -723,23 +700,5 @@ class Config:
     OIDC_AUDIENCE = _resolve_oidc_audience()
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
-
-    _disabled_branding_backends = {"disabled", "none", "off"}
-    _gcs_branding_backends = {
-        "gcs",
-        "google",
-        "google_cloud_storage",
-        "googlecloudstorage",
-    }
-    if BRANDING_STORAGE in _gcs_branding_backends:
-        if not (GCS_BUCKET or "").strip():
-            _record_startup_error(
-                "GCS_BUCKET must be set for branding storage using GCS."
-            )
-    elif BRANDING_STORAGE not in _disabled_branding_backends:
-        _record_startup_error(
-            "Branding storage must use Google Cloud Storage or be disabled; "
-            "bucket mounts are not supported."
-        )
 
     CONFIG_ERRORS = list(_CONFIG_ERRORS)

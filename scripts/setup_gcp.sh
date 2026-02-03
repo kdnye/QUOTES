@@ -12,7 +12,6 @@ fi
 
 PROJECT_ID="$1"
 REGION="${REGION:-us-central1}"
-BUCKET_NAME="${PROJECT_ID}-branding"
 REPO_NAME="${ARTIFACT_REPO_NAME:-quote-repo}"
 INSTANCE_NAME="${CLOUD_SQL_INSTANCE_NAME:-quote-postgres}"
 DB_NAME="quote_tool"
@@ -34,23 +33,6 @@ fi
 # Enable required Google Cloud APIs using `gcloud services enable`.
 gcloud services enable run.googleapis.com sqladmin.googleapis.com compute.googleapis.com \
     --project="${PROJECT_ID}"
-
-# Create the GCS bucket (or ensure it exists) with uniform bucket-level access.
-if ! gcloud storage buckets describe "gs://${BUCKET_NAME}" --project="${PROJECT_ID}" >/dev/null 2>&1; then
-    gcloud storage buckets create "gs://${BUCKET_NAME}" \
-        --project="${PROJECT_ID}" \
-        --location="${REGION}" \
-        --uniform-bucket-level-access
-fi
-
-# Enforce uniform bucket-level access and allow public read of objects.
-gcloud storage buckets update "gs://${BUCKET_NAME}" \
-    --project="${PROJECT_ID}" \
-    --uniform-bucket-level-access
-gcloud storage buckets add-iam-policy-binding "gs://${BUCKET_NAME}" \
-    --project="${PROJECT_ID}" \
-    --member="allUsers" \
-    --role="roles/storage.objectViewer"
 
 # Create the Artifact Registry repository (Docker format) if missing.
 if ! gcloud artifacts repositories describe "${REPO_NAME}" \
@@ -91,4 +73,3 @@ if [[ "${GENERATED_PASSWORD}" == "true" ]]; then
 fi
 
 echo "Cloud SQL connection name: ${CONNECTION_NAME}"
-echo "Bucket name: gs://${BUCKET_NAME}"

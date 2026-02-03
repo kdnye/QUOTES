@@ -10,9 +10,6 @@
         {% if settings_url %}
         <a class="btn btn-warning" href="{{ settings_url }}">Settings</a>
         {% endif %}
-        {% if current_user.role == 'super_admin' %}
-        <a class="btn btn-outline-secondary" href="{{ url_for('admin.branding') }}">Branding</a>
-        {% endif %}
       </div>
       <div class="btn-group me-2 mb-2" role="group" aria-label="Quote tools">
         <a class="btn btn-secondary" href="{{ url_for('admin_quotes.quotes_html') }}">View Quotes</a>

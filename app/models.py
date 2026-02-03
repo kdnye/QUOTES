@@ -25,7 +25,6 @@ EMAIL_DISPATCH_LOG_TABLE = "email_dispatch_log"
 PASSWORD_RESET_TOKENS_TABLE = "password_reset_tokens"
 ACCESSORIALS_TABLE = "accessorials"
 APP_SETTINGS_TABLE = "app_settings"
-BRAND_LOGO_LOCATIONS_TABLE = "brand_logo_locations"
 HOTSHOT_RATES_TABLE = "hotshot_rates"
 BEYOND_RATES_TABLE = "beyond_rates"
 AIR_COST_ZONES_TABLE = "air_cost_zones"
@@ -236,28 +235,6 @@ class AppSetting(db.Model):
     )
 
 
-class BrandLogoLocation(db.Model):
-    """Persist per-rate-set GCS logo locations for branding.
-
-    Attributes:
-        rate_set: Normalized rate set identifier linked to a logo.
-        gcs_bucket_location: GCS location string in ``gs://bucket/path`` format.
-        created_at: UTC timestamp when the row was created.
-        updated_at: UTC timestamp automatically refreshed on modification.
-    """
-
-    __tablename__ = BRAND_LOGO_LOCATIONS_TABLE
-
-    id = db.Column(db.Integer, primary_key=True)
-    rate_set = db.Column(db.String(50), nullable=False, unique=True, index=True)
-    gcs_bucket_location = db.Column(db.String(512), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = db.Column(
-        db.DateTime,
-        default=datetime.utcnow,
-        onupdate=datetime.utcnow,
-        nullable=False,
-    )
 
 
 class PasswordResetToken(db.Model):

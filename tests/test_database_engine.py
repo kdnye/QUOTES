@@ -64,3 +64,20 @@ def test_create_engine_receives_configured_options(monkeypatch) -> None:
 
     monkeypatch.setattr(sqlalchemy, "create_engine", real_create_engine)
     importlib.reload(database)
+
+
+def test_escape_alembic_url_escapes_percent_signs() -> None:
+    """Ensure Alembic URLs escape percent signs for ConfigParser safety.
+
+    Returns:
+        None. Asserts URL-encoded socket paths are escaped as expected.
+    """
+
+    from app.database import _escape_alembic_url
+
+    raw_url = "postgresql://user:pass@/db?host=%2Fcloudsql%2Fproject:region:inst"
+
+    assert (
+        _escape_alembic_url(raw_url)
+        == "postgresql://user:pass@/db?host=%%2Fcloudsql%%2Fproject:region:inst"
+    )

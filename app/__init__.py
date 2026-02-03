@@ -20,7 +20,7 @@ import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
-from typing import Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 from flask.typing import ResponseReturnValue
 from flask_session import Session as FlaskSession
 import redis as redispy
@@ -34,12 +34,6 @@ from app.services.mail import (
     send_email,
     validate_sender_domain,
     user_has_mail_privileges,
-)
-from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
-from app.services.branding import is_branding_enabled
-from app.services.branding_locations import (
-    build_brand_logo_url,
-    get_brand_logo_location,
 )
 from app.services.settings import reload_overrides
 from app.services.oidc_client import init_oidc_oauth
@@ -270,31 +264,6 @@ def build_map_html(origin_zip: str, destination_zip: str) -> Optional[str]:
         '<iframe width="600" height="450" style="border:0" '
         f'loading="lazy" allowfullscreen src="{src}"></iframe>'
     )
-
-
-def _resolve_company_logo_url(
-    gcs_bucket_location: Optional[str], rate_set: str
-) -> Optional[str]:
-    """Return a public URL for a rate set's branding logo.
-
-    Args:
-        gcs_bucket_location: Base GCS bucket location configured for branding
-            logos, such as ``gs://bucket/path``.
-        rate_set: Rate set identifier used to construct the logo filename.
-
-    Returns:
-        Public URL string for the logo or ``None`` when no logo is configured.
-
-    External dependencies:
-        * Calls :func:`app.services.branding.is_branding_enabled` to confirm
-          branding storage is enabled.
-        * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
-          construct the public URL.
-    """
-
-    if not is_branding_enabled(current_app.config.get("BRANDING_STORAGE")):
-        return None
-    return build_brand_logo_url(gcs_bucket_location, rate_set)
 
 
 def _verify_app_setup(app: Flask) -> List[str]:
@@ -704,37 +673,5 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             flash("Failed to send email. Check SMTP settings.", "danger")
 
         return redirect(url_for("index"))
-
-    @app.context_processor
-    def inject_company_logo() -> Dict[str, str]:
-        """Expose ``company_logo_url`` for authenticated users.
-
-        The processor resolves the caller's :attr:`~app.models.User.rate_set`
-        via :func:`app.services.rate_sets.normalize_rate_set` and looks up a
-        stored GCS bucket location for the rate set using
-        :func:`app.services.branding_locations.get_brand_logo_location`. The
-        logo URL is then derived with the ``<bucket_location>/<rate_set>.png``
-        naming convention so :mod:`templates.base` can display the
-        customer-specific logo alongside the FSI branding.
-        """
-
-        try:
-            if not current_user.is_authenticated:
-                return {}
-            rate_set = normalize_rate_set(
-                getattr(current_user, "rate_set", DEFAULT_RATE_SET)
-            )
-        except Exception:  # pragma: no cover - defensive guard
-            return {}
-
-        record = get_brand_logo_location(rate_set)
-        logo_url = (
-            _resolve_company_logo_url(record.gcs_bucket_location, rate_set)
-            if record
-            else None
-        )
-        if logo_url:
-            return {"company_logo_url": logo_url}
-        return {}
 
     return app
