@@ -75,7 +75,6 @@ def _collect_env_checks() -> list[dict[str, Any]]:
         or os.getenv("MAPS_API_KEY")
         or _get_setup_config_value("GOOGLE_MAPS_API_KEY")
     )
-    gcs_bucket = _get_setup_config_value("GCS_BUCKET") or os.getenv("GCS_BUCKET")
     database_url = _get_setup_config_value("DATABASE_URL") or os.getenv("DATABASE_URL")
     cloud_sql_connection = _get_setup_config_value(
         "CLOUD_SQL_CONNECTION_NAME"
@@ -116,13 +115,6 @@ def _collect_env_checks() -> list[dict[str, Any]]:
             "configured": bool(maps_key),
             "instruction": (
                 "Provide a Google Maps API key so ZIP validation and distance lookups work."
-            ),
-        },
-        {
-            "label": "GCS_BUCKET",
-            "configured": bool(gcs_bucket),
-            "instruction": (
-                "Set GCS_BUCKET when branding assets should be stored in Google Cloud Storage."
             ),
         },
         {
@@ -169,15 +161,6 @@ def _get_setup_override_fields() -> list[dict[str, Any]]:
             "help_text": (
                 "Required for ZIP validation and distance lookups. Leave blank to "
                 "keep the current value."
-            ),
-        },
-        {
-            "name": "gcs_bucket",
-            "config_key": "GCS_BUCKET",
-            "label": "GCS_BUCKET",
-            "is_secret": False,
-            "help_text": (
-                "Provide the target Google Cloud Storage bucket for branding assets."
             ),
         },
         {
