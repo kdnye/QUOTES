@@ -173,8 +173,6 @@ required to read secrets and reach dependencies:
 - `roles/secretmanager.secretAccessor` on the secrets above so Cloud Run can
   inject values at startup.
 - `roles/cloudsql.client` if the service connects to Cloud SQL.
-- `roles/storage.objectAdmin` (or scoped `storage.objects.create/delete/get`)
-  if branding uploads are stored in GCS.
 
 ### Variable reference
 
@@ -369,31 +367,6 @@ Point `CACHE_TYPE`, `CACHE_REDIS_URL`, and `RATELIMIT_STORAGE_URI` at your
 managed Redis endpoint. When using Memorystore or another private Redis service,
 ensure the Cloud Run service connects over VPC and that the Redis instance
 allows traffic from the Cloud Run connector.
-
-### Configure GCS branding logo storage (optional on Cloud Run)
-
-Branding logos are stored in Google Cloud Storage when enabled. Set the
-following environment variables:
-
-| Variable | Purpose | Default |
-| --- | --- | --- |
-| `BRANDING_STORAGE` | Branding backend (`gcs` or `disabled`) | `disabled` |
-| `GCS_BUCKET` | Target bucket for branding uploads | (empty) |
-| `GCS_PREFIX` | Optional object prefix for branding uploads | (empty) |
-
-When `BRANDING_STORAGE=gcs`, `GCS_BUCKET` becomes required and the service
-account used by the deployment must have `roles/storage.objectAdmin` or the
-scoped permissions `storage.objects.create` and `storage.objects.delete` (plus
-`get` if your bucket requires reads to resolve public URLs). Branding assets
-must be stored via the Google Cloud Storage API; bucket mounts are not
-supported.
-
-If Cloud Run startup logs mention `gcsfuse` or `PermissionDenied` IP filtering
-messages, remove any configured GCS bucket mount from the service definition.
-GCS bucket mounts introduce extra networking requirements (for example VPC
-egress or IP allow lists) that are unnecessary for this application because
-the branding flows use the Google Cloud Storage API directly. Allow the
-runtime service account to access the bucket over the Storage API instead.
 
 ### Seed rate tables and admin user
 

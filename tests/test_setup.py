@@ -113,7 +113,6 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         "/setup",
         data={
             "google_maps_api_key": "maps-key",
-            "gcs_bucket": "branding-bucket",
             "database_url": "postgresql+psycopg2://user:pass@db/quote_tool",
             "postgres_user": "db-user",
             "postgres_password": "db-pass",
@@ -134,8 +133,6 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         settings = {setting.key: setting for setting in AppSetting.query.all()}
         assert settings["google_maps_api_key"].value == "maps-key"
         assert settings["google_maps_api_key"].is_secret is True
-        assert settings["gcs_bucket"].value == "branding-bucket"
-        assert settings["gcs_bucket"].is_secret is False
         assert (
             settings["database_url"].value
             == "postgresql+psycopg2://user:pass@db/quote_tool"
@@ -156,7 +153,6 @@ def test_setup_allows_config_overrides(app: Flask, client: FlaskClient) -> None:
         assert settings["cloud_sql_connection_name"].value == "project:region:instance"
         assert settings["cloud_sql_connection_name"].is_secret is False
         assert app.config["GOOGLE_MAPS_API_KEY"] == "maps-key"
-        assert app.config["GCS_BUCKET"] == "branding-bucket"
         assert (
             app.config["DATABASE_URL"]
             == "postgresql+psycopg2://user:pass@db/quote_tool"

@@ -9,11 +9,9 @@ from __future__ import annotations
 
 import csv
 import io
-import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Union
-from urllib.parse import urlparse
 
 import pandas as pd
 from flask import (
@@ -30,7 +28,6 @@ from flask import (
 from flask_login import current_user
 from flask_wtf import FlaskForm
 from flask_wtf.file import FileAllowed, FileField, FileRequired
-from wtforms import ValidationError
 from wtforms import (
     BooleanField,
     FloatField,
@@ -57,15 +54,6 @@ from .models import (
 )
 from . import csrf
 from .policies import employee_required, super_admin_required
-from app.services.branding import is_branding_enabled
-from app.services.branding_locations import (
-    build_brand_logo_object_location,
-    build_brand_logo_url,
-    delete_brand_logo_location,
-    get_brand_logo_location,
-    list_brand_logo_locations,
-    upsert_brand_logo_location,
-)
 from app.services.rate_sets import (
     DEFAULT_RATE_SET,
     get_available_rate_sets,
@@ -74,9 +62,6 @@ from app.services.rate_sets import (
 from app.services.settings import get_settings_cache, reload_overrides, set_setting
 
 admin_bp = Blueprint("admin", __name__, template_folder="templates")
-
-_GCS_LOCATION_PATTERN = re.compile(r"^gs://[^/]+/.+")
-
 
 def _sync_admin_role(
     user: User,
@@ -282,66 +267,6 @@ class CSVUploadForm(FlaskForm):
     )
 
 
-def _validate_gcs_bucket_location(_: FlaskForm, field: StringField) -> None:
-    """Validate a user-supplied GCS bucket location value.
-
-    Args:
-        _: Parent form instance (unused).
-        field: Field containing the user's GCS location string.
-
-    Raises:
-        ValidationError: If the value does not look like ``gs://bucket/path``.
-
-    External dependencies:
-        * :func:`urllib.parse.urlparse` for URL parsing.
-    """
-
-    value = (field.data or "").strip()
-    if not value:
-        raise ValidationError("Enter a GCS bucket location.")
-    parsed = urlparse(value)
-    if parsed.scheme != "gs" or not parsed.netloc or not parsed.path.strip("/"):
-        raise ValidationError("Enter a GCS bucket location like gs://bucket/path.")
-    if not _GCS_LOCATION_PATTERN.match(value):
-        raise ValidationError("Enter a GCS bucket location like gs://bucket/path.")
-
-
-class LogoUploadForm(FlaskForm):
-    """Store a GCS bucket location for a rate set's logo.
-
-    Attributes:
-        rate_set: Dropdown of available rate sets populated from
-            :func:`app.services.rate_sets.get_available_rate_sets`.
-        gcs_bucket_location: Base location in GCS where rate set logos are
-            stored using the ``<rate_set>.png`` naming convention.
-
-    External dependencies:
-        * Calls :func:`app.admin._validate_gcs_bucket_location` for validation.
-    """
-
-    rate_set = SelectField("Rate Set", validators=[DataRequired()])
-    gcs_bucket_location = StringField(
-        "GCS bucket location",
-        validators=[
-            DataRequired(message="Enter a GCS bucket location."),
-            _validate_gcs_bucket_location,
-        ],
-    )
-
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        """Attach available rate sets and default to :data:`DEFAULT_RATE_SET`.
-
-        Args:
-            *args: Positional arguments forwarded to :class:`FlaskForm`.
-            **kwargs: Keyword arguments forwarded to :class:`FlaskForm`.
-        """
-
-        super().__init__(*args, **kwargs)
-        _populate_rate_set_choices(self)
-        if not self.rate_set.data:
-            self.rate_set.data = DEFAULT_RATE_SET
-
-
 def _parse_rate_set(
     raw_value: Any,
     *,
@@ -370,31 +295,6 @@ def _parse_rate_set(
     if allow_new_rate_sets or normalized in known_sets:
         return normalized
     raise ValueError(f"Unknown rate set '{normalized}'.")
-
-
-def _logo_url_from_location(raw_value: str | None, rate_set: str) -> str | None:
-    """Return a fully qualified URL for a rate set logo.
-
-    Args:
-        raw_value: Base GCS bucket location stored in
-            :class:`app.models.BrandLogoLocation`.
-        rate_set: Rate set identifier used to build the logo filename.
-
-    Returns:
-        URL string suitable for rendering in templates or ``None`` when the
-        value is empty.
-
-    External dependencies:
-        * Reads ``BRANDING_STORAGE`` via :data:`flask.current_app`.
-        * Calls :func:`app.services.branding.is_branding_enabled` to confirm
-          branding storage is enabled.
-        * Calls :func:`app.services.branding_locations.build_brand_logo_url` to
-          construct the public URL.
-    """
-
-    if not is_branding_enabled(current_app.config.get("BRANDING_STORAGE")):
-        return None
-    return build_brand_logo_url(raw_value, rate_set)
 
 
 @dataclass(frozen=True)
@@ -863,87 +763,6 @@ def delete_setting(setting_id: int) -> Response:
         "success",
     )
     return redirect(url_for("admin.list_settings"))
-
-
-@admin_bp.route("/branding", methods=["GET", "POST"])
-@super_admin_required
-def branding() -> Union[str, Response]:
-    """Store or remove per-rate-set company logos.
-
-    Accepts an authenticated super administrator's GCS bucket location,
-    persists the GCS bucket location per rate set, and renders preview URLs
-    using the ``<bucket_location>/<rate_set>.png`` naming convention.
-
-    Returns:
-        A rendered HTML page or redirect response when the form is submitted.
-
-    External dependencies:
-        * :func:`app.services.rate_sets.get_available_rate_sets` for choices.
-        * :func:`app.services.branding_locations.upsert_brand_logo_location` to
-          persist the value.
-        * :func:`app.services.branding_locations.build_brand_logo_url` to
-          preview logos.
-    """
-
-    form = LogoUploadForm()
-    rate_sets = get_available_rate_sets()
-
-    if form.validate_on_submit():
-        rate_set = _parse_rate_set(form.rate_set.data)
-        gcs_bucket_location = (form.gcs_bucket_location.data or "").strip()
-        upsert_brand_logo_location(rate_set, gcs_bucket_location)
-        db.session.commit()
-        flash(f"Saved GCS logo location for rate set '{rate_set}'.", "success")
-        return redirect(url_for("admin.branding"))
-
-    if request.method == "GET":
-        current_rate_set = _parse_rate_set(form.rate_set.data)
-        record = get_brand_logo_location(current_rate_set)
-        if record and record.gcs_bucket_location:
-            form.gcs_bucket_location.data = record.gcs_bucket_location
-
-    logos: Dict[str, Dict[str, str | None]] = {}
-    stored_logos = {record.rate_set: record for record in list_brand_logo_locations()}
-    for rs in rate_sets:
-        record = stored_logos.get(rs)
-        raw_value = record.gcs_bucket_location if record else None
-        logos[rs] = {
-            "bucket_location": raw_value,
-            "object_location": build_brand_logo_object_location(raw_value, rs),
-            "url": _logo_url_from_location(raw_value, rs),
-        }
-
-    return render_template(
-        "admin_branding.html",
-        form=form,
-        logos=logos,
-        rate_sets=rate_sets,
-    )
-
-
-@admin_bp.route("/branding/remove/<rate_set>", methods=["POST"])
-@super_admin_required
-def branding_remove(rate_set: str) -> Response:
-    """Delete the stored logo location for ``rate_set``.
-
-    Removes the persisted GCS bucket location value for the rate set.
-
-    Args:
-        rate_set: Rate set identifier attached to the branding logo.
-
-    Returns:
-        Redirect response back to the branding admin screen.
-
-    External dependencies:
-        * :func:`app.services.branding_locations.delete_brand_logo_location`
-          to clear the stored location.
-    """
-
-    normalized = normalize_rate_set(rate_set)
-    delete_brand_logo_location(normalized)
-    db.session.commit()
-    flash(f"Removed logo for '{normalized}'.", "success")
-    return redirect(url_for("admin.branding"))
 
 
 @admin_bp.route("/toggle/<int:user_id>", methods=["POST"])
