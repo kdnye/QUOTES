@@ -297,6 +297,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
         }
         for table in required_tables:
             if table not in existing_tables:
+                app.logger.error(f"SETUP_ERROR: Missing table: {table}")
                 errors.append(f"Missing table: {table}")
 
     required_templates = ["index.html", "map.html", "new_quote.html", "500.html"]
