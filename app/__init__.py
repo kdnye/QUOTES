@@ -404,14 +404,17 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         )
         run_db_checks = _should_run_startup_db_checks(app, config_errors)
         setup_errors: List[str] = []
+        non_config_errors: List[str] = []
         if run_db_checks:
             if migrate_enabled:
                 try:
                     ensure_database_schema(db.engine)
                 except Exception as exc:  # pragma: no cover - depends on database
                     app.logger.warning("Startup database migration failed: %s", exc)
-                    setup_errors.append("Database unavailable; skipping migrations.")
-            setup_errors.extend(_verify_app_setup(app))
+                    non_config_errors.append(
+                        "Database unavailable; skipping migrations."
+                    )
+            non_config_errors.extend(_verify_app_setup(app))
         else:
             if config_errors:
                 app.logger.warning(
@@ -422,23 +425,29 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                     "Skipping startup database checks because STARTUP_DB_CHECKS is "
                     "disabled."
                 )
-        if config_errors:
-            setup_errors.extend(config_errors)
         reload_overrides(app)
         try:
             app.config["SETUP_REQUIRED"] = _is_setup_required()
             if app.config.pop("SETUP_VALIDATION_FAILED", False):
-                setup_errors.append(
+                non_config_errors.append(
                     "Unable to validate setup status due to database errors."
                 )
         except Exception as exc:  # pragma: no cover - defensive guard
             app.logger.warning(
                 "Setup validation failed; enabling maintenance mode: %s", exc
             )
-            setup_errors.append(
+            non_config_errors.append(
                 "Unable to validate setup status due to database errors."
             )
             app.config["SETUP_REQUIRED"] = False
+
+        if config_errors:
+            setup_errors.extend(config_errors)
+        if non_config_errors:
+            setup_errors.extend(non_config_errors)
+
+    has_config_errors = bool(config_errors)
+    has_non_config_errors = bool(non_config_errors)
 
     limiter.init_app(app)
 
@@ -447,7 +456,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         app.logger.error("Application setup failed: %s", message)
 
         @app.before_request
-        def _setup_failed() -> Optional[Tuple[str, int]]:
+        def _setup_failed() -> Optional[ResponseReturnValue]:
             """Return a maintenance response when startup validation fails.
 
             Inputs:
@@ -455,16 +464,23 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
             Returns:
                 ``None`` when diagnostics should proceed, otherwise a rendered
-                500 response tuple.
+                error response.
 
             External dependencies:
                 * Reads :data:`flask.request.path` to allow diagnostics access.
+                * Redirects to :func:`setup.setup_status` when only
+                  configuration errors exist.
                 * Renders :mod:`templates/500.html` via
-                  :func:`flask.render_template`.
+                  :func:`flask.render_template` when non-configuration errors
+                  are present.
             """
 
             if request.path == "/healthz/config":
                 return None
+            if has_config_errors and not has_non_config_errors:
+                if request.path.startswith("/setup"):
+                    return None
+                return redirect(url_for("setup.setup_status"))
             error_details = raw_config_errors if show_config_errors else None
             return (
                 render_template(

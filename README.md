@@ -76,8 +76,11 @@ Services portal.
 8. On first run, visit `/setup` to confirm environment variables, optionally
    save missing values (including database connection settings) into the app's
    settings table, initialize the database schema, and create the initial super
-   admin account. Database connection changes take effect after restarting the
-   app. The setup flow locks down the rest of the app until a user exists.
+   admin account. When required environment variables are missing, requests
+   redirect to the setup checklist instead of a generic 500 page so operators
+   can resolve the configuration. Database connection changes take effect after
+   restarting the app. The setup flow locks down the rest of the app until a
+   user exists.
 
 ### Database migrations
 
