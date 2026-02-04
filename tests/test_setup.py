@@ -80,6 +80,51 @@ def test_setup_redirects_when_no_users(client: FlaskClient) -> None:
     assert setup_page.status_code == 200
 
 
+def test_setup_redirects_when_only_config_errors(
+    monkeypatch: pytest.MonkeyPatch, postgres_database_url: str
+) -> None:
+    """Ensure config-only failures route to the setup checklist.
+
+    Args:
+        monkeypatch: Pytest fixture used to override environment settings.
+        postgres_database_url: PostgreSQL connection string for tests.
+
+    External dependencies:
+        * Initializes :data:`app.models.db` with a temporary
+          :class:`flask.Flask` app via :meth:`flask_sqlalchemy.SQLAlchemy.init_app`.
+        * Calls :func:`app.create_app` to build the Flask application.
+    """
+
+    class ConfigWithErrors(TestConfig):
+        """Configuration overrides for config-only setup failures."""
+
+        SQLALCHEMY_DATABASE_URI = postgres_database_url
+        STARTUP_DB_CHECKS = False
+        CONFIG_ERRORS = ["Missing required environment variables."]
+
+    temp_app = Flask("setup-config-errors")
+    temp_app.config["SQLALCHEMY_DATABASE_URI"] = postgres_database_url
+    temp_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(temp_app)
+    with temp_app.app_context():
+        db.create_all()
+
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "false")
+    app = create_app(ConfigWithErrors)
+    client = app.test_client()
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/setup" in response.headers.get("Location", "")
+
+    setup_page = client.get("/setup")
+    assert setup_page.status_code == 200
+
+    with app.app_context():
+        db.session.remove()
+        db.drop_all()
+
+
 def test_setup_admin_creates_super_admin(app: Flask, client: FlaskClient) -> None:
     """Validate the setup admin form provisions a super admin user."""
 
