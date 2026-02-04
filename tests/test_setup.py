@@ -266,3 +266,63 @@ def test_setup_validation_db_error_enables_maintenance_mode(
     client = app.test_client()
     response = client.get("/healthz")
     assert response.status_code == 500
+
+
+def test_setup_validation_error_with_config_errors_redirects_to_setup(
+    monkeypatch: pytest.MonkeyPatch, postgres_database_url: str
+) -> None:
+    """Ensure config errors still redirect when setup validation fails.
+
+    Args:
+        monkeypatch: Pytest fixture used to override database query behavior.
+        postgres_database_url: PostgreSQL connection string for tests.
+
+    External dependencies:
+        * Calls :func:`app.create_app` to construct the Flask application.
+        * Overrides :class:`app.models.User` query behavior via ``monkeypatch``.
+        * Initializes :data:`app.models.db` with a temporary
+          :class:`flask.Flask` app via :meth:`flask_sqlalchemy.SQLAlchemy.init_app`.
+    """
+
+    class DummyQuery:
+        """Provide a query stub that raises an OperationalError.
+
+        External dependencies:
+            * Raises :class:`sqlalchemy.exc.OperationalError` to emulate a
+              database failure.
+        """
+
+        def count(self) -> int:
+            """Raise an OperationalError to simulate database failure.
+
+            Returns:
+                Never returns because the method always raises.
+            """
+
+            raise OperationalError("SELECT 1", {}, Exception("db down"))
+
+    class ErrorConfig(TestConfig):
+        """Configuration overrides for config-only setup failures.
+
+        External dependencies:
+            * Inherits from :class:`TestConfig` to reuse setup configuration.
+        """
+
+        SQLALCHEMY_DATABASE_URI = postgres_database_url
+        STARTUP_DB_CHECKS = False
+        CONFIG_ERRORS = ["Missing database configuration."]
+
+    temp_app = Flask("setup-config-errors")
+    temp_app.config["SQLALCHEMY_DATABASE_URI"] = postgres_database_url
+    temp_app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    db.init_app(temp_app)
+    with temp_app.app_context():
+        monkeypatch.setattr(User, "query", DummyQuery())
+
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "false")
+    app = create_app(ErrorConfig)
+    client = app.test_client()
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/setup" in response.headers.get("Location", "")

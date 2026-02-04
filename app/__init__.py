@@ -428,16 +428,26 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         try:
             app.config["SETUP_REQUIRED"] = _is_setup_required()
             if app.config.pop("SETUP_VALIDATION_FAILED", False):
-                non_config_errors.append(
-                    "Unable to validate setup status due to database errors."
-                )
+                if config_errors:
+                    app.logger.warning(
+                        "Setup validation skipped because configuration errors exist."
+                    )
+                else:
+                    non_config_errors.append(
+                        "Unable to validate setup status due to database errors."
+                    )
         except Exception as exc:  # pragma: no cover - defensive guard
             app.logger.warning(
                 "Setup validation failed; enabling maintenance mode: %s", exc
             )
-            non_config_errors.append(
-                "Unable to validate setup status due to database errors."
-            )
+            if config_errors:
+                app.logger.warning(
+                    "Setup validation skipped because configuration errors exist."
+                )
+            else:
+                non_config_errors.append(
+                    "Unable to validate setup status due to database errors."
+                )
             app.config["SETUP_REQUIRED"] = False
 
         if config_errors:

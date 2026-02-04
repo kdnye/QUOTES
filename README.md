@@ -78,7 +78,9 @@ Services portal.
    settings table, initialize the database schema, and create the initial super
    admin account. When required environment variables are missing, requests
    redirect to the setup checklist instead of a generic 500 page so operators
-   can resolve the configuration. Database connection changes take effect after
+   can resolve the configuration. Operational failures (for example, database
+   outages or missing templates) still surface as 500 errors to make true
+   outages easier to spot. Database connection changes take effect after
    restarting the app. The setup flow locks down the rest of the app until a
    user exists.
 
