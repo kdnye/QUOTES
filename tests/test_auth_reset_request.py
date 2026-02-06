@@ -226,3 +226,25 @@ def test_reset_request_succeeds_for_missing_user(
         b"If an account exists for that email, a reset link has been sent."
         in response.data
     )
+
+
+def test_reset_request_allows_logged_out_users(app: Flask) -> None:
+    """Verify logged-out users can access the reset form without redirects.
+
+    Args:
+        app: Flask application configured for tests.
+
+    Returns:
+        None. Assertions confirm unauthenticated access to ``/reset``.
+
+    External dependencies:
+        * Calls :func:`flask.Flask.test_client` to simulate a web request.
+    """
+
+    client = app.test_client()
+
+    response = client.get("/reset", follow_redirects=False)
+
+    assert response.status_code == 200
+    assert b"Reset your password" in response.data
+    assert b"Enter the email associated with your account" in response.data
