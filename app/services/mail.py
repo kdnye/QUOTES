@@ -62,14 +62,25 @@ def user_has_mail_privileges(user: Optional[User]) -> bool:
             anonymous visitors.
 
     Returns:
-        ``True`` if the account's email address matches
+        ``True`` if the account has opted into email privileges via the
+        ``can_send_mail`` toggle or when the account's email address matches
         ``MAIL_PRIVILEGED_DOMAIN`` **and** the caller is an approved employee or
         super administrator. Anonymous users, mismatched domains, and
         unapproved employees are denied access to advanced mail features.
+
+    External dependencies:
+        * Relies on :class:`app.models.User` for ``can_send_mail`` and role data.
+        * Uses :data:`flask.current_app` for ``MAIL_PRIVILEGED_DOMAIN``.
     """
 
+    if not user:
+        return False
+
+    if getattr(user, "can_send_mail", False):
+        return True
+
     domain = (current_app.config.get("MAIL_PRIVILEGED_DOMAIN") or "").strip().lower()
-    if not user or not getattr(user, "email", None):
+    if not getattr(user, "email", None):
         return False
 
     email = user.email.lower()

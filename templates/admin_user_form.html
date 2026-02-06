@@ -140,6 +140,21 @@
       Toggle on after verifying internal access requirements for the employee.
     </div>
   </div>
+  <div class="form-check mb-3">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      id="can_send_mail"
+      name="can_send_mail"
+      {% if data.get('can_send_mail', user.can_send_mail if user else False) %}checked{% endif %}
+    >
+    <label class="form-check-label" for="can_send_mail">
+      Allow this user to send booking emails
+    </label>
+    <div class="form-text">
+      Enables email sending regardless of their domain when checked.
+    </div>
+  </div>
   <button class="btn btn-primary" type="submit">Save</button>
   <a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Cancel</a>
 </form>

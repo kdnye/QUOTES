@@ -77,6 +77,7 @@
             <th>Edit</th>
             <th>Delete</th>
             <th>Employee Access</th>
+            <th>Mail Privileges</th>
             <th>Admin Role</th>
           </tr>
         </thead>
@@ -120,6 +121,13 @@
               <span class="badge bg-primary">Super Admin</span>
               {% else %}
               <span class="badge bg-secondary">Customer</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if u.can_send_mail %}
+              <span class="badge bg-success">Enabled</span>
+              {% else %}
+              <span class="badge bg-secondary">Disabled</span>
               {% endif %}
             </td>
             <td>
