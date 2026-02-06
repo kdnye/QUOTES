@@ -316,3 +316,21 @@ def test_send_email_raises_after_retries(
         record for record in caplog.records if record.levelno == logging.WARNING
     ]
     assert len(warnings) == 3
+
+
+def test_validate_sender_domain_allows_empty_restriction(app: Flask) -> None:
+    """Allow any sender domain when no restriction is configured.
+
+    Args:
+        app: Flask application fixture providing the configuration context.
+
+    Returns:
+        ``None``. The test asserts that no exception is raised.
+
+    External dependencies:
+        * Calls :func:`app.services.mail.validate_sender_domain`.
+    """
+
+    with app.app_context():
+        app.config["MAIL_ALLOWED_SENDER_DOMAIN"] = ""
+        mail_service.validate_sender_domain("quote@freightservices.net")
