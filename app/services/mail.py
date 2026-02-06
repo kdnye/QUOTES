@@ -32,14 +32,24 @@ def _normalize_recipient(recipient: str) -> str:
 
 
 def validate_sender_domain(sender: str) -> None:
-    """Ensure ``sender`` belongs to the configured Office 365 domain.
+    """Validate that ``sender`` matches the allowed mail sender domain.
 
     Args:
         sender: Email address configured as ``MAIL_DEFAULT_SENDER``.
 
+    Returns:
+        ``None``. This helper raises only on invalid configuration.
+
     Raises:
         ValueError: If the address is missing an ``@`` symbol or the domain
             differs from ``MAIL_ALLOWED_SENDER_DOMAIN``.
+
+    External dependencies:
+        * Uses :data:`flask.current_app` for ``MAIL_ALLOWED_SENDER_DOMAIN``.
+
+    Notes:
+        When ``MAIL_ALLOWED_SENDER_DOMAIN`` is empty, no sender-domain
+        restriction is enforced and the function returns without validation.
     """
 
     allowed = (
