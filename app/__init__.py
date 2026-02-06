@@ -622,7 +622,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         External dependencies:
             * :func:`services.mail.user_has_mail_privileges` to restrict usage
-              to Freight Services staff accounts.
+              to approved staff accounts.
             * :func:`send_email` for the actual SMTP dispatch.
             * :func:`services.settings.is_quote_email_smtp_enabled` to honor the
               admin toggle.
@@ -633,7 +633,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         if not user_has_mail_privileges(current_user):
             flash(
-                "Quote emails are limited to Freight Services staff accounts.",
+                "Quote emails are limited to approved staff accounts.",
                 "warning",
             )
             return redirect(url_for("quotes.new_quote"))

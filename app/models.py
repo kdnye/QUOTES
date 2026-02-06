@@ -59,8 +59,7 @@ class User(UserMixin, db.Model):
             Set to ``True`` when the account has been vetted for internal tool
             access.
         can_send_mail: Boolean toggle that explicitly permits the user to send
-            outbound emails even when their domain does not match
-            ``MAIL_PRIVILEGED_DOMAIN``.
+            outbound emails, bypassing role checks for mail-only workflows.
         admin_previous_role: Cached role restored when administrative access is
             revoked. Persisted only while :attr:`is_admin` is ``True``.
         admin_previous_employee_approved: Cached ``employee_approved`` value

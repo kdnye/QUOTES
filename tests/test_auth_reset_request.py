@@ -222,9 +222,8 @@ def test_reset_request_succeeds_for_missing_user(
 
     assert response.status_code == 200
     send_email_mock.assert_not_called()
-    assert (
-        b"If an account exists for that email, a reset link has been sent."
-        in response.data
+    assert b"If your account is eligible, a reset email will be sent shortly." in (
+        response.data
     )
 
 

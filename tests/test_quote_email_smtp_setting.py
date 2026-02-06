@@ -23,7 +23,6 @@ class TestQuoteEmailSmtpConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
     STARTUP_DB_CHECKS = True
-    MAIL_PRIVILEGED_DOMAIN = "freightservices.net"
     QUOTE_EMAIL_SMTP_ENABLED = True
 
 

@@ -19,7 +19,6 @@ class TestQuoteEmailAccessConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
     STARTUP_DB_CHECKS = True
-    MAIL_PRIVILEGED_DOMAIN = "freightservices.net"
 
 
 @pytest.fixture()
@@ -97,5 +96,4 @@ def test_email_request_form_allows_customer_user(app: Flask) -> None:
 
     assert response.status_code == 200
     assert b"Email Booking Request" in response.data
-    codex/enable-email-to-book-button-for-all-users-nh73gh
     assert b"operations@freightservices.net" in response.data

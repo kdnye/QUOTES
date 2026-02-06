@@ -32,7 +32,7 @@ def _normalize_recipient(recipient: str) -> str:
 
 
 def validate_sender_domain(sender: str) -> None:
-    """Validate that ``sender`` matches the allowed mail sender domain.
+    """Validate that ``sender`` includes a usable domain segment.
 
     Args:
         sender: Email address configured as ``MAIL_DEFAULT_SENDER``.
@@ -41,27 +41,14 @@ def validate_sender_domain(sender: str) -> None:
         ``None``. This helper raises only on invalid configuration.
 
     Raises:
-        ValueError: If the address is missing an ``@`` symbol or the domain
-            differs from ``MAIL_ALLOWED_SENDER_DOMAIN``.
+        ValueError: If the address is missing an ``@`` symbol.
 
     External dependencies:
-        * Uses :data:`flask.current_app` for ``MAIL_ALLOWED_SENDER_DOMAIN``.
-
-    Notes:
-        When ``MAIL_ALLOWED_SENDER_DOMAIN`` is empty, no sender-domain
-        restriction is enforced and the function returns without validation.
+        * None.
     """
 
-    allowed = (
-        (current_app.config.get("MAIL_ALLOWED_SENDER_DOMAIN") or "").strip().lower()
-    )
-    if not allowed:
-        return
     if "@" not in sender:
         raise ValueError("MAIL_DEFAULT_SENDER must include a domain component.")
-    domain = sender.split("@", 1)[1].lower()
-    if domain != allowed:
-        raise ValueError("MAIL_DEFAULT_SENDER must belong to the domain " f"{allowed}.")
 
 
 def user_has_mail_privileges(user: Optional[User]) -> bool:
@@ -73,14 +60,12 @@ def user_has_mail_privileges(user: Optional[User]) -> bool:
 
     Returns:
         ``True`` if the account has opted into email privileges via the
-        ``can_send_mail`` toggle or when the account's email address matches
-        ``MAIL_PRIVILEGED_DOMAIN`` **and** the caller is an approved employee or
-        super administrator. Anonymous users, mismatched domains, and
-        unapproved employees are denied access to advanced mail features.
+        ``can_send_mail`` toggle or when the caller is an approved employee or
+        super administrator. Anonymous users and unapproved employees are
+        denied access to advanced mail features.
 
     External dependencies:
         * Relies on :class:`app.models.User` for ``can_send_mail`` and role data.
-        * Uses :data:`flask.current_app` for ``MAIL_PRIVILEGED_DOMAIN``.
     """
 
     if not user:
@@ -89,21 +74,13 @@ def user_has_mail_privileges(user: Optional[User]) -> bool:
     if getattr(user, "can_send_mail", False):
         return True
 
-    domain = (current_app.config.get("MAIL_PRIVILEGED_DOMAIN") or "").strip().lower()
-    if not getattr(user, "email", None):
-        return False
-
-    email = user.email.lower()
-    if domain and not email.endswith(f"@{domain}"):
-        return False
-
     role = (getattr(user, "role", "") or "").lower()
     if role == "super_admin":
         return True
     if role == "employee":
         return bool(getattr(user, "employee_approved", False))
 
-    return not domain
+    return False
 
 
 def enforce_mail_rate_limit(feature: str, user: Optional[User], recipient: str) -> None:
@@ -236,8 +213,7 @@ def send_email(
     Raises:
         MailRateLimitError: When rate limits configured in
             :mod:`services.mail` are exceeded.
-        ValueError: If ``MAIL_DEFAULT_SENDER`` is configured for a domain
-            outside ``MAIL_ALLOWED_SENDER_DOMAIN``.
+        ValueError: If ``MAIL_DEFAULT_SENDER`` is missing a domain component.
         smtplib.SMTPException: If the underlying SMTP call fails.
         smtplib.SMTPServerDisconnected: When a transient SMTP disconnect
             persists after retries.

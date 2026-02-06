@@ -22,7 +22,7 @@ Services portal.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Accepts form and JSON submissions and persists quotes. |
-| Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins whose email matches `MAIL_PRIVILEGED_DOMAIN`. Customers see the button disabled. |
+| Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. |
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
