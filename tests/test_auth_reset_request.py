@@ -8,7 +8,6 @@ from unittest.mock import Mock
 
 import pytest
 from flask import Flask, url_for
-from flask.testing import FlaskClient
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
@@ -55,26 +54,6 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
         db.drop_all()
 
 
-def _login_client(client: FlaskClient, user_id: int) -> None:
-    """Log in a user for the provided test client.
-
-    Args:
-        client: Flask test client that will store the session data.
-        user_id: Primary key of the :class:`app.models.User` to authenticate.
-
-    Returns:
-        None. The client session is updated with Flask-Login keys.
-
-    External dependencies:
-        * Uses :func:`flask.testing.FlaskClient.session_transaction` to modify
-          the session expected by :mod:`flask_login`.
-    """
-
-    with client.session_transaction() as session:
-        session["_user_id"] = str(user_id)
-        session["_fresh"] = True
-
-
 def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) -> None:
     """Ensure reset requests send a password reset email.
 
@@ -96,7 +75,6 @@ def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) 
     db.session.commit()
 
     client = app.test_client()
-    _login_client(client, user.id)
 
     token_value = "token-123"
 
@@ -118,7 +96,11 @@ def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr("app.auth.create_reset_token", _fake_create_reset_token)
     monkeypatch.setattr("app.auth.send_email", send_email_mock)
 
-    response = client.post("/reset", follow_redirects=True)
+    response = client.post(
+        "/reset",
+        data={"email": user.email},
+        follow_redirects=True,
+    )
 
     assert response.status_code == 200
     send_email_mock.assert_called_once()
@@ -134,7 +116,7 @@ def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) 
     assert expected_url in body
     assert "reset" in subject.lower()
     assert kwargs["feature"] == "password_reset"
-    assert kwargs["user"].id == user.id
+    assert kwargs["user"] is None
 
 
 @pytest.mark.parametrize(
@@ -168,7 +150,6 @@ def test_reset_request_handles_email_failures(
     db.session.commit()
 
     client = app.test_client()
-    _login_client(client, user.id)
 
     def _fake_create_reset_token(email: str) -> Tuple[Optional[str], Optional[str]]:
         """Return a deterministic reset token for testing.
@@ -201,8 +182,47 @@ def test_reset_request_handles_email_failures(
     monkeypatch.setattr("app.auth.create_reset_token", _fake_create_reset_token)
     monkeypatch.setattr("app.auth.send_email", send_email_mock)
 
-    response = client.post("/reset", follow_redirects=True)
+    response = client.post(
+        "/reset",
+        data={"email": user.email},
+        follow_redirects=True,
+    )
 
     assert response.status_code == 200
     send_email_mock.assert_called_once()
     assert b"We couldn't send the reset email right now." in response.data
+
+
+def test_reset_request_succeeds_for_missing_user(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirm missing users still receive a success response.
+
+    Args:
+        app: Flask application configured for tests.
+        monkeypatch: Fixture used to mock email sends.
+
+    Returns:
+        None. Assertions verify the response hides account enumeration details.
+
+    External dependencies:
+        * Calls :func:`app.services.mail.send_email` when a user exists.
+    """
+
+    client = app.test_client()
+    send_email_mock = Mock()
+
+    monkeypatch.setattr("app.auth.send_email", send_email_mock)
+
+    response = client.post(
+        "/reset",
+        data={"email": "missing@example.com"},
+        follow_redirects=True,
+    )
+
+    assert response.status_code == 200
+    send_email_mock.assert_not_called()
+    assert (
+        b"If an account exists for that email, a reset link has been sent."
+        in response.data
+    )

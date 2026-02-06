@@ -742,11 +742,11 @@ def logout() -> Response:
     _reset_rate_limit_value, key_func=_reset_rate_limit_key, methods=["POST"]
 )
 def reset_request() -> Union[str, Response]:
-    """Start the password reset workflow for the signed-in user.
+    """Start the password reset workflow for logged-out visitors.
 
-    Only authenticated users can generate a self-service reset link because the
-    tool only delivers reset emails for signed-in users. Team members who are logged out should
-    contact an administrator so their identity can be verified manually.
+    Accepts an email address from the request form, validates it, and delivers
+    a one-time reset link when an account is found. The response always renders
+    a success message for privacy, even if no matching account exists.
 
     Related helpers:
         - is_valid_email
@@ -755,71 +755,71 @@ def reset_request() -> Union[str, Response]:
 
     Returns:
         Renders ``reset_request.html`` on GET, invalid submission, or after a
-        successful token creation so the caller can check their email for the
-        reset link.
+        POST so the caller can check their email for the reset link.
 
     External dependencies:
+        * Calls :func:`app.models.User.query` to look up the account email.
         * Calls :func:`app.services.auth_utils.create_reset_token` to create a
           one-time token.
         * Sends the reset email via :func:`app.services.mail.send_email`, which
           uses SMTP under the hood.
     """
 
-    if not current_user.is_authenticated:
-        # Signed-out visitors receive guidance to contact an administrator. We
-        # still render the template without processing form data so the view can
-        # display consistent messaging.
-        return render_template("reset_request.html", requires_auth=True)
-
-    email = (getattr(current_user, "email", "") or "").strip().lower()
-    context: Dict[str, str] = {"account_email": email}
+    account_email = (
+        (getattr(current_user, "email", "") or "").strip().lower()
+        if current_user.is_authenticated
+        else ""
+    )
+    context: Dict[str, Union[str, bool]] = {
+        "account_email": account_email,
+        "is_authenticated": bool(current_user.is_authenticated),
+    }
     if request.method == "POST":
+        email = (request.form.get("email") or "").strip().lower()
+        context["account_email"] = email
         if not is_valid_email(email):
-            flash(
-                "We could not verify the email on your account. Please contact an "
-                "administrator for assistance.",
-                "warning",
-            )
+            flash("Please enter a valid email address.", "warning")
             return render_template("reset_request.html", **context)
-        token, error = create_reset_token(email)
-        if error == "Reset already requested recently. Please wait.":
-            flash(error, "warning")
-            return redirect(url_for("auth.reset_request"))
-        if token:
-            reset_url = url_for("auth.reset_with_token", token=token, _external=True)
-            subject = "Reset your Freight Services password"
-            body = (
-                "We received a request to reset your Freight Services account password.\n\n"
-                f"Use this link to set a new password:\n{reset_url}\n\n"
-                "If you did not request this, you can ignore this email."
-            )
-            try:
-                send_email(
-                    email,
-                    subject,
-                    body,
-                    feature="password_reset",
-                    user=current_user,
+        user = User.query.filter_by(email=email).first()
+        if user:
+            token, error = create_reset_token(email)
+            if error == "Reset already requested recently. Please wait.":
+                flash(error, "warning")
+                return redirect(url_for("auth.reset_request"))
+            if token:
+                reset_url = url_for(
+                    "auth.reset_with_token",
+                    token=token,
+                    _external=True,
                 )
-            except (MailRateLimitError, smtplib.SMTPException) as exc:
-                current_app.logger.exception(
-                    "Password reset email failed for %s: %s", email, exc
+                subject = "Reset your Freight Services password"
+                body = (
+                    "We received a request to reset your Freight Services account password.\n\n"
+                    f"Use this link to set a new password:\n{reset_url}\n\n"
+                    "If you did not request this, you can ignore this email."
                 )
-                flash(
-                    "We couldn't send the reset email right now. Please try again "
-                    "in a few minutes.",
-                    "danger",
-                )
-                return render_template("reset_request.html", **context)
-            flash(
-                "A password reset link has been sent to your email address.",
-                "success",
-            )
-        else:
-            flash(
-                "If your account is eligible, a reset email will be sent shortly.",
-                "info",
-            )
+                try:
+                    send_email(
+                        email,
+                        subject,
+                        body,
+                        feature="password_reset",
+                        user=None,
+                    )
+                except (MailRateLimitError, smtplib.SMTPException) as exc:
+                    current_app.logger.exception(
+                        "Password reset email failed for %s: %s", email, exc
+                    )
+                    flash(
+                        "We couldn't send the reset email right now. Please try again "
+                        "in a few minutes.",
+                        "danger",
+                    )
+                    return render_template("reset_request.html", **context)
+        flash(
+            "If an account exists for that email, a reset link has been sent.",
+            "success",
+        )
         return render_template("reset_request.html", **context)
     return render_template("reset_request.html", **context)
 
