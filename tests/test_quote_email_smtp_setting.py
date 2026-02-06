@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import pytest
+from flask import Flask, current_app
+from flask.testing import FlaskClient
+
+import app as app_module
+from app import create_app
+from app.models import User, db
+from app.services.settings import (
+    QUOTE_EMAIL_SMTP_SETTING_KEY,
+    reload_overrides,
+    set_setting,
+)
+
+
+class TestQuoteEmailSmtpConfig:
+    """Configuration overrides for SMTP quote email setting tests."""
+
+    TESTING = True
+    SECRET_KEY = "test-secret-key"
+    SQLALCHEMY_DATABASE_URI = ""
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    WTF_CSRF_ENABLED = False
+    STARTUP_DB_CHECKS = True
+    MAIL_PRIVILEGED_DOMAIN = "freightservices.net"
+    QUOTE_EMAIL_SMTP_ENABLED = True
+
+
+@pytest.fixture()
+def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
+    """Create a Flask app wired to a PostgreSQL test database.
+
+    Args:
+        postgres_database_url: PostgreSQL connection string for tests.
+        monkeypatch: Pytest fixture for environment overrides.
+
+    Returns:
+        A configured Flask application for tests.
+
+    External dependencies:
+        * Sets ``MIGRATE_ON_STARTUP`` via :func:`monkeypatch.setenv`.
+        * Calls :func:`app.create_app` to build the Flask application.
+    """
+
+    TestQuoteEmailSmtpConfig.SQLALCHEMY_DATABASE_URI = postgres_database_url
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "true")
+    app = create_app(TestQuoteEmailSmtpConfig)
+
+    with app.app_context():
+        yield app
+        db.session.remove()
+        db.drop_all()
+
+
+def _login_client(client: FlaskClient, user_id: int) -> None:
+    """Log in a user for the provided test client.
+
+    Args:
+        client: Flask test client that will store the session data.
+        user_id: Primary key of the :class:`app.models.User` to authenticate.
+
+    Returns:
+        None. The client session is updated with Flask-Login keys.
+
+    External dependencies:
+        * Uses :func:`flask.testing.FlaskClient.session_transaction` to modify
+          the session expected by :mod:`flask_login`.
+    """
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+
+
+def _create_super_admin() -> User:
+    """Create and persist a super admin user for testing.
+
+    Args:
+        None.
+
+    Returns:
+        User: Newly created super admin account.
+
+    External dependencies:
+        * Persists the record via :mod:`app.models.db`.
+        * Calls :meth:`app.models.User.set_password` to hash credentials.
+    """
+
+    admin = User(email="admin@freightservices.net", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    db.session.commit()
+    return admin
+
+
+def test_send_email_blocked_when_setting_disabled(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Block quote emails when the admin toggle is disabled."""
+
+    admin = _create_super_admin()
+    set_setting(QUOTE_EMAIL_SMTP_SETTING_KEY, "false")
+    db.session.commit()
+    reload_overrides(current_app)
+
+    send_calls: list[tuple] = []
+    monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 15.0)
+    monkeypatch.setattr(
+        app_module, "send_email", lambda *args, **kwargs: send_calls.append(args)
+    )
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.post(
+        "/send",
+        data={
+            "origin_zip": "64101",
+            "destination_zip": "90210",
+            "email": "customer@example.com",
+        },
+    )
+
+    assert response.status_code == 302
+    assert "/quotes/new" in response.headers["Location"]
+    assert send_calls == []
+
+
+def test_send_email_allowed_when_setting_enabled(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Allow quote emails when the admin toggle is enabled."""
+
+    admin = _create_super_admin()
+    set_setting(QUOTE_EMAIL_SMTP_SETTING_KEY, "true")
+    db.session.commit()
+    reload_overrides(current_app)
+
+    send_calls: list[tuple] = []
+    monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 22.0)
+    monkeypatch.setattr(
+        app_module, "send_email", lambda *args, **kwargs: send_calls.append(args)
+    )
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.post(
+        "/send",
+        data={
+            "origin_zip": "64101",
+            "destination_zip": "90210",
+            "email": "customer@example.com",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+    assert send_calls

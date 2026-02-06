@@ -95,6 +95,10 @@
       </p>
     </div>
   </div>
+  {% elif user_can_send_quote_email and not quote_email_smtp_enabled %}
+  <div class="alert alert-warning mt-4" role="alert">
+    SMTP quote emails are currently disabled in the admin dashboard.
+  </div>
   {% endif %}
 </div>
 <a href="{{ url_for('quotes.new_quote') }}" class="btn btn-primary mt-3">Create Another Quote</a>
