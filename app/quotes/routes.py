@@ -11,9 +11,9 @@ import logging
 from dataclasses import dataclass
 from functools import lru_cache
 from types import MappingProxyType
-from typing import Mapping, Union
+from typing import Mapping
 
-from flask import Response, flash, jsonify, redirect, render_template, request, url_for
+from flask import flash, jsonify, render_template, request
 from flask_login import login_required, current_user
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
@@ -399,7 +399,10 @@ def new_quote():
             quote=q,
             metadata=metadata,
             exceeds_threshold=exceeds_threshold,
-            can_use_email_request=user_has_mail_privileges(current_user),
+            can_request_booking_email=bool(
+                getattr(current_user, "is_authenticated", False)
+            ),
+            can_send_quote_email=user_has_mail_privileges(current_user),
         )
 
     return render_template(
@@ -414,7 +417,7 @@ def _render_email_request(
     heading_text: str,
     intro_line: str,
     subject_prefix: str,
-) -> Union[str, Response]:
+) -> str:
     """Return the email request form configured for a specific workflow.
 
     Args:
@@ -425,17 +428,12 @@ def _render_email_request(
         subject_prefix: Text prefixed to the generated email subject line.
 
     Returns:
-        A rendered ``email_request.html`` template or a redirect response when
-        the user lacks permission to send emails.
+        A rendered ``email_request.html`` template.
 
     Notes:
-        Calls :func:`services.mail.user_has_mail_privileges` to enforce email
-        permissions before loading quote data.
+        The :func:`quotes.email_request_form` route requires authentication via
+        :func:`flask_login.login_required` before calling this helper.
     """
-
-    if not user_has_mail_privileges(current_user):
-        flash("Email booking is restricted to Freight Services staff.", "warning")
-        return redirect(url_for("quotes.new_quote"))
 
     quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
     metadata = json.loads(quote.quote_metadata or "{}")
