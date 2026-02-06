@@ -12,7 +12,8 @@ The blueprint wraps the authentication lifecycle for the quote tool:
 - ``/reset`` and ``/reset/<token>`` implement a self-service password reset
   flow backed by helpers in :mod:`services.auth_utils`. Reset requests generate
   one-time tokens and deliver them via :func:`app.services.mail.send_email` so
-  signed-in users can continue through the reset link securely.
+  logged-out or signed-in users can request a reset without additional
+  authentication and continue through the reset link securely.
 """
 
 import secrets
@@ -742,11 +743,12 @@ def logout() -> Response:
     _reset_rate_limit_value, key_func=_reset_rate_limit_key, methods=["POST"]
 )
 def reset_request() -> Union[str, Response]:
-    """Start the password reset workflow for logged-out visitors.
+    """Start the password reset workflow for logged-out or signed-in visitors.
 
-    Accepts an email address from the request form, validates it, and delivers
-    a one-time reset link when an account is found. The response always renders
-    a success message for privacy, even if no matching account exists.
+    Accepts an email address from the request form without requiring a session,
+    validates it, and delivers a one-time reset link when an account is found.
+    The response always renders a success message for privacy, even if no
+    matching account exists.
 
     Related helpers:
         - is_valid_email
