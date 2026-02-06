@@ -91,8 +91,8 @@ POSTGRES_HOST=cloudsql-hostname
 # MAIL_PORT=587
 # MAIL_USE_SSL=false
 # MAIL_USE_TLS=true
-# MAIL_USERNAME=quote@freightservices.net
-# MAIL_PASSWORD=app-password
+# MAIL_USERNAME=postmark-server-api-token
+# MAIL_PASSWORD=postmark-server-api-token
 # MAIL_ALLOWED_SENDER_DOMAIN=freightservices.net
 # MAIL_PRIVILEGED_DOMAIN=freightservices.net
 # MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY=25
@@ -116,12 +116,13 @@ SSL on port 465, set `MAIL_USE_SSL=true` and disable TLS.
 Store sensitive values in Secret Manager and reference them from Cloud Run
 instead of committing them to `.env` files. The script below wraps the standard
 `gcloud secrets create` and `gcloud secrets versions add` commands and creates
-secrets for the database password, SMTP password, and Google Maps API key:
+secrets for the database password, Postmark Server API token, and Google Maps
+API key:
 
 ```bash
 export PROJECT_ID="your-project-id"
 export POSTGRES_PASSWORD="replace-with-db-password"
-export MAIL_PASSWORD="replace-with-mail-password"
+export POSTMARK_SERVER_API_TOKEN="replace-with-postmark-server-api-token"
 export GOOGLE_MAPS_API_KEY="replace-with-maps-key"
 ./scripts/gcp/seed_secrets.sh
 ```
@@ -133,9 +134,9 @@ gcloud secrets create POSTGRES_PASSWORD --project=PROJECT --replication-policy=a
 printf "%s" "replace-with-db-password" | \\
   gcloud secrets versions add POSTGRES_PASSWORD --project=PROJECT --data-file=-
 
-gcloud secrets create MAIL_PASSWORD --project=PROJECT --replication-policy=automatic
-printf "%s" "replace-with-mail-password" | \\
-  gcloud secrets versions add MAIL_PASSWORD --project=PROJECT --data-file=-
+gcloud secrets create POSTMARK_SERVER_API_TOKEN --project=PROJECT --replication-policy=automatic
+printf "%s" "replace-with-postmark-server-api-token" | \\
+  gcloud secrets versions add POSTMARK_SERVER_API_TOKEN --project=PROJECT --data-file=-
 
 gcloud secrets create GOOGLE_MAPS_API_KEY --project=PROJECT --replication-policy=automatic
 printf "%s" "replace-with-maps-key" | \\
@@ -157,7 +158,8 @@ gcloud run deploy quote-tool \\
   --set-env-vars=FLASK_DEBUG=false \\
   --set-secrets=SECRET_KEY=projects/PROJECT/secrets/SECRET_KEY:latest,\\
 POSTGRES_PASSWORD=projects/PROJECT/secrets/POSTGRES_PASSWORD:latest,\\
-MAIL_PASSWORD=projects/PROJECT/secrets/MAIL_PASSWORD:latest,\\
+MAIL_USERNAME=projects/PROJECT/secrets/POSTMARK_SERVER_API_TOKEN:latest,\\
+MAIL_PASSWORD=projects/PROJECT/secrets/POSTMARK_SERVER_API_TOKEN:latest,\\
 GOOGLE_MAPS_API_KEY=projects/PROJECT/secrets/GOOGLE_MAPS_API_KEY:latest
 ```
 
