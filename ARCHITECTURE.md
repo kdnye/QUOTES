@@ -103,7 +103,7 @@ The pricing modules implement the following core functions:
 - `auth_utils.py` – password/email validation and password reset token handling.
 - `hotshot_rates.py` – retrieval and management of hotshot rate records.
 - `quote.py` – orchestrates quote creation, accessorial cost calculations, and database persistence.
-- `mail.py` – validates sender domains, enforces mail privileges, applies rate limits, and logs outbound email usage.
+- `mail.py` – validates sender formatting, enforces mail privileges, applies rate limits, and logs outbound email usage.
 - `settings.py` – exposes runtime overrides so super admins can adjust mail and limiter configuration from the dashboard.
 
 ### Feature status at release
@@ -111,7 +111,7 @@ The pricing modules implement the following core functions:
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Core workflow used in production. |
-| Booking email workflow | 🔒 Staff-only | Restricted to approved Freight Services staff via `services.mail.user_has_mail_privileges`. |
+| Booking email workflow | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail`) via `services.mail.user_has_mail_privileges`. |
 | Volume-pricing email workflow | 🔒 Staff-only | Enabled only when a quote exceeds thresholds; shares the same privilege checks. |
 | Admin quote history | ✅ Stable | Available at `/admin/quotes` with CSV export at `/admin/quotes.csv`. |
 | Redis caching profile | ⚙️ Optional | Disabled unless Redis is provisioned and the `cache` profile is active. |
@@ -140,4 +140,3 @@ With these components in place, any stack can reproduce the behavior of the Quot
 ## Testing
 
 The original project uses `pytest`. After reimplementation, ensure equivalent unit tests cover authentication, rate imports, quoting logic, and API routes.
-

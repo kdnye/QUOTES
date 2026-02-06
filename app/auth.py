@@ -819,8 +819,8 @@ def reset_request() -> Union[str, Response]:
                     )
                     return render_template("reset_request.html", **context)
         flash(
-            "If an account exists for that email, a reset link has been sent.",
-            "success",
+            "If your account is eligible, a reset email will be sent shortly.",
+            "info",
         )
         return render_template("reset_request.html", **context)
     return render_template("reset_request.html", **context)

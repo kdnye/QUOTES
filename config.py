@@ -523,15 +523,19 @@ def _resolve_ratelimit_storage_uri() -> str:
 
 
 def _resolve_mail_allowed_sender_domain(default_sender: str) -> str:
-    """Return the domain enforced for :data:`MAIL_DEFAULT_SENDER`.
+    """Return the legacy allowed sender domain value.
 
     Args:
         default_sender: Email address configured as the default sender.
 
     Returns:
-        str: Lowercase domain enforced by :func:`services.mail.validate_sender_domain`,
-        defaulting to the domain portion of ``default_sender`` when no explicit
-        override is provided.
+        str: Lowercase domain value retained for backward compatibility. The
+        mail helper no longer enforces this setting, but the configuration is
+        preserved to avoid breaking existing deployments that still export
+        ``MAIL_ALLOWED_SENDER_DOMAIN``.
+
+    External dependencies:
+        * Reads :func:`os.getenv` to inspect ``MAIL_ALLOWED_SENDER_DOMAIN``.
     """
 
     override = os.getenv("MAIL_ALLOWED_SENDER_DOMAIN")

@@ -318,8 +318,8 @@ def test_send_email_raises_after_retries(
     assert len(warnings) == 3
 
 
-def test_validate_sender_domain_allows_empty_restriction(app: Flask) -> None:
-    """Allow any sender domain when no restriction is configured.
+def test_validate_sender_domain_accepts_valid_address(app: Flask) -> None:
+    """Accept sender addresses that include a domain component.
 
     Args:
         app: Flask application fixture providing the configuration context.
@@ -332,5 +332,22 @@ def test_validate_sender_domain_allows_empty_restriction(app: Flask) -> None:
     """
 
     with app.app_context():
-        app.config["MAIL_ALLOWED_SENDER_DOMAIN"] = ""
         mail_service.validate_sender_domain("quote@freightservices.net")
+
+
+def test_validate_sender_domain_rejects_missing_at_symbol(app: Flask) -> None:
+    """Reject sender addresses without a domain component.
+
+    Args:
+        app: Flask application fixture providing the configuration context.
+
+    Returns:
+        ``None``. The assertion verifies a validation error is raised.
+
+    External dependencies:
+        * Calls :func:`app.services.mail.validate_sender_domain`.
+    """
+
+    with app.app_context():
+        with pytest.raises(ValueError):
+            mail_service.validate_sender_domain("missing-domain")

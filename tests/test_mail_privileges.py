@@ -17,7 +17,6 @@ class TestMailPrivilegesConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     WTF_CSRF_ENABLED = False
     STARTUP_DB_CHECKS = True
-    MAIL_PRIVILEGED_DOMAIN = "freightservices.net"
 
 
 @pytest.fixture()
@@ -69,6 +68,98 @@ def test_mail_privileges_allow_opt_in(app: Flask) -> None:
     db.session.commit()
 
     assert user_has_mail_privileges(user) is True
+
+
+def test_mail_privileges_allow_super_admin(app: Flask) -> None:
+    """Allow mail privileges for super admins regardless of domain.
+
+    Args:
+        app: Flask test application configured for context access.
+
+    Returns:
+        None. The assertion verifies a super admin is allowed.
+
+    External dependencies:
+        * Persists :class:`app.models.User` records via :mod:`app.models.db`.
+        * Calls :func:`app.services.mail.user_has_mail_privileges` for policy.
+    """
+
+    user = User(email="admin@example.com", role="super_admin")
+    db.session.add(user)
+    db.session.commit()
+
+    assert user_has_mail_privileges(user) is True
+
+
+def test_mail_privileges_allow_approved_employee(app: Flask) -> None:
+    """Allow mail privileges for approved employee users.
+
+    Args:
+        app: Flask test application configured for context access.
+
+    Returns:
+        None. The assertion verifies an approved employee is allowed.
+
+    External dependencies:
+        * Persists :class:`app.models.User` records via :mod:`app.models.db`.
+        * Calls :func:`app.services.mail.user_has_mail_privileges` for policy.
+    """
+
+    user = User(
+        email="employee@example.com",
+        role="employee",
+        employee_approved=True,
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    assert user_has_mail_privileges(user) is True
+
+
+def test_mail_privileges_reject_unapproved_employee(app: Flask) -> None:
+    """Reject mail privileges for unapproved employees.
+
+    Args:
+        app: Flask test application configured for context access.
+
+    Returns:
+        None. The assertion verifies an unapproved employee is denied.
+
+    External dependencies:
+        * Persists :class:`app.models.User` records via :mod:`app.models.db`.
+        * Calls :func:`app.services.mail.user_has_mail_privileges` for policy.
+    """
+
+    user = User(
+        email="employee@example.com",
+        role="employee",
+        employee_approved=False,
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    assert user_has_mail_privileges(user) is False
+
+
+def test_mail_privileges_reject_customer_without_toggle(app: Flask) -> None:
+    """Reject mail privileges for customers without the mail toggle.
+
+    Args:
+        app: Flask test application configured for context access.
+
+    Returns:
+        None. The assertion verifies a customer without the toggle is denied.
+
+    External dependencies:
+        * Persists :class:`app.models.User` records via :mod:`app.models.db`.
+        * Calls :func:`app.services.mail.user_has_mail_privileges` for policy.
+    """
+
+    user = User(email="customer@example.com", role="customer")
+    db.session.add(user)
+    db.session.commit()
+
+    assert user_has_mail_privileges(user) is False
 
 
 def test_mail_privileges_reject_missing_user(app: Flask) -> None:

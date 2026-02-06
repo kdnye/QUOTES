@@ -93,8 +93,6 @@ POSTGRES_HOST=cloudsql-hostname
 # MAIL_USE_TLS=true
 # MAIL_USERNAME=postmark-server-api-token
 # MAIL_PASSWORD=postmark-server-api-token
-# MAIL_ALLOWED_SENDER_DOMAIN=freightservices.net
-# MAIL_PRIVILEGED_DOMAIN=freightservices.net
 # MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY=25
 # MAIL_RATE_LIMIT_PER_USER_PER_HOUR=10
 # MAIL_RATE_LIMIT_PER_USER_PER_DAY=50
@@ -193,9 +191,7 @@ required to read secrets and reach dependencies:
 | `DB_POOL_SIZE` | No | Overrides the SQLAlchemy connection pool size when using PostgreSQL or MySQL. |
 | `CACHE_TYPE` / `CACHE_REDIS_URL` | No | Configure Flask-Caching. Leave unset to disable caching or point to your managed Redis instance. |
 | `RATELIMIT_STORAGE_URI` | No | Storage backend for Flask-Limiter counters. Defaults to `memory://` unless you set it to a Redis instance. |
-| `MAIL_*` | No | Configure outbound email (SMTP host, credentials, TLS/SSL flags). Needed for password resets. Super admins can also supply these values through the **Admin → Mail Settings** page at runtime. |
-| `MAIL_ALLOWED_SENDER_DOMAIN` | No | Restricts `MAIL_DEFAULT_SENDER` to an approved sender domain (defaults to `freightservices.net`). |
-| `MAIL_PRIVILEGED_DOMAIN` | No | Controls which user email domains can access advanced mail features. |
+| `MAIL_*` | No | Configure outbound email (SMTP host, credentials, TLS/SSL flags). Needed for password resets. Super admins can also supply these values through the **Admin → Mail Settings** page at runtime. For Postmark SMTP, set `MAIL_USERNAME` and `MAIL_PASSWORD` to the same server API token, `MAIL_PORT=587`, `MAIL_USE_TLS=true`, and `MAIL_USE_SSL=false`. |
 | `MAIL_RATE_LIMIT_PER_*` | No | Tune per-user, per-feature, and per-recipient rate limits for outbound email traffic. |
 | `RATE_DATA_DIR` | No | Directory containing the rate CSV files consumed by `init_db.py`. Defaults to the repository root. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | No | When set, `init_db.py` bootstraps an administrator account with these credentials. |
@@ -209,9 +205,8 @@ permissions (`chmod 600 .env`) so only the deployment user can read it.
 
 - **SMTP-dependent workflows** – Booking and volume-pricing email helpers, along with the quote summary emailer, require
   outbound email credentials. Without `MAIL_*` values or runtime overrides, those buttons remain disabled for all users.
-- **Staff-only email features** – Even with SMTP enabled, only users whose email domain matches `MAIL_PRIVILEGED_DOMAIN` and who
-  are approved employees or super admins can access the booking and volume email forms. Customer accounts will see the controls
-  in a disabled state.
+- **Staff-only email features** – Even with SMTP enabled, only approved employees, super admins, or users with the `can_send_mail`
+  toggle can access the booking and volume email forms. Customer accounts without the toggle will see the controls in a disabled state.
 - **Redis caching** – Disabled unless you explicitly set `CACHE_TYPE`. Confirm Redis credentials are reachable before enabling it.
 
 ## 4. Prepare Cloud SQL
