@@ -89,6 +89,7 @@ POSTGRES_HOST=cloudsql-hostname
 # MAIL_DEFAULT_SENDER=quote@freightservices.net
 # MAIL_SERVER=smtp.gmail.com
 # MAIL_PORT=587
+# MAIL_USE_SSL=false
 # MAIL_USE_TLS=true
 # MAIL_USERNAME=quote@freightservices.net
 # MAIL_PASSWORD=app-password
@@ -103,8 +104,9 @@ POSTGRES_HOST=cloudsql-hostname
 # ADMIN_PASSWORD=initial-password
 ```
 
-When configuring Gmail SMTP, use `smtp.gmail.com` with port 587 and
-`MAIL_USE_TLS=true`. Gmail requires either OAuth 2.0 or an app password for
+When configuring Gmail SMTP, use `smtp.gmail.com` with port 587, set
+`MAIL_USE_TLS=true`, and keep `MAIL_USE_SSL=false`. Gmail requires either OAuth
+2.0 or an app password for
 accounts with two-step verification enabled; basic username/password sign-in
 without app passwords is no longer supported for most accounts. If you prefer
 SSL on port 465, set `MAIL_USE_SSL=true` and disable TLS.
