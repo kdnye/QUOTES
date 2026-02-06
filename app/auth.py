@@ -10,12 +10,13 @@ The blueprint wraps the authentication lifecycle for the quote tool:
 - ``/logout`` ends an authenticated session with
   :func:`flask_login.logout_user`.
 - ``/reset`` and ``/reset/<token>`` implement a self-service password reset
-  flow backed by helpers in :mod:`services.auth_utils`. Because outbound email
-  is unavailable, the reset request view now surfaces tokens directly for the
-  signed-in user so the link can be copied in-app.
+  flow backed by helpers in :mod:`services.auth_utils`. Reset requests generate
+  one-time tokens and deliver them via :func:`app.services.mail.send_email` so
+  signed-in users can continue through the reset link securely.
 """
 
 import secrets
+import smtplib
 from datetime import datetime
 from typing import Dict, Optional, Union, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -47,6 +48,7 @@ from app.services.auth_utils import (
     reset_password_with_token,
     provision_employee_from_oidc,
 )
+from app.services.mail import MailRateLimitError, send_email
 from app import limiter
 from app.services.oidc_client import get_oidc_client, is_oidc_configured
 
@@ -743,16 +745,24 @@ def reset_request() -> Union[str, Response]:
     """Start the password reset workflow for the signed-in user.
 
     Only authenticated users can generate a self-service reset link because the
-    tool cannot currently deliver email. Team members who are logged out should
+    tool only delivers reset emails for signed-in users. Team members who are logged out should
     contact an administrator so their identity can be verified manually.
 
     Related helpers:
         - is_valid_email
         - create_reset_token
+        - send_email
 
     Returns:
         Renders ``reset_request.html`` on GET, invalid submission, or after a
-        successful token creation so the caller can copy the link directly.
+        successful token creation so the caller can check their email for the
+        reset link.
+
+    External dependencies:
+        * Calls :func:`app.services.auth_utils.create_reset_token` to create a
+          one-time token.
+        * Sends the reset email via :func:`app.services.mail.send_email`, which
+          uses SMTP under the hood.
     """
 
     if not current_user.is_authenticated:
@@ -777,16 +787,37 @@ def reset_request() -> Union[str, Response]:
             return redirect(url_for("auth.reset_request"))
         if token:
             reset_url = url_for("auth.reset_with_token", token=token, _external=True)
-            context["reset_url"] = reset_url
-            context["reset_token"] = token
+            subject = "Reset your Freight Services password"
+            body = (
+                "We received a request to reset your Freight Services account password.\n\n"
+                f"Use this link to set a new password:\n{reset_url}\n\n"
+                "If you did not request this, you can ignore this email."
+            )
+            try:
+                send_email(
+                    email,
+                    subject,
+                    body,
+                    feature="password_reset",
+                    user=current_user,
+                )
+            except (MailRateLimitError, smtplib.SMTPException) as exc:
+                current_app.logger.exception(
+                    "Password reset email failed for %s: %s", email, exc
+                )
+                flash(
+                    "We couldn't send the reset email right now. Please try again "
+                    "in a few minutes.",
+                    "danger",
+                )
+                return render_template("reset_request.html", **context)
             flash(
-                "Copy the secure link below to continue resetting your password.",
-                "info",
+                "A password reset link has been sent to your email address.",
+                "success",
             )
         else:
             flash(
-                "If your account is eligible, a reset link will appear here once "
-                "generated.",
+                "If your account is eligible, a reset email will be sent shortly.",
                 "info",
             )
         return render_template("reset_request.html", **context)
