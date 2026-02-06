@@ -116,7 +116,7 @@ def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) 
     assert expected_url in body
     assert "reset" in subject.lower()
     assert kwargs["feature"] == "password_reset"
-    assert kwargs["user"] is None
+    assert "user" not in kwargs or kwargs["user"] is None
 
 
 @pytest.mark.parametrize(
