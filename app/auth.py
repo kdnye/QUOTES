@@ -179,7 +179,7 @@ PASSWORD_REQUIREMENTS_HELP = (
 )
 
 
-def _account_settings_form_state(user: User) -> Dict[str, str]:
+def _account_settings_form_state(user: User) -> Dict[str, Union[str, bool]]:
     """Return sanitized defaults for the account settings form.
 
     Args:
@@ -188,7 +188,8 @@ def _account_settings_form_state(user: User) -> Dict[str, str]:
     Returns:
         Dictionary keyed by the HTML form fields rendered in
         ``templates/settings.html``. The helper centralizes how we derive default
-        values from the user model so both GET and POST handlers stay consistent.
+        values from the user model so both GET and POST handlers stay consistent,
+        including the ``can_send_mail`` toggle.
     """
 
     return {
@@ -198,6 +199,7 @@ def _account_settings_form_state(user: User) -> Dict[str, str]:
         "phone": (getattr(user, "phone", "") or "").strip(),
         "company_name": (getattr(user, "company_name", "") or "").strip(),
         "company_phone": (getattr(user, "company_phone", "") or "").strip(),
+        "can_send_mail": bool(getattr(user, "can_send_mail", False)),
     }
 
 
@@ -598,7 +600,9 @@ def settings() -> Union[str, Response]:
     :mod:`services.auth_utils`, including
     :func:`services.auth_utils.is_valid_email`,
     :func:`services.auth_utils.is_valid_phone`, and
-    :func:`services.auth_utils.is_valid_password`.
+    :func:`services.auth_utils.is_valid_password`. It also allows users to
+    toggle the ``can_send_mail`` flag used by
+    :func:`services.mail.user_has_mail_privileges`.
 
     Returns:
         Renders ``settings.html`` with any validation feedback when invoked via
@@ -615,6 +619,7 @@ def settings() -> Union[str, Response]:
         phone = (request.form.get("phone") or "").strip()
         company_name = (request.form.get("company_name") or "").strip()
         company_phone = (request.form.get("company_phone") or "").strip()
+        can_send_mail = bool(request.form.get("can_send_mail"))
         current_password = request.form.get("current_password", "")
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
@@ -627,6 +632,7 @@ def settings() -> Union[str, Response]:
                 "phone": phone,
                 "company_name": company_name,
                 "company_phone": company_phone,
+                "can_send_mail": can_send_mail,
             }
         )
 
@@ -690,6 +696,7 @@ def settings() -> Union[str, Response]:
         user.company_phone = company_phone
         user.email = email
         user.name = f"{first_name} {last_name}".strip()
+        user.can_send_mail = can_send_mail
         db.session.add(user)
         db.session.commit()
 

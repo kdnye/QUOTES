@@ -914,6 +914,7 @@ def create_user() -> Union[str, Response]:
             "password": request.form.get("password") or "",
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
+            "can_send_mail": bool(request.form.get("can_send_mail")),
             "rate_set": request.form.get("rate_set") or DEFAULT_RATE_SET,
         }
         display_name = (
@@ -996,6 +997,7 @@ def create_user() -> Union[str, Response]:
             is_admin=is_super_admin,
             role=form_data["role"],
             employee_approved=employee_approved,
+            can_send_mail=form_data["can_send_mail"],
             rate_set=rate_set,
         )
         user.set_password(form_data["password"])
@@ -1058,6 +1060,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
             "password": request.form.get("password") or "",
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
+            "can_send_mail": bool(request.form.get("can_send_mail")),
             "rate_set": request.form.get("rate_set") or user.rate_set,
         }
         display_name = (
@@ -1151,6 +1154,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
         user.company_name = form_data["company_name"] or None
         user.company_phone = form_data["company_phone"] or None
         user.rate_set = parsed_rate_set
+        user.can_send_mail = form_data["can_send_mail"]
 
         if is_super_admin:
             user.is_admin = True
