@@ -226,9 +226,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Phone: ${consignee.phone}\n`;
   body += "------------\n";
   const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} from ${data.user_name} at ${data.user_company} - Quote ID: ${data.quote_id}`;
-  const mailto = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailto;
 });
 </script>
 {% endblock %}
-
