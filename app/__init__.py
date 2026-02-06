@@ -35,7 +35,7 @@ from app.services.mail import (
     validate_sender_domain,
     user_has_mail_privileges,
 )
-from app.services.settings import reload_overrides
+from app.services.settings import is_quote_email_smtp_enabled, reload_overrides
 from app.services.oidc_client import init_oidc_oauth
 
 login_manager = LoginManager()
@@ -624,6 +624,8 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             * :func:`services.mail.user_has_mail_privileges` to restrict usage
               to Freight Services staff accounts.
             * :func:`send_email` for the actual SMTP dispatch.
+            * :func:`services.settings.is_quote_email_smtp_enabled` to honor the
+              admin toggle.
         """
         origin_zip = (request.form.get("origin_zip") or "").strip()
         dest_zip = (request.form.get("destination_zip") or "").strip()
@@ -632,6 +634,13 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         if not user_has_mail_privileges(current_user):
             flash(
                 "Quote emails are limited to Freight Services staff accounts.",
+                "warning",
+            )
+            return redirect(url_for("quotes.new_quote"))
+
+        if not is_quote_email_smtp_enabled():
+            flash(
+                "Quote emails are currently disabled by an administrator.",
                 "warning",
             )
             return redirect(url_for("quotes.new_quote"))

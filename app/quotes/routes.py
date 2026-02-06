@@ -31,6 +31,7 @@ from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds
 from app.services.mail import user_has_mail_privileges
+from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 logger = logging.getLogger(__name__)
@@ -394,6 +395,8 @@ def new_quote():
                     "exceeds_threshold": exceeds_threshold,
                 }
             )
+        quote_email_smtp_enabled = is_quote_email_smtp_enabled()
+        user_can_send_quote_email = user_has_mail_privileges(current_user)
         return render_template(
             "quote_result.html",
             quote=q,
@@ -402,7 +405,11 @@ def new_quote():
             can_request_booking_email=bool(
                 getattr(current_user, "is_authenticated", False)
             ),
-            can_send_quote_email=user_has_mail_privileges(current_user),
+            can_send_quote_email=(
+                user_can_send_quote_email and quote_email_smtp_enabled
+            ),
+            quote_email_smtp_enabled=quote_email_smtp_enabled,
+            user_can_send_quote_email=user_can_send_quote_email,
         )
 
     return render_template(

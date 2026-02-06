@@ -673,6 +673,14 @@ class Config:
     MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY = int(
         os.getenv("MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY", 25)
     )
+    QUOTE_EMAIL_SMTP_ENABLED = os.getenv(
+        "QUOTE_EMAIL_SMTP_ENABLED", "true"
+    ).lower() in {
+        "true",
+        "1",
+        "yes",
+        "y",
+    }
     WTF_CSRF_ENABLED = True
     RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day;50 per hour")
     RATELIMIT_STORAGE_URI = _resolve_ratelimit_storage_uri()

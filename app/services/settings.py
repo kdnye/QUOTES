@@ -14,7 +14,7 @@ from datetime import datetime
 import logging
 from typing import Any, Dict, Iterable, Mapping, Optional, Set, Union
 
-from flask import Flask
+from flask import Flask, current_app
 from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.models import AppSetting, db
@@ -72,6 +72,7 @@ _SETTINGS_CACHE: Dict[str, SettingRecord] = {}
 _BASELINE_CONFIG: Dict[str, Any] = {}
 _APPLIED_CONFIG_KEYS: Set[str] = set()
 _MISSING = object()
+QUOTE_EMAIL_SMTP_SETTING_KEY = "quote_email_smtp_enabled"
 
 
 def _normalize_key(key: str) -> str:
@@ -242,6 +243,27 @@ def load_mail_settings() -> MailSettings:
     )
 
 
+def is_quote_email_smtp_enabled() -> bool:
+    """Return whether SMTP quote sending is enabled.
+
+    Args:
+        None.
+
+    Returns:
+        bool: ``True`` when quote summary emails may be sent via SMTP.
+
+    External dependencies:
+        * Reads ``QUOTE_EMAIL_SMTP_ENABLED`` from
+          :data:`flask.current_app.config`.
+    """
+
+    raw_value = current_app.config.get("QUOTE_EMAIL_SMTP_ENABLED", True)
+    if isinstance(raw_value, bool):
+        return raw_value
+    parsed = _parse_bool(str(raw_value))
+    return parsed if parsed is not None else True
+
+
 def set_setting(key: str, value: Optional[str], *, is_secret: bool = False) -> None:
     """Persist ``value`` for ``key`` in the :class:`AppSetting` table."""
 
@@ -277,10 +299,12 @@ def delete_setting(key: str) -> None:
 
 __all__ = [
     "MailSettings",
+    "QUOTE_EMAIL_SMTP_SETTING_KEY",
     "SettingRecord",
     "apply_settings",
     "delete_setting",
     "get_settings_cache",
+    "is_quote_email_smtp_enabled",
     "load_mail_settings",
     "refresh_settings_cache",
     "reload_overrides",

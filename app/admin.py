@@ -59,9 +59,16 @@ from app.services.rate_sets import (
     get_available_rate_sets,
     normalize_rate_set,
 )
-from app.services.settings import get_settings_cache, reload_overrides, set_setting
+from app.services.settings import (
+    QUOTE_EMAIL_SMTP_SETTING_KEY,
+    get_settings_cache,
+    is_quote_email_smtp_enabled,
+    reload_overrides,
+    set_setting,
+)
 
 admin_bp = Blueprint("admin", __name__, template_folder="templates")
+
 
 def _sync_admin_role(
     user: User,
@@ -657,6 +664,8 @@ def dashboard() -> str:
             "admin_dashboard.html",
             users=users,
             settings_url=url_for("admin.list_settings"),
+            quote_email_smtp_enabled=is_quote_email_smtp_enabled(),
+            is_super_admin=getattr(current_user, "role", None) == "super_admin",
         )
 
     return render_template("admin_employee_dashboard.html")
@@ -763,6 +772,35 @@ def delete_setting(setting_id: int) -> Response:
         "success",
     )
     return redirect(url_for("admin.list_settings"))
+
+
+@admin_bp.route("/settings/quote-email-toggle", methods=["POST"])
+@super_admin_required
+def toggle_quote_email_smtp() -> Response:
+    """Enable or disable SMTP quote sending for summary emails.
+
+    Inputs:
+        quote_email_enabled: Optional checkbox value indicating whether quote
+            emails should be enabled.
+
+    Returns:
+        Response: Redirects to :func:`admin.dashboard` after persisting the
+        setting.
+
+    External dependencies:
+        * Persists the setting via :func:`services.settings.set_setting`.
+        * Reloads overrides via :func:`services.settings.reload_overrides`.
+        * Commits changes via :mod:`app.models.db`.
+    """
+
+    enabled = bool(request.form.get("quote_email_enabled"))
+    value = "true" if enabled else "false"
+    set_setting(QUOTE_EMAIL_SMTP_SETTING_KEY, value)
+    db.session.commit()
+    reload_overrides(current_app)
+    status = "enabled" if enabled else "disabled"
+    flash(f"SMTP quote sending {status}.", "success")
+    return redirect(url_for("admin.dashboard"))
 
 
 @admin_bp.route("/toggle/<int:user_id>", methods=["POST"])
