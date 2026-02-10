@@ -232,6 +232,10 @@ def send_email(
 
     msg = EmailMessage()
     msg["Subject"] = subject
+    # --- START CHANGE ---
+    # Add Postmark Stream Header
+    msg["X-PM-Message-Stream"] = "quote-tool"
+    # --- END CHANGE ---
     default_sender = current_app.config.get(
         "MAIL_DEFAULT_SENDER", "quote@freightservices.net"
     )
