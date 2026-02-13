@@ -9,6 +9,8 @@ schema and relationships for their respective tables.
 
 from datetime import datetime
 import uuid
+import secrets  
+import string   
 from typing import Optional
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -33,6 +35,14 @@ COST_ZONES_TABLE = "cost_zones"
 RATE_UPLOADS_TABLE = "rate_uploads"
 
 RATE_SET_DEFAULT = "default"
+
+def generate_readable_id():
+    """Generates a unique, readable ID like 'Q-7X9B2A'."""
+    # Use uppercase and digits, excluding ambiguous characters (I, 1, O, 0)
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    # Generate 8 random characters
+    suffix = ''.join(secrets.choice(alphabet) for _ in range(8))
+    return f"Q-{suffix}"
 
 db = SQLAlchemy()
 
@@ -138,7 +148,7 @@ class Quote(db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     quote_id = db.Column(
-        db.String(36), default=lambda: str(uuid.uuid4()), unique=True
+        db.String(36), default=generate_readable_id, unique=True
     )  # public UUID for external reference
     user_id = db.Column(db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"))
     user_email = db.Column(db.String(100))  # cached user email for quick access
