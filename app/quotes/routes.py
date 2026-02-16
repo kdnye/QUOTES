@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from types import MappingProxyType
 from typing import Mapping
+from uuid import UUID
 
 from flask import current_app, flash, jsonify, render_template, request
 from flask_login import login_required, current_user
@@ -451,6 +452,69 @@ def new_quote():
         accessorial_options=accessorial_options,
         quote_type="Air",
         maps_api_key=maps_api_key,
+    )
+
+
+@quotes_bp.route("/lookup", methods=["GET", "POST"])
+@login_required
+def lookup_quote():
+    """Render a quote lookup form and display a saved quote by public ID.
+
+    Inputs:
+        Reads ``quote_id`` from ``request.form`` during POST requests and
+        validates the value as a UUID string.
+
+    Outputs:
+        Returns ``lookup_quote.html`` for GET requests and for invalid or
+        missing quote IDs. Returns ``quote_result.html`` with quote details
+        when a matching record is found.
+
+    External dependencies:
+        Uses ``Quote.query.filter_by`` to load persisted quotes, calls
+        :func:`app.quote.thresholds.check_thresholds` to recompute the
+        threshold warning banner, and uses
+        :func:`app.services.settings.is_quote_email_smtp_enabled` plus
+        :func:`app.services.mail.user_has_mail_privileges` to build email
+        permission flags expected by the result template.
+    """
+
+    if request.method == "GET":
+        return render_template("lookup_quote.html")
+
+    quote_id = request.form.get("quote_id", "").strip()
+    try:
+        UUID(quote_id)
+    except (TypeError, ValueError):
+        flash("Please enter a valid Quote ID.", "danger")
+        return render_template("lookup_quote.html")
+
+    quote = Quote.query.filter_by(quote_id=quote_id).first()
+    if quote is None:
+        flash("Quote not found. Please verify the Quote ID and try again.", "danger")
+        return render_template("lookup_quote.html")
+
+    try:
+        metadata = json.loads(quote.quote_metadata or "{}")
+    except json.JSONDecodeError:
+        metadata = {}
+
+    threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
+    exceeds_threshold = bool(threshold_warning)
+
+    quote_email_smtp_enabled = is_quote_email_smtp_enabled()
+    user_can_send_quote_email = user_has_mail_privileges(current_user)
+
+    return render_template(
+        "quote_result.html",
+        quote=quote,
+        metadata=metadata,
+        exceeds_threshold=exceeds_threshold,
+        can_request_booking_email=bool(
+            getattr(current_user, "is_authenticated", False)
+        ),
+        can_send_quote_email=(user_can_send_quote_email and quote_email_smtp_enabled),
+        quote_email_smtp_enabled=quote_email_smtp_enabled,
+        user_can_send_quote_email=user_can_send_quote_email,
     )
 
 
