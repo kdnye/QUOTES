@@ -34,14 +34,17 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
 
 ## Documentation hub
 
-- [Documentation Hub](docs/README.md) – Cross-reference of every guide, inline
-  comment, and help topic.
 - [Architecture](ARCHITECTURE.md) – Component breakdown and reimplementation
   notes for porting the app to another stack.
 - [Deployment](DEPLOYMENT.md) – Production roll-out, TLS, and maintenance
   checklists.
 - In-app Help Center (`/help`) – Task-oriented user guides rendered from
   `templates/help/`.
+- Local setup references in this README:
+  - [Quick Start (local development)](#quick-start-local-development)
+  - [Database migrations](#database-migrations)
+  - [Docker (production-style container)](#docker-production-style-container)
+  - [Local development (Docker)](#local-development-docker)
 
 ## Quick Start (local development)
 
@@ -54,15 +57,15 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
      configuration error when `ENVIRONMENT` or `FLASK_ENV` is set to
      `production`. Without it in development the app falls back to an ephemeral
      key at startup.
-   - If you use Docker Compose for local development, see
-     [`docs/local_dev.md`](docs/local_dev.md) for the recommended setup and
+   - If you use Docker Compose for local development, follow the
+     [Local development (Docker)](#local-development-docker) section and set
      `POSTGRES_HOST` overrides when running helper scripts outside Docker.
 3. Install packages: `pip install -r requirements-dev.txt`.
 4. Create tables: `alembic upgrade head`.
 5. Import ZIP and air rate data before starting the app:
    `python scripts/import_air_rates.py path/to/rates_dir`.
-6. Seed rate tables and (optionally) create an admin user:
-   `python init_db.py` (uses the directory above by default).
+6. Complete first-time setup at `/setup` to initialize the schema and create
+   the first super admin account.
 7. Run the app locally: `python flask_app.py`.
    - For production use
      `hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app.app:create_app()"`
@@ -203,8 +206,8 @@ the prompts at any time with `windows_setup.exe --reconfigure`; leaving the
 `SECRET_KEY` blank during reconfiguration rotates it to a freshly generated
 value.
 
-On first launch the executable seeds the database by invoking
-[`init_db.initialize_database`](init_db.py#L82). The bundled rate data includes
+On first launch the executable seeds the database by invoking the setup
+bootstrap process. The bundled rate data includes
 `Hotshot_Rates.csv`, `beyond_price.csv`, `accessorial_cost.csv`,
 `Zipcode_Zones.csv`, `cost_zone_table.csv`, and `air_cost_zone.csv`. Replace the
 CSV files in the `rates` directory next to the executable (or its
@@ -221,10 +224,8 @@ Security guidance:
   create a new one.
 - Update credentials recorded in `.env` (for example, `ADMIN_PASSWORD`) through
   your password manager, then rerun the launcher to synchronize the file.
-- Review the docstring of
-  [`init_db.initialize_database`](init_db.py#L82) for additional background on
-  how seeding works and what tables are touched so you can plan migrations and
-  audits accordingly.
+- Review this README's setup sections and `DEPLOYMENT.md` for additional
+  background on seeding, migrations, and operational checks.
 
 ### Testing
 
@@ -273,7 +274,8 @@ script to raise an error.
 
 ### Local development (Docker)
 For local Docker and Docker Compose workflows, see
-[`docs/local_dev.md`](docs/local_dev.md).
+[Quick Start (local development)](#quick-start-local-development) plus the
+container workflow in [Docker (production-style container)](#docker-production-style-container).
 
 ### Bulk seeding user accounts
 
@@ -392,7 +394,8 @@ If you see `no such table` errors, the database is missing required tables.
 Confirm the PostgreSQL connection details are correct, then run
 `alembic upgrade head` to apply migrations. If you are initializing a fresh
 environment, set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (the script loads
-this file automatically), then run `python init_db.py` to seed the schema.
+this file automatically), then run `alembic upgrade head` and finish first-run
+configuration at `/setup`.
 
 If quotes warn that "Air rate table(s) missing or empty", ensure the CSV
 directory is present or specify its path via `RATE_DATA_DIR` before initializing
