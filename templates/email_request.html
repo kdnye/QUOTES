@@ -211,24 +211,14 @@ const data = {{ {
 }|tojson }};
 
 function updateAddressFeedback(feedbackElement, message) {
-  if (!feedbackElement) {
-    return;
-  }
-
+  if (!feedbackElement) return;
   feedbackElement.textContent = message;
   feedbackElement.classList.toggle('d-none', !message);
 }
 
 function getAddressParts(place) {
-  const parts = {
-    city: '',
-    state: '',
-    zip: ''
-  };
-
-  if (!place || !Array.isArray(place.address_components)) {
-    return parts;
-  }
+  const parts = { city: '', state: '', zip: '' };
+  if (!place || !Array.isArray(place.address_components)) return parts;
 
   for (const component of place.address_components) {
     const types = component.types || [];
@@ -242,7 +232,6 @@ function getAddressParts(place) {
       parts.zip = component.long_name || '';
     }
   }
-
   return parts;
 }
 
@@ -253,9 +242,7 @@ function bindAddressAutocomplete(prefix) {
   const zipField = document.getElementById(`${prefix}_zip`);
   const feedbackElement = document.getElementById(`${prefix}_address_feedback`);
 
-  if (!streetField || !window.google || !google.maps || !google.maps.places) {
-    return;
-  }
+  if (!streetField || !window.google || !google.maps || !google.maps.places) return;
 
   const autocomplete = new google.maps.places.Autocomplete(streetField, {
     types: ['address'],
@@ -265,36 +252,20 @@ function bindAddressAutocomplete(prefix) {
   autocomplete.addListener('place_changed', () => {
     const place = autocomplete.getPlace();
     const parts = getAddressParts(place);
-    const hasKnownLocation = Boolean(
-      place && Array.isArray(place.address_components) && place.address_components.length
-    );
+    const hasKnownLocation = Boolean(place && Array.isArray(place.address_components) && place.address_components.length);
 
-    if (parts.city && cityField) {
-      cityField.value = parts.city;
-    }
-    if (parts.state && stateField) {
-      stateField.value = parts.state;
-    }
-    if (parts.zip && zipField) {
-      zipField.value = parts.zip;
-    }
+    if (parts.city && cityField) cityField.value = parts.city;
+    if (parts.state && stateField) stateField.value = parts.state;
+    if (parts.zip && zipField) zipField.value = parts.zip;
 
     if (!hasKnownLocation) {
-      updateAddressFeedback(
-        feedbackElement,
-        'Address details could not be verified. Please review and complete manually if needed.'
-      );
+      updateAddressFeedback(feedbackElement, 'Address details could not be verified. Please review manually.');
       return;
     }
-
     if (!parts.city || !parts.state || !parts.zip) {
-      updateAddressFeedback(
-        feedbackElement,
-        'Some address details were unavailable. Please confirm city, state, and ZIP.'
-      );
+      updateAddressFeedback(feedbackElement, 'Some address details were unavailable. Please confirm city, state, and ZIP.');
       return;
     }
-
     updateAddressFeedback(feedbackElement, '');
   });
 }
@@ -309,8 +280,6 @@ if (window.google && google.maps && google.maps.places) {
 }
 
 function normalizeFreeformNotes(value) {
-  // Normalize line endings and trim trailing whitespace while preserving
-  // intentional line breaks so multiline notes remain readable in email clients.
   return (value || '')
     .replace(/\r\n?/g, '\n')
     .split('\n')
@@ -344,63 +313,73 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     notes: normalizeFreeformNotes(f.consignee_notes.value)
   };
 
-  let body = `${data.email_intro_line}\n`;
-  body += `\n`;
-  body += `Quote ID: ${data.quote_id}\n`;
-  body += `Return Quote Requested: ${returnQuoteRequested ? 'Yes' : 'No'}\n`;
-  body += "------------\n";
-  body += `Origin: ${data.origin}\n`;
-  body += `\n`;
-  body += `Destination: ${data.destination}\n`;
-  body += "------------\n";
-  const accessorialNames = data.accessorial_names || 'None';
-  body += `Accessorials Selected: ${accessorialNames}\n`;
-  body += `\n`;
-  body += `Pieces: ${data.pieces}\n`;
-  body += `Weight: ${data.weight} lbs (${data.weight_type})\n`;
-  body += `\n`;
-  body += `Base Charge: $${data.base_total.toFixed(2)}\n`;
-  body += "\n------------\nAccessorials\n------------\n";
+  // --- BUILD EMAIL BODY WITH PROFESSIONAL FORMATTING ---
+  const pad = (str, len) => (str || '').padEnd(len);
+  
+  let body = `${data.email_intro_line}\n\n`;
+
+  // 1. Quote Header
+  body += `QUOTE DETAILS\n`;
+  body += `==========================================\n`;
+  body += `Quote ID:      ${data.quote_id}\n`;
+  body += `Return Quote:  ${returnQuoteRequested ? 'YES' : 'No'}\n\n`;
+
+  // 2. Route & Shipment Specs
+  body += `SHIPMENT SPECIFICATIONS\n`;
+  body += `------------------------------------------\n`;
+  body += `Origin:        ${data.origin}\n`;
+  body += `Destination:   ${data.destination}\n`;
+  body += `Pieces:        ${data.pieces}\n`;
+  body += `Weight:        ${data.weight} lbs (${data.weight_type})\n`;
+  body += `Accessorials:  ${data.accessorial_names || 'None'}\n\n`;
+
+  // 3. Financials (Aligned)
+  body += `PRICING BREAKDOWN\n`;
+  body += `------------------------------------------\n`;
+  body += `Base Charge:            $${data.base_total.toFixed(2).padStart(8)}\n`;
+  
   for (const [name, cost] of Object.entries(data.accessorials || {})) {
-    body += `${name.padEnd(30)} $${cost.toFixed(2)}\n`;
+    // Truncate name to 22 chars to keep alignment, pad right
+    body += `${name.substring(0, 22).padEnd(23)} $${cost.toFixed(2).padStart(8)}\n`;
   }
-  body += "------------\n";
-  body += `Subtotal: $${data.accessorial_total.toFixed(2)}\n`;
-  body += "------------\n";
+  
+  body += `------------------------------------------\n`;
+  
   const adminFee = Number(data.admin_fee || 0);
   const totalWithFee = Number(data.base_total || 0) + Number(data.accessorial_total || 0) + adminFee;
-  const adminFeeNote = adminFee > 0
-    ? ` (includes $${adminFee.toFixed(2)} email admin fee)`
-    : "";
-  body += `Quote Total: $${totalWithFee.toFixed(2)}${adminFeeNote}\n`;
-  body += "------------\n";
-  body += `\n`;
-  body += "Shipper info:\n";
-  body += `\n`;
-  body += `Name: ${shipper.name}\n`;
-  body += `Street Address: ${shipper.street}\n`;
-  body += `City: ${shipper.city}\n`;
-  body += `State: ${shipper.state}\n`;
-  body += `Zip: ${shipper.zip}\n`;
+  const adminFeeNote = adminFee > 0 ? ` (includes $${adminFee.toFixed(2)} admin fee)` : "";
+  
+  body += `TOTAL:                  $${totalWithFee.toFixed(2).padStart(8)}${adminFeeNote}\n`;
+  body += `==========================================\n\n`;
+
+  // 4. Shipper / Consignee Blocks
+  body += `LOGISTICS CONTACTS\n`;
+  body += `==========================================\n\n`;
+
+  body += `[ SHIPPER ]\n`;
+  body += `Name:    ${shipper.name}\n`;
+  body += `Address: ${shipper.street}\n`;
+  body += `         ${shipper.city}, ${shipper.state} ${shipper.zip}\n`;
   body += `Contact: ${shipper.contact}\n`;
-  body += `Phone: ${shipper.phone}\n`;
+  body += `Phone:   ${shipper.phone}\n`;
+  if (shipper.notes) {
+    body += `NOTES:\n${shipper.notes}\n`;
+  }
   body += `\n`;
-  body += `Shipper Notes: ${shipper.notes}\n`;
-  body += `\n`;
-  body += "Consignee info:\n";
-  body += `\n`;
-  body += `Name: ${consignee.name}\n`;
-  body += `Street Address: ${consignee.street}\n`;
-  body += `City: ${consignee.city}\n`;
-  body += `State: ${consignee.state}\n`;
-  body += `Zip: ${consignee.zip}\n`;
+
+  body += `[ CONSIGNEE ]\n`;
+  body += `Name:    ${consignee.name}\n`;
+  body += `Address: ${consignee.street}\n`;
+  body += `         ${consignee.city}, ${consignee.state} ${consignee.zip}\n`;
   body += `Contact: ${consignee.contact}\n`;
-  body += `Phone: ${consignee.phone}\n`;
+  body += `Phone:   ${consignee.phone}\n`;
+  if (consignee.notes) {
+    body += `NOTES:\n${consignee.notes}\n`;
+  }
   body += `\n`;
-  body += `Consignee Notes: ${consignee.notes}\n`;
-  body += `\n`;
-  body += "------------\n";
-  const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} from ${data.user_name} at ${data.user_company} - Quote ID: ${data.quote_id}`;
+
+  // Final Link Generation
+  const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} - Quote ${data.quote_id}`;
   const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailto;
 });
