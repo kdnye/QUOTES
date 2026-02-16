@@ -29,3 +29,10 @@ def check_thresholds(quote_type: str, weight: float, total: float) -> str:
     if weight > 3000 or total > 6000:
         return THRESHOLD_WARNING
     return ""
+    
+def check_air_piece_limit(quote_type: str, weight: float, pieces: int) -> str | None:
+    """Return an error message if air freight exceeds 300 lbs per piece."""
+    if quote_type.lower() == "air" and pieces > 0:
+        if (weight / pieces) > 300:
+            return "Air freight shipments cannot exceed 300 lbs per piece."
+    return None
