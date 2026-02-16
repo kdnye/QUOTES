@@ -213,6 +213,9 @@ def new_quote():
                     pieces = 1
             except (TypeError, ValueError):
                 errors.append("Pieces must be a whole number.")
+                
+        if piece_err := check_air_piece_limit(quote_type, weight_actual, pieces):
+            errors.append(piece_err)
 
         def _parse_dim(name: str) -> float:
             raw = data.get(name)
