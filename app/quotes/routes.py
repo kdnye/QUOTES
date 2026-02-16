@@ -29,7 +29,7 @@ from ..models import (
 )
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
-from app.quote.thresholds import check_thresholds
+from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.services.mail import user_has_mail_privileges
 from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
