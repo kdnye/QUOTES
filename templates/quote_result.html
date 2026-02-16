@@ -52,14 +52,14 @@
   <p><strong>Accessorials Total:</strong> ${{ '%.2f'|format(metadata.accessorial_total) }}</p>
   {% endif %}
 
-  {% if metadata.details %}
-  <h3>Details</h3>
-  <ul>
-  {% for key, value in metadata.details.items() %}
-    <li>{{ key }}: {{ value }}</li>
-  {% endfor %}
-  </ul>
-  {% endif %}
+  #{% if metadata.details %}
+  #<h3>Details</h3>
+  #<ul>
+  #{% for key, value in metadata.details.items() %}
+  #  <li>{{ key }}: {{ value }}</li>
+  #{% endfor %}
+  #</ul>
+  #{% endif %}
 
   <div class="alert alert-info" role="note">
     Ready to move forward? Click <strong>Book Quote</strong> to complete the shipment yourself through the FreightServices portal, or
