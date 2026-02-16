@@ -155,3 +155,31 @@ def test_send_email_allowed_when_setting_enabled(
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/")
     assert send_calls
+
+
+def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:
+    """Show a prominent create-quote button in the header for signed-in users.
+
+    Args:
+        app: Flask application fixture backed by a PostgreSQL test database.
+
+    Returns:
+        None. Asserts against rendered navigation HTML.
+
+    External dependencies:
+        * Creates a super admin using :func:`_create_super_admin`.
+        * Authenticates the browser session via :func:`_login_client`.
+        * Calls :meth:`flask.testing.FlaskClient.get` to render the quote page.
+    """
+
+    admin = _create_super_admin()
+    client = app.test_client()
+    _login_client(client, admin.id)
+
+    response = client.get("/")
+    html = response.get_data(as_text=True)
+
+    assert response.status_code == 200
+    assert 'href="/quotes/new"' in html
+    assert "Create New Quote" in html
+    assert "btn btn-outline-primary" in html
