@@ -67,13 +67,20 @@ def _login_client(client: FlaskClient, user_id: int) -> None:
         session["_fresh"] = True
 
 
-def test_email_request_form_allows_customer_user(app: Flask) -> None:
-    """Allow a non-privileged customer to access the email request form."""
+def _create_quote_for_user(user: User) -> Quote:
+    """Create and persist a quote record for email request view tests.
 
-    customer = User(email="customer@example.com", role="customer")
-    customer.set_password("password123")
-    db.session.add(customer)
-    db.session.commit()
+    Args:
+        user: :class:`app.models.User` instance that owns the generated quote.
+
+    Returns:
+        Saved :class:`app.models.Quote` instance with minimal metadata
+        required by ``quotes.email_request_form``.
+
+    External dependencies:
+        * Uses :data:`app.models.db.session` to persist the quote.
+        * Mirrors metadata shape expected by ``app.quotes.routes._render_email_request``.
+    """
 
     quote = Quote(
         quote_type="Hotshot",
@@ -83,11 +90,23 @@ def test_email_request_form_allows_customer_user(app: Flask) -> None:
         weight_method="Actual",
         total=200.0,
         quote_metadata=json.dumps({"accessorial_total": 0.0, "accessorials": {}}),
-        user_id=customer.id,
-        user_email=customer.email,
+        user_id=user.id,
+        user_email=user.email,
     )
     db.session.add(quote)
     db.session.commit()
+    return quote
+
+
+def test_email_request_form_allows_customer_user(app: Flask) -> None:
+    """Allow a non-privileged customer to access the email request form."""
+
+    customer = User(email="customer@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+
+    quote = _create_quote_for_user(customer)
 
     client = app.test_client()
     _login_client(client, customer.id)
@@ -97,3 +116,76 @@ def test_email_request_form_allows_customer_user(app: Flask) -> None:
     assert response.status_code == 200
     assert b"Email Booking Request" in response.data
     assert b"operations@freightservices.net" in response.data
+
+
+def test_email_request_form_includes_maps_bootstrap_when_key_present(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Render Google Places bootstrap script when a Maps API key is configured.
+
+    Args:
+        app: Test Flask app fixture with database bindings.
+        monkeypatch: Fixture used to set environment variables for this test.
+
+    Returns:
+        None. Assertions validate rendered HTML content.
+
+    External dependencies:
+        * Calls ``quotes.email_request_form`` using :meth:`flask.testing.FlaskClient.get`.
+        * Relies on ``app.quotes.routes._render_email_request`` to resolve key fallback order.
+    """
+
+    monkeypatch.setenv("MAPS_API_KEY", "maps-from-env")
+    customer = User(email="maps@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+    quote = _create_quote_for_user(customer)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+
+    response = client.get(f"/quotes/{quote.quote_id}/email")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "maps.googleapis.com/maps/api/js?key=maps-from-env&libraries=places" in html
+    assert "callback=initAddressAutocomplete" in html
+    assert "new google.maps.places.Autocomplete" in html
+
+
+def test_email_request_form_omits_maps_script_when_key_missing(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skip Google Places script when no API key is available.
+
+    Args:
+        app: Test Flask app fixture with database bindings.
+
+    Returns:
+        None. Assertions validate graceful template fallback behavior.
+
+    External dependencies:
+        * Calls ``quotes.email_request_form`` through Flask test client routing.
+        * Validates HTML produced by ``templates/email_request.html``.
+    """
+
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    monkeypatch.delenv("MAPS_API_KEY", raising=False)
+    app.config["GOOGLE_MAPS_API_KEY"] = ""
+
+    customer = User(email="nomaps@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+    quote = _create_quote_for_user(customer)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+
+    response = client.get(f"/quotes/{quote.quote_id}/email")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "maps.googleapis.com/maps/api/js" not in html
+    assert "function initAddressAutocomplete()" in html
