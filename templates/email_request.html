@@ -27,7 +27,7 @@
       name="return_quote_requested"
     >
     <label class="form-check-label" for="return_quote_requested">
-      WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED (FSI WILL REPLY WITH RETURN QUOTE)
+      Will you need a return shipment?/Return handling Requested (FSI will reply with a return quote)
     </label>
   </div>
   <h4 class="d-flex align-items-center gap-2">
@@ -195,6 +195,8 @@ const data = {{ {
   "origin": quote.origin,
   "destination": quote.destination,
   "weight": quote.weight,
+  "pieces": quote.pieces,
+  "weight_type": quote.weight_method,
   "accessorials": metadata.accessorials,
   "accessorial_total": metadata.accessorial_total,
   "accessorial_names": accessorial_names,
@@ -343,20 +345,24 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   };
 
   let body = `${data.email_intro_line}\n`;
-  body += ` `;
+  body += `\n`;
   body += `Quote ID: ${data.quote_id}\n`;
   body += `Return Quote Requested: ${returnQuoteRequested ? 'Yes' : 'No'}\n`;
   body += "------------\n";
   body += `Origin: ${data.origin}\n`;
+  body += `\n`;
   body += `Destination: ${data.destination}\n`;
+  body += "------------\n";
   const accessorialNames = data.accessorial_names || 'None';
   body += `Accessorials Selected: ${accessorialNames}\n`;
-  body += `Weight: ${data.weight}\n`;
-  body += `Base Mileage Charge: $${data.base_total.toFixed(2)}\n`;
-  body += ` `;
+  body += `\n`;
+  body += `Pieces: ${data.pieces}\n`;
+  body += `Weight: ${data.weight} lbs (${data.weight_type})\n`;
+  body += `\n`;
+  body += `Base Charge: $${data.base_total.toFixed(2)}\n`;
   body += "\n------------\nAccessorials\n------------\n";
   for (const [name, cost] of Object.entries(data.accessorials || {})) {
-    body += `${name}                      $${cost.toFixed(2)}\n`;
+    body += `${name.padEnd(30)} $${cost.toFixed(2)}\n`;
   }
   body += "------------\n";
   body += `Subtotal: $${data.accessorial_total.toFixed(2)}\n`;
@@ -368,7 +374,9 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     : "";
   body += `Quote Total: $${totalWithFee.toFixed(2)}${adminFeeNote}\n`;
   body += "------------\n";
+  body += `\n`;
   body += "Shipper info:\n";
+  body += `\n`;
   body += `Name: ${shipper.name}\n`;
   body += `Street Address: ${shipper.street}\n`;
   body += `City: ${shipper.city}\n`;
@@ -376,9 +384,11 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Zip: ${shipper.zip}\n`;
   body += `Contact: ${shipper.contact}\n`;
   body += `Phone: ${shipper.phone}\n`;
+  body += `\n`;
   body += `Shipper Notes: ${shipper.notes}\n`;
   body += `\n`;
   body += "Consignee info:\n";
+  body += `\n`;
   body += `Name: ${consignee.name}\n`;
   body += `Street Address: ${consignee.street}\n`;
   body += `City: ${consignee.city}\n`;
@@ -386,7 +396,9 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Zip: ${consignee.zip}\n`;
   body += `Contact: ${consignee.contact}\n`;
   body += `Phone: ${consignee.phone}\n`;
+  body += `\n`;
   body += `Consignee Notes: ${consignee.notes}\n`;
+  body += `\n`;
   body += "------------\n";
   const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} from ${data.user_name} at ${data.user_company} - Quote ID: ${data.quote_id}`;
   const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
