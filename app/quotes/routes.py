@@ -750,7 +750,7 @@ def email_quote_to_me(quote_id: str):
     try:
         send_email(
             to=current_user.email,
-            subject=f"Freight Services Inc.\nQuote Copy - {quote.quote_id}",
+            subject=f"Freight Services Inc. Quote Copy - {quote.quote_id}",
             body=email_body,
             user=current_user,
             feature="quote_copy",
