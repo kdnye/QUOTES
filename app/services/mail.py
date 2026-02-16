@@ -7,7 +7,7 @@ import smtplib
 import time
 from datetime import datetime, timedelta
 from email.message import EmailMessage
-from typing import Optional, Tuple, Type
+from typing import Mapping, Optional, Tuple, Type
 
 from flask import current_app
 
@@ -197,6 +197,7 @@ def send_email(
     *,
     feature: str = "general",
     user: Optional[User] = None,
+    headers: Optional[Mapping[str, str]] = None,
 ) -> None:
     """Send an email using SMTP after enforcing safety policies.
 
@@ -209,6 +210,8 @@ def send_email(
             :func:`services.mail.enforce_mail_rate_limit` to track usage.
         user: Authenticated :class:`~app.models.User` requesting the send, if
             available. Enables per-user throttles.
+        headers: Optional message headers (for example ``List-Unsubscribe``)
+            to attach before delivery.
 
     Raises:
         MailRateLimitError: When rate limits configured in
@@ -242,6 +245,9 @@ def send_email(
     validate_sender_domain(default_sender)
     msg["From"] = default_sender
     msg["To"] = to
+    if headers:
+        for header_name, header_value in headers.items():
+            msg[header_name] = header_value
     msg.set_content(body)
     enforce_mail_rate_limit(feature, user, to)
 

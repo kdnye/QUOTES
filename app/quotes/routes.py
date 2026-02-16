@@ -33,7 +33,7 @@ from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.quote.zip_validation import validate_us_zip
-from app.services.mail import user_has_mail_privileges
+from app.services.mail import send_email, user_has_mail_privileges
 from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
@@ -518,6 +518,112 @@ def lookup_quote():
     )
 
 
+def _quote_template_context(
+    quote: Quote, metadata: dict[str, object]
+) -> dict[str, object]:
+    """Build the shared context used to render ``quote_result.html``.
+
+    Args:
+        quote: Persisted :class:`app.models.Quote` shown on the result page.
+        metadata: Quote metadata dictionary loaded from ``quote.quote_metadata``.
+
+    Returns:
+        A context dictionary containing quote details, warning status, and
+        permission flags expected by ``templates/quote_result.html``.
+
+    External dependencies:
+        * Calls :func:`app.quote.thresholds.check_thresholds` to recompute
+          warning banner state.
+        * Uses :func:`app.services.settings.is_quote_email_smtp_enabled` and
+          :func:`app.services.mail.user_has_mail_privileges` for feature flags.
+    """
+
+    quote_email_smtp_enabled = is_quote_email_smtp_enabled()
+    user_can_send_quote_email = user_has_mail_privileges(current_user)
+    threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
+    exceeds_threshold = bool(threshold_warning)
+
+    return {
+        "quote": quote,
+        "metadata": metadata,
+        "exceeds_threshold": exceeds_threshold,
+        "can_request_booking_email": bool(
+            getattr(current_user, "is_authenticated", False)
+        ),
+        "can_send_quote_email": (
+            user_can_send_quote_email and quote_email_smtp_enabled
+        ),
+        "quote_email_smtp_enabled": quote_email_smtp_enabled,
+        "user_can_send_quote_email": user_can_send_quote_email,
+    }
+
+
+def _format_quote_copy_email_body(
+    quote: Quote,
+    *,
+    metadata: dict[str, object],
+    return_quote_requested: bool,
+) -> str:
+    """Compose plain-text quote details for the self-email workflow.
+
+    Args:
+        quote: Quote instance being emailed.
+        metadata: Parsed ``quote.quote_metadata`` payload that may include
+            accessorial pricing entries.
+        return_quote_requested: Whether the user checked the return quote box
+            on ``templates/quote_result.html``.
+
+    Returns:
+        A receipt-style plain-text body suitable for SMTP delivery.
+
+    """
+
+    raw_accessorials = metadata.get("accessorials")
+    accessorials = raw_accessorials if isinstance(raw_accessorials, dict) else {}
+    accessorial_total = float(metadata.get("accessorial_total", 0.0) or 0.0)
+    base_charge = max(float(quote.total or 0.0) - accessorial_total, 0.0)
+
+    accessorial_names = ", ".join(accessorials.keys()) or "None"
+    return_text = "YES" if return_quote_requested else "NO"
+
+    lines = [
+        "QUOTE DETAILS",
+        "==========================================",
+        f"Quote ID: {quote.quote_id}",
+        f"Return Quote: {return_text}",
+        "",
+        "SHIPMENT SPECIFICATIONS",
+        "------------------------------------------",
+        f"Origin: {quote.origin}",
+        f"Destination: {quote.destination}",
+        f"Pieces: {quote.pieces}",
+        f"Weight: {float(quote.weight or 0.0):.2f} lbs ({quote.weight_method})",
+        f"Accessorials: {accessorial_names}",
+        "",
+        "PRICING BREAKDOWN",
+        "------------------------------------------",
+        f"Base Charge: $ {base_charge:.2f}",
+    ]
+
+    for name, raw_cost in accessorials.items():
+        safe_name = str(name)[:22]
+        cost = float(raw_cost or 0.0)
+        lines.append(f"{safe_name.ljust(23)} $ {cost:.2f}")
+
+    lines.extend(
+        [
+            "------------------------------------------",
+            f"TOTAL: $ {float(quote.total or 0.0):.2f}",
+            "==========================================",
+            "",
+            "Return to Quote Tool: https://quote.freightservices.net",
+            "Unsubscribe: https://quote.freightservices.net/help",
+        ]
+    )
+
+    return "\n".join(lines)
+
+
 def _render_email_request(
     quote_id: str,
     *,
@@ -601,4 +707,57 @@ def email_volume_request_form(quote_id: str):
         heading_text="Email Volume Pricing Request",
         intro_line="I'd like to move forward with volume pricing for the following quote",
         subject_prefix="Volume pricing request",
+    )
+
+
+@quotes_bp.route("/<quote_id>/email-self", methods=["POST"])
+@login_required
+def email_quote_to_me(quote_id: str):
+    """Send a plain-text quote copy to the authenticated user email address.
+
+    Args:
+        quote_id: Public quote identifier from the route path.
+
+    Returns:
+        The refreshed ``quote_result.html`` page with a success or error flash.
+
+    External dependencies:
+        * Sends mail via :func:`app.services.mail.send_email`.
+        * Renders ``templates/quote_result.html`` with
+          :func:`_quote_template_context`.
+    """
+
+    quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
+    metadata = json.loads(quote.quote_metadata or "{}")
+    if not isinstance(metadata, dict):
+        metadata = {}
+    metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
+
+    return_quote_requested = request.form.get("return_quote") == "yes"
+    email_body = _format_quote_copy_email_body(
+        quote,
+        metadata=metadata,
+        return_quote_requested=return_quote_requested,
+    )
+
+    unsubscribe_link = "https://quote.freightservices.net/help"
+    try:
+        send_email(
+            to=current_user.email,
+            subject=f"Quote Copy - {quote.quote_id}",
+            body=email_body,
+            user=current_user,
+            feature="quote_copy",
+            headers={
+                "List-Unsubscribe": f"<{unsubscribe_link}>",
+                "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+            },
+        )
+        flash(f"Quote details sent to {current_user.email}", "success")
+    except Exception:
+        logger.exception("Failed to send quote copy for quote_id=%s", quote.quote_id)
+        flash("Failed to send email. Please try again later.", "danger")
+
+    return render_template(
+        "quote_result.html", **_quote_template_context(quote, metadata)
     )
