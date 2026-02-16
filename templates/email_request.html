@@ -189,13 +189,23 @@
         <input type="date" id="return_pickup_date" name="return_pickup_date" class="form-control">
       </div>
       <div class="mb-3">
-        <label for="return_accessorial" class="form-label">Return accessorial</label>
-        <select id="return_accessorial" name="return_accessorial" class="form-select">
-          <option value="">Select return accessorial</option>
+        <p class="form-label mb-2">Return accessorial (select any that apply)</p>
+        <div id="return_accessorial" class="border rounded p-2">
           {% for option in return_accessorial_options %}
-          <option value="{{ option }}">{{ option }}</option>
+          <div class="form-check">
+            <input
+              class="form-check-input"
+              type="checkbox"
+              value="{{ option }}"
+              id="return_accessorial_{{ loop.index }}"
+              name="return_accessorial"
+            >
+            <label class="form-check-label" for="return_accessorial_{{ loop.index }}">
+              {{ option }}
+            </label>
+          </div>
           {% endfor %}
-        </select>
+        </div>
       </div>
       <div class="mb-0">
         <label for="return_notes" class="form-label">Return-specific notes</label>
@@ -348,7 +358,10 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   };
   const returnDetails = {
     pickupDate: f.return_pickup_date.value,
-    accessorial: f.return_accessorial.value,
+    accessorials: Array.from(
+      f.querySelectorAll('input[name="return_accessorial"]:checked'),
+      (checkbox) => checkbox.value
+    ),
     notes: normalizeFreeformNotes(f.return_notes.value)
   };
   const consignee = {
@@ -430,7 +443,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   if (returnQuoteRequested) {
     body += `[ RETURN SHIPMENT REQUEST ]\n`;
     body += `Desired Pickup Date: ${returnDetails.pickupDate || 'Not provided'}\n`;
-    body += `Return Accessorial:  ${returnDetails.accessorial || 'Not selected'}\n`;
+    body += `Return Accessorial:  ${returnDetails.accessorials.join(', ') || 'Not selected'}\n`;
     if (returnDetails.notes) {
       body += `NOTES:\n${returnDetails.notes}\n`;
     }

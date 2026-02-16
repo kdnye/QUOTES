@@ -169,6 +169,8 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert 'name="return_pickup_date"' in html
     assert 'id="return_accessorial"' in html
     assert 'name="return_accessorial"' in html
+    assert 'type="checkbox"' in html
+    assert "Select return accessorial" not in html
     assert 'id="return_notes"' in html
     assert 'name="return_notes"' in html
     assert (
@@ -314,7 +316,6 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
 
     response = client.post(
         f"/quotes/{quote.quote_id}/email-self",
-        data={"return_quote": "yes"},
     )
 
     assert response.status_code == 200
@@ -329,7 +330,7 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
     }
     body = str(sent["body"])
     assert f"Quote ID: {quote.quote_id}" in body
-    assert "Return Quote: YES" in body
+    assert "Return Quote:" not in body
     assert "Base Charge: $ 200.00" in body
     assert "TOTAL: $ 225.00" in body
 
@@ -369,4 +370,4 @@ def test_quote_result_template_contains_email_self_form(app: Flask) -> None:
     html = response.get_data(as_text=True)
     assert "Email a Copy to Myself" in html
     assert f"/quotes/{quote.quote_id}/email-self" in html
-    assert 'name="return_quote"' in html
+    assert 'name="return_quote"' not in html
