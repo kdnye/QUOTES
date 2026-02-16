@@ -213,8 +213,7 @@ def new_quote():
                     pieces = 1
             except (TypeError, ValueError):
                 errors.append("Pieces must be a whole number.")
-        
-        # Check piece limit
+
         if piece_err := check_air_piece_limit(quote_type, weight_actual, pieces):
             errors.append(piece_err)
 
@@ -413,4 +412,89 @@ def new_quote():
                 user_can_send_quote_email and quote_email_smtp_enabled
             ),
             quote_email_smtp_enabled=quote_email_smtp_enabled,
-            user_can_
+            user_can_send_quote_email=user_can_send_quote_email,
+        )
+
+    return render_template(
+        "new_quote.html", accessorial_options=accessorial_options, quote_type="Hotshot"
+    )
+
+
+def _render_email_request(
+    quote_id: str,
+    *,
+    admin_fee: float,
+    heading_text: str,
+    intro_line: str,
+    subject_prefix: str,
+) -> str:
+    """Return the email request form configured for a specific workflow.
+
+    Args:
+        quote_id: Public identifier for the quote displayed in the form.
+        admin_fee: Dollar amount added to the total for administrative costs.
+        heading_text: Page heading shown above the request form.
+        intro_line: First sentence inserted into the composed email body.
+        subject_prefix: Text prefixed to the generated email subject line.
+
+    Returns:
+        A rendered ``email_request.html`` template.
+
+    Notes:
+        The :func:`quotes.email_request_form` route requires authentication via
+        :func:`flask_login.login_required` before calling this helper.
+    """
+
+    quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
+    metadata = json.loads(quote.quote_metadata or "{}")
+
+    accessorial_total = float(metadata.get("accessorial_total", 0.0) or 0.0)
+    metadata["accessorial_total"] = accessorial_total
+    accessorials = metadata.get("accessorials") or {}
+    if not isinstance(accessorials, dict):
+        accessorials = {}
+    accessorial_names = ", ".join(accessorials.keys())
+
+    total_with_fee = float(quote.total or 0.0) + float(admin_fee)
+
+    return render_template(
+        "email_request.html",
+        quote=quote,
+        metadata=metadata,
+        accessorial_names=accessorial_names,
+        total_with_fee=total_with_fee,
+        user_name=current_user.name or "",
+        user_company=getattr(current_user, "company", "") or "",
+        page_heading=heading_text,
+        email_intro_line=intro_line,
+        subject_prefix=subject_prefix,
+        admin_fee=float(admin_fee),
+    )
+
+
+@quotes_bp.route("/<quote_id>/email", methods=["GET"])
+@login_required
+def email_request_form(quote_id: str):
+    """Render the booking workflow email form for the provided quote."""
+
+    return _render_email_request(
+        quote_id,
+        admin_fee=15.0,
+        heading_text="Email Booking Request",
+        intro_line="I'd like to go ahead and book the following quote",
+        subject_prefix="New Booking request",
+    )
+
+
+@quotes_bp.route("/<quote_id>/email-volume", methods=["GET"])
+@login_required
+def email_volume_request_form(quote_id: str):
+    """Render the volume pricing workflow email form for the provided quote."""
+
+    return _render_email_request(
+        quote_id,
+        admin_fee=0.0,
+        heading_text="Email Volume Pricing Request",
+        intro_line="I'd like to move forward with volume pricing for the following quote",
+        subject_prefix="Volume pricing request",
+    )

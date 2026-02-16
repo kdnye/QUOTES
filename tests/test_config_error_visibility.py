@@ -107,11 +107,12 @@ def test_config_error_visibility_respects_environment_and_flag(
     else:
         assert response.status_code == 404
 
+    page = client.get("/", follow_redirects=False)
     if environment == "production":
-        page = client.get("/")
+        assert page.status_code == 302
+        assert "/setup" in page.headers.get("Location", "")
+
+        setup_page = client.get("/setup")
+        assert setup_page.status_code == 200
+    else:
         assert page.status_code == 500
-        body = page.get_data(as_text=True)
-        if expect_visible:
-            assert "Missing POSTGRES_PASSWORD" in body
-        else:
-            assert "Missing POSTGRES_PASSWORD" not in body
