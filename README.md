@@ -15,8 +15,10 @@ Services portal.
 - Super admins can manage Office 365 SMTP credentials from the dashboard
 - Price engine uses Google Maps and rate tables
 - "Create New Quote" validates origin and destination ZIP codes against Google Places when a Maps key is configured
+- "Create New Quote" defaults to Air mode unless the user explicitly selects Hotshot
 - Quotes saved in a database
-- Warns when shipment weight or cost exceeds tool limits
+- Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
+- Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
 
 ## Feature status
 
@@ -27,6 +29,8 @@ Services portal.
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
+
+Operator note: Air quotes enforce per-piece limits using billable weight (the greater of actual or dimensional weight).
 
 ## Documentation hub
 
