@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-6 col-xl-5">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-3">Find Existing Quote</h1>
+        <p class="text-muted mb-4">
+          Enter the Quote ID from your quote results page or confirmation email to
+          retrieve pricing details.
+        </p>
+
+        <form method="post" class="row g-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+          <div class="col-12">
+            <label for="quote_id" class="form-label">Quote ID</label>
+            <input
+              type="text"
+              id="quote_id"
+              name="quote_id"
+              class="form-control"
+              placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
+              required
+            />
+            <div class="form-text">
+              You can find your Quote ID on the quote result page and in the quote
+              confirmation email.
+            </div>
+          </div>
+
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary w-100">Find Quote</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
