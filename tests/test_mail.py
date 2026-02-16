@@ -351,3 +351,146 @@ def test_validate_sender_domain_rejects_missing_at_symbol(app: Flask) -> None:
     with app.app_context():
         with pytest.raises(ValueError):
             mail_service.validate_sender_domain("missing-domain")
+
+
+def test_send_email_includes_html_alternative(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Attach a styled HTML alternative for SMTP clients that support HTML.
+
+    Args:
+        app: Flask application fixture providing configuration and DB context.
+        monkeypatch: Fixture used to replace SMTP calls in-process.
+
+    Returns:
+        ``None``. Assertions validate the generated MIME parts.
+
+    External dependencies:
+        * Calls :func:`app.services.mail.send_email`.
+        * Uses :class:`email.message.EmailMessage` APIs exposed by stdlib.
+    """
+
+    captured: dict[str, object] = {}
+
+    class CaptureSMTP:
+        """SMTP fake that captures the outbound message for assertions."""
+
+        def __init__(self, host: str, port: int) -> None:
+            """Store host and port for parity with the real SMTP class.
+
+            Args:
+                host: SMTP hostname requested by the mail helper.
+                port: SMTP port requested by the mail helper.
+
+            Returns:
+                ``None``. Values are captured for debug completeness.
+
+            External dependencies:
+                * Mirrors :class:`smtplib.SMTP` constructor signature.
+            """
+
+            captured["host"] = host
+            captured["port"] = port
+
+        def __enter__(self) -> "CaptureSMTP":
+            """Return self for context-managed SMTP interactions.
+
+            Returns:
+                ``self`` so ``send_message`` can be invoked.
+
+            External dependencies:
+                * Implements the context protocol used by
+                  :func:`app.services.mail.send_email`.
+            """
+
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> bool:
+            """Exit without suppressing exceptions.
+
+            Args:
+                exc_type: Exception type raised within the context, if any.
+                exc: Exception instance raised within the context, if any.
+                tb: Traceback object for the exception, if any.
+
+            Returns:
+                ``False`` to preserve normal exception propagation.
+
+            External dependencies:
+                * Mirrors :class:`smtplib.SMTP` context manager behavior.
+            """
+
+            return False
+
+        def starttls(self) -> None:
+            """No-op TLS hook for compatibility with the SMTP interface.
+
+            Returns:
+                ``None``.
+
+            External dependencies:
+                * Matches :meth:`smtplib.SMTP.starttls`.
+            """
+
+            return None
+
+        def login(self, user: str, password: str) -> None:
+            """No-op login hook for compatibility with the SMTP interface.
+
+            Args:
+                user: Username provided by the mail helper.
+                password: Password provided by the mail helper.
+
+            Returns:
+                ``None``.
+
+            External dependencies:
+                * Matches :meth:`smtplib.SMTP.login`.
+            """
+
+            return None
+
+        def send_message(self, message: object) -> None:
+            """Capture the final message object sent by the mail helper.
+
+            Args:
+                message: Email message object produced by the helper.
+
+            Returns:
+                ``None`` after storing the object for assertions.
+
+            External dependencies:
+                * Receives payload from :func:`app.services.mail.send_email`.
+            """
+
+            captured["message"] = message
+
+    monkeypatch.setattr(mail_service.smtplib, "SMTP", CaptureSMTP)
+
+    with app.app_context():
+        mail_service.send_email(
+            "recipient@example.com",
+            "Quote Ready",
+            "Review your quote at https://example.com/quotes/123\nThanks!",
+        )
+
+    message = captured["message"]
+    assert hasattr(message, "is_multipart")
+    assert message.is_multipart() is True
+    assert message.get_content_type() == "multipart/alternative"
+
+    plain_part, html_part = message.iter_parts()
+    assert plain_part.get_content_type() == "text/plain"
+    assert html_part.get_content_type() == "text/html"
+    assert (
+        "Review your quote at https://example.com/quotes/123"
+        in plain_part.get_content()
+    )
+    html_content = html_part.get_content()
+    assert "Freight Services" in html_content
+    assert '<a href="https://example.com/quotes/123"' in html_content

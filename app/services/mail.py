@@ -3,8 +3,10 @@ from __future__ import annotations
 """Utility helpers for outbound email policies and rate limiting."""
 
 import random
+import re
 import smtplib
 import time
+from html import escape
 from datetime import datetime, timedelta
 from email.message import EmailMessage
 from typing import Mapping, Optional, Tuple, Type
@@ -16,6 +18,75 @@ from app.models import EmailDispatchLog, User, db
 
 class MailRateLimitError(RuntimeError):
     """Raised when an outbound email exceeds configured rate limits."""
+
+
+def _build_professional_html_email(subject: str, body: str) -> str:
+    """Build a polished HTML email from plain-text inputs.
+
+    Args:
+        subject: Email subject line shown in the message header.
+        body: Plain-text body content supplied by the caller.
+
+    Returns:
+        A full HTML string suitable for ``EmailMessage.add_alternative``.
+
+    External dependencies:
+        * Uses :func:`html.escape` to safely render untrusted text.
+        * Uses :func:`re.sub` to detect and linkify HTTP(S) URLs in the body.
+    """
+
+    escaped_subject = escape(subject)
+    escaped_body = escape(body)
+    linked_body = re.sub(
+        r"(https?://[^\s<]+)",
+        lambda match: (
+            '<a href="{0}" style="color:#0f4c81;text-decoration:underline;">' "{0}</a>"
+        ).format(match.group(1)),
+        escaped_body,
+    )
+    formatted_body = linked_body.replace("\n", "<br>")
+
+    return (
+        "<!doctype html>"
+        '<html lang="en">'
+        "<head>"
+        '<meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        f"<title>{escaped_subject}</title>"
+        "</head>"
+        '<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,sans-serif;">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="background:#f4f6f8;padding:24px 12px;">'
+        "<tr>"
+        '<td align="center">'
+        '<table role="presentation" width="100%" cellspacing="0" cellpadding="0" '
+        'style="max-width:640px;background:#ffffff;border-radius:12px;'
+        'border:1px solid #d9e0e7;overflow:hidden;">'
+        "<tr>"
+        '<td style="padding:24px 28px;background:#0f4c81;color:#ffffff;">'
+        '<p style="margin:0;font-size:12px;letter-spacing:1.2px;text-transform:uppercase;">'
+        "Freight Services</p>"
+        f'<h1 style="margin:8px 0 0;font-size:20px;line-height:1.3;">{escaped_subject}</h1>'
+        "</td>"
+        "</tr>"
+        "<tr>"
+        '<td style="padding:24px 28px;color:#1f2d3d;font-size:15px;line-height:1.7;">'
+        f"{formatted_body}"
+        "</td>"
+        "</tr>"
+        "<tr>"
+        '<td style="padding:16px 28px 24px;color:#6b7785;font-size:12px;line-height:1.5;'
+        'border-top:1px solid #e5ebf0;">'
+        "This is an automated message from Freight Services."
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</td>"
+        "</tr>"
+        "</table>"
+        "</body>"
+        "</html>"
+    )
 
 
 def _normalize_feature(feature: Optional[str]) -> str:
@@ -235,10 +306,7 @@ def send_email(
 
     msg = EmailMessage()
     msg["Subject"] = subject
-    # --- START CHANGE ---
-    # Add Postmark Stream Header
     msg["X-PM-Message-Stream"] = "quote-tool"
-    # --- END CHANGE ---
     default_sender = current_app.config.get(
         "MAIL_DEFAULT_SENDER", "quote@freightservices.net"
     )
@@ -249,6 +317,7 @@ def send_email(
         for header_name, header_value in headers.items():
             msg[header_name] = header_value
     msg.set_content(body)
+    msg.add_alternative(_build_professional_html_email(subject, body), subtype="html")
     enforce_mail_rate_limit(feature, user, to)
 
     overrides = None
