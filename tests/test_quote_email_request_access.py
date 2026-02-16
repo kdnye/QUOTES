@@ -249,3 +249,109 @@ def test_email_request_form_omits_maps_script_when_key_missing(
     html = response.get_data(as_text=True)
     assert "maps.googleapis.com/maps/api/js" not in html
     assert "function initAddressAutocomplete()" in html
+
+
+def test_email_self_route_sends_quote_copy_and_flashes_success(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Send a quote copy to the logged-in user and include unsubscribe headers.
+
+    Args:
+        app: Test Flask app fixture with database bindings.
+        monkeypatch: Fixture used to intercept outbound mail calls.
+
+    Returns:
+        None. Assertions validate send arguments and rendered response content.
+
+    External dependencies:
+        * Calls ``quotes.email_quote_to_me`` through
+          :meth:`flask.testing.FlaskClient.post`.
+        * Stubs :func:`app.quotes.routes.send_email` to avoid SMTP activity.
+    """
+
+    customer = User(email="self-send@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+
+    quote = _create_quote_for_user(customer)
+    quote.quote_metadata = json.dumps(
+        {
+            "accessorial_total": 25.0,
+            "accessorials": {
+                "Liftgate Pickup/Delivery": 25.0,
+            },
+            "pieces": 2,
+        }
+    )
+    quote.pieces = 2
+    quote.total = 225.0
+    db.session.commit()
+
+    sent: dict[str, object] = {}
+
+    def _fake_send_email(**kwargs: object) -> None:
+        sent.update(kwargs)
+
+    monkeypatch.setattr("app.quotes.routes.send_email", _fake_send_email)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+
+    response = client.post(
+        f"/quotes/{quote.quote_id}/email-self",
+        data={"return_quote": "yes"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Email a Copy to Myself" in html
+    assert sent["to"] == customer.email
+    assert sent["feature"] == "quote_copy"
+    assert sent["headers"] == {
+        "List-Unsubscribe": "<https://quote.freightservices.net/help>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+    body = str(sent["body"])
+    assert f"Quote ID: {quote.quote_id}" in body
+    assert "Return Quote: YES" in body
+    assert "Base Charge: $ 200.00" in body
+    assert "TOTAL: $ 225.00" in body
+
+    with client.session_transaction() as session:
+        assert ("success", f"Quote details sent to {customer.email}") in session[
+            "_flashes"
+        ]
+
+
+def test_quote_result_template_contains_email_self_form(app: Flask) -> None:
+    """Render quote results with the self-email form for logged-in users.
+
+    Args:
+        app: Test Flask app fixture with database bindings.
+
+    Returns:
+        None. Assertions validate the new self-email card and route action.
+
+    External dependencies:
+        * Calls ``quotes.lookup_quote`` through
+          :meth:`flask.testing.FlaskClient.post` to render ``quote_result.html``.
+    """
+
+    customer = User(email="template-self@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+
+    quote = _create_quote_for_user(customer)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Email a Copy to Myself" in html
+    assert f"/quotes/{quote.quote_id}/email-self" in html
+    assert 'name="return_quote"' in html

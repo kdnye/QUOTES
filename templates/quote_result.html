@@ -70,12 +70,35 @@
     <a href="/help/quoting" target="_blank" rel="noopener">Need help?</a>
   </p>
   
-  <a href="https://freightservices.ts2000.net/Login/" class="btn btn-success" target="_blank" rel="noopener">Book Quote</a>
-  
+  <div class="d-flex flex-wrap gap-2 mb-4">
+    <a href="https://freightservices.ts2000.net/Login/" class="btn btn-success" target="_blank" rel="noopener">Book Quote</a>
+
+    {% if can_request_booking_email %}
+    <a href="{{ url_for('quotes.email_request_form', quote_id=quote.quote_id) }}" class="btn btn-secondary">Email to Request Booking ($15 admin fee)</a>
+    {% else %}
+    <button type="button" class="btn btn-secondary" disabled title="Log in to email a booking request">Email to Request Booking ($15 admin fee)</button>
+    {% endif %}
+  </div>
+
   {% if can_request_booking_email %}
-  <a href="{{ url_for('quotes.email_request_form', quote_id=quote.quote_id) }}" class="btn btn-secondary">Email to Request Booking ($15 admin fee)</a>
-  {% else %}
-  <button type="button" class="btn btn-secondary" disabled title="Log in to email a booking request">Email to Request Booking ($15 admin fee)</button>
+  <div class="card mb-4 border-info">
+    <div class="card-body">
+      <h3 class="h5 card-title">Email a Copy to Myself</h3>
+      <p class="card-text text-muted mb-3">
+        Send a plain-text receipt of this quote to your registered email address ({{ current_user.email }}).
+      </p>
+      <form method="post" action="{{ url_for('quotes.email_quote_to_me', quote_id=quote.quote_id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <div class="form-check mb-3">
+          <input class="form-check-input" type="checkbox" name="return_quote" value="yes" id="returnQuoteCheck">
+          <label class="form-check-label" for="returnQuoteCheck">
+            Include "Return Quote" note?
+          </label>
+        </div>
+        <button type="submit" class="btn btn-outline-primary">Send to Myself</button>
+      </form>
+    </div>
+  </div>
   {% endif %}
 
   {% if can_send_quote_email %}
