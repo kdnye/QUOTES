@@ -40,7 +40,7 @@
         value="Air"
         {% if quote_type == 'Air' %}checked{% endif %}
       />
-      <label class="form-check-label" for="qt_air">Air</label>
+      <label class="form-check-label" for="qt_air">Air Freight-Next Day</label>
     </div>
   </div>
 
@@ -69,13 +69,14 @@
     </div>
   </div>
 
+  
   <div class="mt-3">
     <label for="weight_actual" class="form-label">
-      Actual Weight (lbs)
+      Actual Weight (lbs) 
       <i
         class="bi bi-question-circle ms-1 text-secondary"
         data-bs-toggle="tooltip"
-        title="Enter the shipment's actual scale weight in pounds."
+        title="Enter the shipment's actual scale weight in pound, For individual pieces over 300 lbs please contact operations@freightservices.net for assistance. The greater of Actual vs Dimensional weight will apply"
       ></i>
     </label>
     <input type="number" step="0.01" min="0" id="weight_actual" name="weight_actual" class="form-control" required />
@@ -87,7 +88,7 @@
       <i
         class="bi bi-question-circle ms-1 text-secondary"
         data-bs-toggle="tooltip"
-        title="Provide the packaged dimensions of the freight in inches."
+        title="Provide the packaged dimensions of the freight in inches.For individual pieces over 300 lbs please contact operations@freightservices.net for assistance. The greater of Actual vs Dimensional weight will apply"
       ></i>
     </label>
     <div class="row g-2">
