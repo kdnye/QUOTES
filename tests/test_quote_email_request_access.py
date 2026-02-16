@@ -161,12 +161,20 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert expected_heading in html
     assert 'id="return_quote_requested"' in html
     assert 'name="return_quote_requested"' in html
+    assert 'id="shipper_notes"' in html
+    assert 'name="shipper_notes"' in html
+    assert 'id="consignee_notes"' in html
+    assert 'name="consignee_notes"' in html
     assert (
         "WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED "
         "(FSI WILL REPLY WITH RETURN QUOTE)" in html
     )
     assert "const returnQuoteRequested = f.return_quote_requested.checked;" in html
+    assert "normalizeFreeformNotes(f.shipper_notes.value)" in html
+    assert "normalizeFreeformNotes(f.consignee_notes.value)" in html
     assert "Return Quote Requested:" in html
+    assert "Shipper Notes:" in html
+    assert "Consignee Notes:" in html
     assert "returnQuoteRequested ? 'Yes' : 'No'" in html
 
 

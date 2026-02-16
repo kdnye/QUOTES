@@ -94,6 +94,17 @@
   <div class="mb-2">
     <label>Phone <input type="text" name="shipper_phone" class="form-control"></label>
   </div>
+  <div class="mb-3">
+    <label for="shipper_notes" class="form-label">Shipper Notes / Pickup Instructions</label>
+    <textarea
+      id="shipper_notes"
+      name="shipper_notes"
+      class="form-control"
+      rows="5"
+      maxlength="2000"
+      placeholder="Add pickup notes, dock details, hours, access instructions, or other shipper guidance."
+    ></textarea>
+  </div>
   <h4 class="d-flex align-items-center gap-2">
     Consignee info
     <span
@@ -157,6 +168,17 @@
   </div>
   <div class="mb-2">
     <label>Phone <input type="text" name="consignee_phone" class="form-control"></label>
+  </div>
+  <div class="mb-3">
+    <label for="consignee_notes" class="form-label">Consignee Notes / Delivery Instructions</label>
+    <textarea
+      id="consignee_notes"
+      name="consignee_notes"
+      class="form-control"
+      rows="5"
+      maxlength="2000"
+      placeholder="Add delivery notes, receiving requirements, site restrictions, or other consignee guidance."
+    ></textarea>
   </div>
   <button type="submit" class="btn btn-primary mt-3">Compose Email</button>
 </form>
@@ -284,6 +306,17 @@ if (window.google && google.maps && google.maps.places) {
   initAddressAutocomplete();
 }
 
+function normalizeFreeformNotes(value) {
+  // Normalize line endings and trim trailing whitespace while preserving
+  // intentional line breaks so multiline notes remain readable in email clients.
+  return (value || '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .map((line) => line.replace(/\s+$/g, ''))
+    .join('\n')
+    .trimEnd();
+}
+
 document.getElementById('emailForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const f = e.target;
@@ -295,7 +328,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     state: f.shipper_state.value,
     zip: f.shipper_zip.value,
     contact: f.shipper_contact.value,
-    phone: f.shipper_phone.value
+    phone: f.shipper_phone.value,
+    notes: normalizeFreeformNotes(f.shipper_notes.value)
   };
   const consignee = {
     name: f.consignee_name.value,
@@ -304,7 +338,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     state: f.consignee_state.value,
     zip: f.consignee_zip.value,
     contact: f.consignee_contact.value,
-    phone: f.consignee_phone.value
+    phone: f.consignee_phone.value,
+    notes: normalizeFreeformNotes(f.consignee_notes.value)
   };
 
   let body = `${data.email_intro_line}\n`;
@@ -341,7 +376,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Zip: ${shipper.zip}\n`;
   body += `Contact: ${shipper.contact}\n`;
   body += `Phone: ${shipper.phone}\n`;
-  body += ` `;
+  body += `Shipper Notes: ${shipper.notes}\n`;
+  body += `\n`;
   body += "Consignee info:\n";
   body += `Name: ${consignee.name}\n`;
   body += `Street Address: ${consignee.street}\n`;
@@ -350,6 +386,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Zip: ${consignee.zip}\n`;
   body += `Contact: ${consignee.contact}\n`;
   body += `Phone: ${consignee.phone}\n`;
+  body += `Consignee Notes: ${consignee.notes}\n`;
   body += "------------\n";
   const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} from ${data.user_name} at ${data.user_company} - Quote ID: ${data.quote_id}`;
   const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
