@@ -10,7 +10,7 @@ import json
 from app.database import Session, Quote, EmailQuoteRequest, Accessorial
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
-from app.quote.thresholds import check_thresholds
+from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 
@@ -117,7 +117,17 @@ def create_quote(
         accessorial_total += guarantee_cost
         quote_total += guarantee_cost
 
-    warning = check_thresholds(quote_type, billable_weight, quote_total)
+    warning_messages: list[str] = []
+    if threshold_warning := check_thresholds(quote_type, billable_weight, quote_total):
+        warning_messages.append(threshold_warning)
+    if piece_warning := check_air_piece_limit(
+        quote_type,
+        actual_weight,
+        pieces,
+        dim_weight_val,
+    ):
+        warning_messages.append(piece_warning)
+    warning = "\n".join(warning_messages)
 
     metadata = {
         "accessorials": accessorial_costs,

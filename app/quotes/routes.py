@@ -214,9 +214,6 @@ def new_quote():
             except (TypeError, ValueError):
                 errors.append("Pieces must be a whole number.")
 
-        if piece_err := check_air_piece_limit(quote_type, weight_actual, pieces):
-            errors.append(piece_err)
-
         def _parse_dim(name: str) -> float:
             raw = data.get(name)
             if raw in (None, ""):
@@ -246,6 +243,14 @@ def new_quote():
             weight_dim = 0.0
             if length and width and height:
                 weight_dim = ((length * width * height) / 166.0) * pieces
+
+        if piece_err := check_air_piece_limit(
+            quote_type,
+            weight_actual,
+            pieces,
+            weight_dim,
+        ):
+            errors.append(piece_err)
 
         if request.is_json:
             accessorials_field = data.get("accessorials") or []
