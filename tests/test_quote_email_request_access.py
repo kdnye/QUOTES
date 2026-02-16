@@ -118,6 +118,58 @@ def test_email_request_form_allows_customer_user(app: Flask) -> None:
     assert b"operations@freightservices.net" in response.data
 
 
+@pytest.mark.parametrize(
+    ("path_suffix", "expected_heading"),
+    [
+        ("email", "Email Booking Request"),
+        ("email-volume", "Email Volume Pricing Request"),
+    ],
+)
+def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
+    app: Flask, path_suffix: str, expected_heading: str
+) -> None:
+    """Ensure both request variants render return quote controls in shared template.
+
+    Args:
+        app: Test Flask app fixture with database bindings.
+        path_suffix: Route suffix selecting booking or volume variant.
+        expected_heading: Heading expected for the selected route variant.
+
+    Returns:
+        None. Assertions validate rendered HTML and body composition script.
+
+    External dependencies:
+        * Calls ``quotes.email_request_form`` and ``quotes.email_volume_request_form``
+          through :meth:`flask.testing.FlaskClient.get`.
+        * Validates JavaScript embedded by ``templates/email_request.html``.
+    """
+
+    customer = User(email=f"return-{path_suffix}@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+
+    quote = _create_quote_for_user(customer)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+
+    response = client.get(f"/quotes/{quote.quote_id}/{path_suffix}")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert expected_heading in html
+    assert 'id="return_quote_requested"' in html
+    assert 'name="return_quote_requested"' in html
+    assert (
+        "WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED "
+        "(FSI WILL REPLY WITH RETURN QUOTE)" in html
+    )
+    assert "const returnQuoteRequested = f.return_quote_requested.checked;" in html
+    assert "Return Quote Requested:" in html
+    assert "returnQuoteRequested ? 'Yes' : 'No'" in html
+
+
 def test_email_request_form_includes_maps_bootstrap_when_key_present(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

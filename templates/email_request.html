@@ -19,6 +19,17 @@
   {% endif %}
 </div>
 <form id="emailForm">
+  <div class="form-check mb-3">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      id="return_quote_requested"
+      name="return_quote_requested"
+    >
+    <label class="form-check-label" for="return_quote_requested">
+      WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED (FSI WILL REPLY WITH RETURN QUOTE)
+    </label>
+  </div>
   <h4 class="d-flex align-items-center gap-2">
     Shipper info
     <span
@@ -276,6 +287,7 @@ if (window.google && google.maps && google.maps.places) {
 document.getElementById('emailForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const f = e.target;
+  const returnQuoteRequested = f.return_quote_requested.checked;
   const shipper = {
     name: f.shipper_name.value,
     street: f.shipper_street.value,
@@ -298,6 +310,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   let body = `${data.email_intro_line}\n`;
   body += ` `;
   body += `Quote ID: ${data.quote_id}\n`;
+  body += `Return Quote Requested: ${returnQuoteRequested ? 'Yes' : 'No'}\n`;
   body += "------------\n";
   body += `Origin: ${data.origin}\n`;
   body += `Destination: ${data.destination}\n`;
