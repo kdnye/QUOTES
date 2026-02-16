@@ -8,12 +8,13 @@ Routes:
 
 import json
 import logging
+import os
 from dataclasses import dataclass
 from functools import lru_cache
 from types import MappingProxyType
 from typing import Mapping
 
-from flask import flash, jsonify, render_template, request
+from flask import current_app, flash, jsonify, render_template, request
 from flask_login import login_required, current_user
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
@@ -461,6 +462,11 @@ def _render_email_request(
     accessorial_names = ", ".join(accessorials.keys())
 
     total_with_fee = float(quote.total or 0.0) + float(admin_fee)
+    maps_api_key = (
+        current_app.config.get("GOOGLE_MAPS_API_KEY")
+        or os.getenv("GOOGLE_MAPS_API_KEY")
+        or os.getenv("MAPS_API_KEY")
+    )
 
     return render_template(
         "email_request.html",
@@ -474,6 +480,7 @@ def _render_email_request(
         email_intro_line=intro_line,
         subject_prefix=subject_prefix,
         admin_fee=float(admin_fee),
+        maps_api_key=maps_api_key,
     )
 
 
