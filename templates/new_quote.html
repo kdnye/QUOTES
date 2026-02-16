@@ -55,6 +55,7 @@
         ></i>
       </label>
       <input type="text" id="origin_zip" name="origin_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+      <div id="origin_zip_feedback" class="invalid-feedback"></div>
     </div>
     <div class="col-md-6">
       <label for="dest_zip" class="form-label">
@@ -66,6 +67,7 @@
         ></i>
       </label>
       <input type="text" id="dest_zip" name="dest_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+      <div id="dest_zip_feedback" class="invalid-feedback"></div>
     </div>
   </div>
 
@@ -179,6 +181,100 @@
       toggleGuarantee();
     });
   </script>
+
+
+  <script>
+    document.addEventListener('DOMContentLoaded', function () {
+      const form = document.querySelector('form');
+      const originInput = document.getElementById('origin_zip');
+      const destinationInput = document.getElementById('dest_zip');
+
+      function normalizeZip(value) {
+        return (value || '').replace(/\D/g, '').slice(0, 5);
+      }
+
+      function setFieldValidity(field, message) {
+        const feedback = document.getElementById(`${field.id}_feedback`);
+        if (!feedback) return;
+        if (message) {
+          feedback.textContent = message;
+          field.classList.add('is-invalid');
+        } else {
+          feedback.textContent = '';
+          field.classList.remove('is-invalid');
+        }
+      }
+
+      async function validateZipWithPlaces(field) {
+        const zip = normalizeZip(field.value);
+        field.value = zip;
+        if (zip.length !== 5) {
+          setFieldValidity(field, 'Please enter a valid 5-digit ZIP code.');
+          return false;
+        }
+
+        if (!window.google || !google.maps || !google.maps.places) {
+          setFieldValidity(field, '');
+          return true;
+        }
+
+        const service = new google.maps.places.AutocompleteService();
+        return new Promise((resolve) => {
+          service.getPlacePredictions(
+            {
+              input: zip,
+              types: ['postal_code'],
+              componentRestrictions: { country: 'us' },
+            },
+            (predictions, status) => {
+              if (status === google.maps.places.PlacesServiceStatus.OK) {
+                const matched = (predictions || []).some((prediction) => {
+                  const mainText = prediction.structured_formatting?.main_text || '';
+                  return normalizeZip(mainText) === zip;
+                });
+                if (matched) {
+                  setFieldValidity(field, '');
+                  resolve(true);
+                  return;
+                }
+              }
+
+              if (status === google.maps.places.PlacesServiceStatus.ZERO_RESULTS) {
+                setFieldValidity(field, 'ZIP code not found in Google Places.');
+                resolve(false);
+                return;
+              }
+
+              setFieldValidity(field, 'ZIP validation is temporarily unavailable.');
+              resolve(false);
+            }
+          );
+        });
+      }
+
+      [originInput, destinationInput].forEach((field) => {
+        field.addEventListener('blur', () => {
+          void validateZipWithPlaces(field);
+        });
+      });
+
+      form.addEventListener('submit', async (event) => {
+        const originOk = await validateZipWithPlaces(originInput);
+        const destinationOk = await validateZipWithPlaces(destinationInput);
+        if (!originOk || !destinationOk) {
+          event.preventDefault();
+        }
+      });
+    });
+  </script>
+
+  {% if maps_api_key %}
+  <script
+    src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key|urlencode }}&libraries=places"
+    async
+    defer
+  ></script>
+  {% endif %}
 
   {% if errors %}
     <div class="alert alert-danger mt-3">

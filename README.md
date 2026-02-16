@@ -14,6 +14,7 @@ Services portal.
 - Staff-only booking helpers let approved Freight Services employees email booking or volume-pricing requests directly from a quote
 - Super admins can manage Office 365 SMTP credentials from the dashboard
 - Price engine uses Google Maps and rate tables
+- "Create New Quote" validates origin and destination ZIP codes against Google Places when a Maps key is configured
 - Quotes saved in a database
 - Warns when shipment weight or cost exceeds tool limits
 

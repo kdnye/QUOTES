@@ -31,6 +31,7 @@ from ..models import (
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
+from app.quote.zip_validation import validate_us_zip
 from app.services.mail import user_has_mail_privileges
 from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
@@ -182,6 +183,11 @@ def new_quote():
     :func:`quote.thresholds.check_thresholds`.
     """
     accessorial_options, accessorial_map = _get_accessorial_choices()
+    maps_api_key = (
+        current_app.config.get("GOOGLE_MAPS_API_KEY")
+        or os.getenv("GOOGLE_MAPS_API_KEY")
+        or os.getenv("MAPS_API_KEY")
+    )
 
     if request.method == "POST":
         data = request.form or request.json or {}
@@ -190,6 +196,23 @@ def new_quote():
         destination = data.get("dest_zip") or data.get("destination", "")
 
         errors: list[str] = []
+        origin_valid, origin_reason = validate_us_zip(origin, api_key=maps_api_key)
+        destination_valid, destination_reason = validate_us_zip(
+            destination, api_key=maps_api_key
+        )
+        if not origin_valid:
+            if origin_reason == "invalid_format":
+                errors.append("Origin ZIP must include at least 5 digits.")
+            else:
+                errors.append("Origin ZIP could not be validated with Google Places.")
+        if not destination_valid:
+            if destination_reason == "invalid_format":
+                errors.append("Destination ZIP must include at least 5 digits.")
+            else:
+                errors.append(
+                    "Destination ZIP could not be validated with Google Places."
+                )
+
         weight_actual_raw = data.get("weight_actual")
         if weight_actual_raw in (None, ""):
             errors.append("Actual weight is required and must be a number.")
@@ -274,6 +297,7 @@ def new_quote():
                     errors=errors,
                     accessorial_options=accessorial_options,
                     quote_type=quote_type,
+                    maps_api_key=maps_api_key,
                 ),
                 400,
             )
@@ -330,6 +354,7 @@ def new_quote():
                             accessorial_options=accessorial_options,
                             quote_type=quote_type,
                             errors=[err],
+                            maps_api_key=maps_api_key,
                         ),
                         400,
                     )
@@ -422,7 +447,10 @@ def new_quote():
         )
 
     return render_template(
-        "new_quote.html", accessorial_options=accessorial_options, quote_type="Air"
+        "new_quote.html",
+        accessorial_options=accessorial_options,
+        quote_type="Air",
+        maps_api_key=maps_api_key,
     )
 
 
