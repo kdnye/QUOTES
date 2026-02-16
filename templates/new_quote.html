@@ -19,18 +19,7 @@
         <i class="bi bi-question-circle" aria-hidden="true"></i>
         <span class="visually-hidden">Compare quote types</span>
       </a>
-    </label>
-    <div class="form-check form-check-inline">
-      <input
-        class="form-check-input"
-        type="radio"
-        name="quote_type"
-        id="qt_hotshot"
-        value="Hotshot"
-        {% if quote_type != 'Air' %}checked{% endif %}
-      />
-      <label class="form-check-label" for="qt_hotshot">Hotshot</label>
-    </div>
+</label>
     <div class="form-check form-check-inline">
       <input
         class="form-check-input"
@@ -41,6 +30,17 @@
         {% if quote_type == 'Air' %}checked{% endif %}
       />
       <label class="form-check-label" for="qt_air">Air Freight-Next Day</label>
+    </div>
+    <div class="form-check form-check-inline">
+      <input
+        class="form-check-input"
+        type="radio"
+        name="quote_type"
+        id="qt_hotshot"
+        value="Hotshot"
+        {% if quote_type != 'Air' %}checked{% endif %}
+      />
+      <label class="form-check-label" for="qt_hotshot">Hotshot</label>
     </div>
   </div>
 
