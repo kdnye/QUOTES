@@ -184,7 +184,7 @@ def new_quote():
 
     if request.method == "POST":
         data = request.form or request.json or {}
-        quote_type = data.get("quote_type", "Hotshot")
+        quote_type = data.get("quote_type", "Air")
         origin = data.get("origin_zip") or data.get("origin", "")
         destination = data.get("dest_zip") or data.get("destination", "")
 
@@ -416,7 +416,7 @@ def new_quote():
         )
 
     return render_template(
-        "new_quote.html", accessorial_options=accessorial_options, quote_type="Hotshot"
+        "new_quote.html", accessorial_options=accessorial_options, quote_type="Air"
     )
 
 
