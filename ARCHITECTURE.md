@@ -62,6 +62,7 @@ Key tables:
 - `distance.py` – wraps Google Maps Directions API with retry logic.
 - `logic_hotshot.py` – computes hotshot quotes based on distance, zone, and rate tables.
 - `logic_air.py` – computes air quotes using zone lookups and beyond charges.
+- `thresholds.py` – enforces quote safeguards via `check_thresholds` for warning-level limits and `check_air_piece_limit` for Air per-piece billable-weight validation.
 - `theme.py` and `admin_view.py` – presentation helpers and admin pages.
 
 #### Quote Calculation Formulas
@@ -98,6 +99,13 @@ The pricing modules implement the following core functions:
 
 - Variables: `base` = base charge plus any beyond charges, excluding other accessorials, `g` = guarantee percentage.
 - Function: `base × (g / 100)`
+
+#### Validation & Limits
+
+- Air quote warning is generated when billable weight exceeds `1200` lb.
+- Generic quote warning is generated when billable weight exceeds `3000` lb or quote total exceeds `$6000`.
+- Air quote validation fails when billable pounds per piece exceed `300`, where billable weight is calculated as `max(actual_weight, dim_weight)` and then divided by `pieces`.
+- These rules are enforced in `app/quotes/routes.py` during quote submission: piece-limit failures can block quote creation, while threshold checks annotate the quote with warnings.
 
 ### Services Layer (`services` package)
 - `auth_utils.py` – password/email validation and password reset token handling.
