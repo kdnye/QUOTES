@@ -562,7 +562,6 @@ def _format_quote_copy_email_body(
     quote: Quote,
     *,
     metadata: dict[str, object],
-    return_quote_requested: bool,
 ) -> str:
     """Compose plain-text quote details for the self-email workflow.
 
@@ -570,8 +569,6 @@ def _format_quote_copy_email_body(
         quote: Quote instance being emailed.
         metadata: Parsed ``quote.quote_metadata`` payload that may include
             accessorial pricing entries.
-        return_quote_requested: Whether the user checked the return quote box
-            on ``templates/quote_result.html``.
 
     Returns:
         A receipt-style plain-text body suitable for SMTP delivery.
@@ -584,13 +581,10 @@ def _format_quote_copy_email_body(
     base_charge = max(float(quote.total or 0.0) - accessorial_total, 0.0)
 
     accessorial_names = ", ".join(accessorials.keys()) or "None"
-    return_text = "YES" if return_quote_requested else "NO"
-
     lines = [
         "QUOTE DETAILS",
         "==========================================",
         f"Quote ID: {quote.quote_id}",
-        f"Return Quote: {return_text}",
         "",
         "SHIPMENT SPECIFICATIONS",
         "------------------------------------------",
@@ -739,11 +733,9 @@ def email_quote_to_me(quote_id: str):
         metadata = {}
     metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
 
-    return_quote_requested = request.form.get("return_quote") == "yes"
     email_body = _format_quote_copy_email_body(
         quote,
         metadata=metadata,
-        return_quote_requested=return_quote_requested,
     )
 
     unsubscribe_link = "https://quote.freightservices.net/help"
