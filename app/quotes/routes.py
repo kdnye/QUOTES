@@ -647,6 +647,10 @@ def _render_email_request(
     Notes:
         The :func:`quotes.email_request_form` route requires authentication via
         :func:`flask_login.login_required` before calling this helper.
+
+    External dependencies:
+        * Calls :func:`_get_accessorial_choices` to provide return-accessorial
+          options in the booking form.
     """
 
     quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
@@ -665,6 +669,7 @@ def _render_email_request(
         or os.getenv("GOOGLE_MAPS_API_KEY")
         or os.getenv("MAPS_API_KEY")
     )
+    return_accessorial_options, _ = _get_accessorial_choices()
 
     return render_template(
         "email_request.html",
@@ -679,6 +684,7 @@ def _render_email_request(
         subject_prefix=subject_prefix,
         admin_fee=float(admin_fee),
         maps_api_key=maps_api_key,
+        return_accessorial_options=return_accessorial_options,
     )
 
 

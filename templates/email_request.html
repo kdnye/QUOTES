@@ -19,17 +19,6 @@
   {% endif %}
 </div>
 <form id="emailForm">
-  <div class="form-check mb-3 border border-warning border-3 rounded p-3" style="background-color: #fff3cd;">
-    <input
-      class="form-check-input"
-      type="checkbox"
-      id="return_quote_requested"
-      name="return_quote_requested"
-    >
-    <label class="form-check-label fw-bold" for="return_quote_requested">
-      Will you need a return shipment?/Return handling Requested (FSI will reply with a return quote)
-    </label>
-  </div>
   <h4 class="d-flex align-items-center gap-2">
     Shipper info
     <span
@@ -180,6 +169,48 @@
       placeholder="Add delivery notes, receiving requirements, site restrictions, or other consignee guidance."
     ></textarea>
   </div>
+
+  <div class="border border-warning border-3 rounded p-3 mt-3" style="background-color: #fff3cd;">
+    <div class="form-check mb-3">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        id="return_quote_requested"
+        name="return_quote_requested"
+      >
+      <label class="form-check-label fw-bold" for="return_quote_requested">
+        Will you need a return shipment?/Return handling Requested (FSI will reply with a return quote)
+      </label>
+    </div>
+
+    <div id="return_shipment_details" class="d-none">
+      <div class="mb-3">
+        <label for="return_pickup_date" class="form-label">Desired return pickup date</label>
+        <input type="date" id="return_pickup_date" name="return_pickup_date" class="form-control">
+      </div>
+      <div class="mb-3">
+        <label for="return_accessorial" class="form-label">Return accessorial</label>
+        <select id="return_accessorial" name="return_accessorial" class="form-select">
+          <option value="">Select return accessorial</option>
+          {% for option in return_accessorial_options %}
+          <option value="{{ option }}">{{ option }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="mb-0">
+        <label for="return_notes" class="form-label">Return-specific notes</label>
+        <textarea
+          id="return_notes"
+          name="return_notes"
+          class="form-control"
+          rows="4"
+          maxlength="2000"
+          placeholder="Add return pickup notes, access instructions, or special handling details."
+        ></textarea>
+      </div>
+    </div>
+  </div>
+
   <button type="submit" class="btn btn-primary mt-3">Compose Email</button>
 </form>
 {% set base_total = quote.total - metadata.accessorial_total %}
@@ -279,6 +310,19 @@ if (window.google && google.maps && google.maps.places) {
   initAddressAutocomplete();
 }
 
+const returnQuoteCheckbox = document.getElementById('return_quote_requested');
+const returnShipmentDetails = document.getElementById('return_shipment_details');
+
+function toggleReturnShipmentDetails() {
+  if (!returnQuoteCheckbox || !returnShipmentDetails) return;
+  returnShipmentDetails.classList.toggle('d-none', !returnQuoteCheckbox.checked);
+}
+
+if (returnQuoteCheckbox && returnShipmentDetails) {
+  returnQuoteCheckbox.addEventListener('change', toggleReturnShipmentDetails);
+  toggleReturnShipmentDetails();
+}
+
 function normalizeFreeformNotes(value) {
   return (value || '')
     .replace(/\r\n?/g, '\n')
@@ -301,6 +345,11 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     contact: f.shipper_contact.value,
     phone: f.shipper_phone.value,
     notes: normalizeFreeformNotes(f.shipper_notes.value)
+  };
+  const returnDetails = {
+    pickupDate: f.return_pickup_date.value,
+    accessorial: f.return_accessorial.value,
+    notes: normalizeFreeformNotes(f.return_notes.value)
   };
   const consignee = {
     name: f.consignee_name.value,
@@ -377,6 +426,16 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     body += `NOTES:\n${consignee.notes}\n`;
   }
   body += `\n`;
+
+  if (returnQuoteRequested) {
+    body += `[ RETURN SHIPMENT REQUEST ]\n`;
+    body += `Desired Pickup Date: ${returnDetails.pickupDate || 'Not provided'}\n`;
+    body += `Return Accessorial:  ${returnDetails.accessorial || 'Not selected'}\n`;
+    if (returnDetails.notes) {
+      body += `NOTES:\n${returnDetails.notes}\n`;
+    }
+    body += `\n`;
+  }
 
   // Final Link Generation
   const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} - Quote ${data.quote_id}`;

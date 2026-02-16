@@ -49,9 +49,15 @@
 
 <h2 id="return-quote">Return quote checkbox behavior and intent</h2>
 <p>
-  The highlighted checkbox at the top of the form asks whether return shipment handling is needed.
-  When selected, the composed message sets <strong>Return Quote: YES</strong>; otherwise it sends
-  <strong>Return Quote: No</strong>.
+  The highlighted return shipment section appears near the end of the form, directly above
+  <strong>Compose Email</strong>. It includes the return quote checkbox and, when selected,
+  additional fields for desired return pickup date, return accessorial selection, and return-specific
+  notes.
+</p>
+<p>
+  In the composed message, the app always sets <strong>Return Quote: YES/No</strong> in Quote Details.
+  If the box is selected, a dedicated <strong>[ RETURN SHIPMENT REQUEST ]</strong> block is added
+  immediately after consignee notes so operations can review return handling requirements in one place.
 </p>
 <p>
   The purpose is to alert operations that the same customer may need a quote for the reverse lane,

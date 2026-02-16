@@ -159,23 +159,37 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert expected_heading in html
-    assert 'id="return_quote_requested"' in html
-    assert 'name="return_quote_requested"' in html
     assert 'id="shipper_notes"' in html
     assert 'name="shipper_notes"' in html
     assert 'id="consignee_notes"' in html
     assert 'name="consignee_notes"' in html
+    assert 'id="return_quote_requested"' in html
+    assert 'name="return_quote_requested"' in html
+    assert 'id="return_pickup_date"' in html
+    assert 'name="return_pickup_date"' in html
+    assert 'id="return_accessorial"' in html
+    assert 'name="return_accessorial"' in html
+    assert 'id="return_notes"' in html
+    assert 'name="return_notes"' in html
     assert (
         "WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED "
         "(FSI WILL REPLY WITH RETURN QUOTE)" in html
     )
+    assert html.index('id="consignee_notes"') < html.index(
+        'id="return_quote_requested"'
+    )
+    assert html.index('id="return_quote_requested"') < html.index("Compose Email")
     assert "const returnQuoteRequested = f.return_quote_requested.checked;" in html
     assert "normalizeFreeformNotes(f.shipper_notes.value)" in html
     assert "normalizeFreeformNotes(f.consignee_notes.value)" in html
-    assert "Return Quote Requested:" in html
-    assert "Shipper Notes:" in html
-    assert "Consignee Notes:" in html
-    assert "returnQuoteRequested ? 'Yes' : 'No'" in html
+    assert "normalizeFreeformNotes(f.return_notes.value)" in html
+    assert (
+        "returnShipmentDetails.classList.toggle('d-none', !returnQuoteCheckbox.checked);"
+        in html
+    )
+    assert "[ RETURN SHIPMENT REQUEST ]" in html
+    assert "Desired Pickup Date:" in html
+    assert "Return Accessorial:" in html
 
 
 def test_email_request_form_includes_maps_bootstrap_when_key_present(
