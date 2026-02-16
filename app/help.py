@@ -240,3 +240,23 @@ def account_setup_guide() -> str:
     """
 
     return render_template("help/register.html")
+
+
+@help_bp.get("/emailing")
+def emailing_guide() -> str:
+    """Render the quote email request workflow documentation.
+
+    The view provides detailed guidance for the booking request email handoff,
+    including the receipt-style email body sections and return-quote behavior
+    used by ``templates/email_request.html``. It relies on
+    :func:`flask.render_template` to display the
+    ``templates/help/emailing.html`` article.
+
+    Args:
+        None.
+
+    Returns:
+        Rendered HTML string for the email workflow help page.
+    """
+
+    return render_template("help/emailing.html")

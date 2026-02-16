@@ -1,0 +1,77 @@
+{% extends "base.html" %}
+
+{% block title %}Email Request Workflow · Quote Tool{% endblock %}
+
+{% block content %}
+<h1>Email Request Workflow</h1>
+<p class="text-muted">
+  Use this guide when sending a booking request from the quote screen. The form creates a
+  pre-filled email in your default mail client so operations can review and dispatch the load.
+</p>
+
+<h2 id="body-layout">Receipt-style composed body sections</h2>
+<p>
+  Selecting <strong>Compose Email</strong> builds a plain-text message with fixed sections that keep
+  shipment data easy to scan. The generated body mirrors a receipt layout with separators and
+  consistent labels.
+</p>
+<ul>
+  <li>
+    <strong>Quote Details:</strong> Includes the quote ID and whether a return quote is requested.
+  </li>
+  <li>
+    <strong>Shipment Specifications:</strong> Lists origin, destination, pieces, weight, weight type,
+    and accessorial labels.
+  </li>
+  <li>
+    <strong>Pricing Breakdown:</strong> Shows base charge, each accessorial amount, and the final total
+    (plus the email admin fee when configured).
+  </li>
+  <li>
+    <strong>Logistics Contacts:</strong> Captures shipper and consignee names, addresses, contacts,
+    phone numbers, and optional notes.
+  </li>
+</ul>
+
+<h2 id="shipment-data">Piece count and weight method</h2>
+<p>
+  The shipment section always includes total pieces and weight in pounds, then prints the saved
+  weight method in parentheses:
+</p>
+<ul>
+  <li><code>Actual</code> when the quote is priced using measured weight.</li>
+  <li><code>Dimensional</code> when the quote is priced by dimensional weight rules.</li>
+</ul>
+<p>
+  This output comes directly from <code>quote.weight_method</code>, so users do not need to select it
+  again on the email form.
+</p>
+
+<h2 id="return-quote">Return quote checkbox behavior and intent</h2>
+<p>
+  The highlighted checkbox at the top of the form asks whether return shipment handling is needed.
+  When selected, the composed message sets <strong>Return Quote: YES</strong>; otherwise it sends
+  <strong>Return Quote: No</strong>.
+</p>
+<p>
+  The purpose is to alert operations that the same customer may need a quote for the reverse lane,
+  so the team can follow up with return pricing after the outbound request is reviewed.
+</p>
+
+<h2 id="handoff">Mailto handoff to operations inbox</h2>
+<p>
+  The form does not send mail directly from the web app. Instead, it creates a
+  <code>mailto:</code> link that opens your local email client with the subject and body prefilled.
+  The recipient is always the operations inbox:
+  <a href="mailto:operations@freightservices.net">operations@freightservices.net</a>.
+</p>
+<ul>
+  <li>Review the message content in your email client before sending.</li>
+  <li>Add attachments or internal recipients if your process requires them.</li>
+  <li>Send the message to complete the handoff from quoting to operations.</li>
+</ul>
+
+<p class="mt-5">
+  <a class="btn btn-outline-secondary" href="{{ url_for('help.help_index') }}">Back to Help Center</a>
+</p>
+{% endblock %}
