@@ -37,9 +37,31 @@ def check_thresholds(quote_type: str, weight: float, total: float) -> str:
     return ""
 
 
-def check_air_piece_limit(quote_type: str, weight: float, pieces: int) -> str | None:
-    """Return an error message if air freight exceeds 300 lbs per piece."""
+def check_air_piece_limit(
+    quote_type: str,
+    actual_weight: float,
+    pieces: int,
+    dim_weight: float = 0.0,
+) -> str | None:
+    """Return an error message when air freight exceeds 300 billable lbs/piece.
+
+    Inputs:
+        quote_type: Shipment mode (for example, ``"Air"``).
+        actual_weight: Scale weight in pounds for the full shipment.
+        pieces: Number of pieces in the shipment.
+        dim_weight: Optional pre-calculated dimensional weight in pounds for
+            the full shipment.
+
+    Output:
+        The :data:`AIR_PIECE_LIMIT_WARNING` message when the shipment is air
+        freight and the billable pounds-per-piece is over 300, otherwise
+        ``None``.
+
+    External dependencies:
+        None.
+    """
     if quote_type.lower() == "air" and pieces > 0:
-        if (weight / pieces) > 300:
+        billable_weight = max(actual_weight, dim_weight)
+        if (billable_weight / pieces) > 300:
             return AIR_PIECE_LIMIT_WARNING
     return None
