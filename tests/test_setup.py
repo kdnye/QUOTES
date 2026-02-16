@@ -8,9 +8,11 @@ from flask import Flask
 from flask.testing import FlaskClient
 from sqlalchemy.exc import OperationalError
 
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.append(str(PROJECT_ROOT))
 
+import app as app_module
 from app import create_app
 from app.models import User, db
 
@@ -123,6 +125,55 @@ def test_setup_redirects_when_only_config_errors(
     with app.app_context():
         db.session.remove()
         db.drop_all()
+
+
+def test_config_errors_skip_setup_required_db_validation(
+    monkeypatch: pytest.MonkeyPatch, postgres_database_url: str
+) -> None:
+    """Ensure config errors avoid setup-required database validation.
+
+    Args:
+        monkeypatch: Pytest fixture used to override startup behavior.
+        postgres_database_url: PostgreSQL connection string for tests.
+
+    External dependencies:
+        * Calls :func:`app.create_app` to build the Flask application.
+        * Overrides :func:`app._is_setup_required` with ``monkeypatch``.
+    """
+
+    class ConfigWithErrors(TestConfig):
+        """Configuration that forces startup into config-error mode."""
+
+        SQLALCHEMY_DATABASE_URI = postgres_database_url
+        CONFIG_ERRORS = ["Missing required environment variables."]
+
+    def fail_if_called() -> bool:
+        """Raise if setup-required validation executes unexpectedly.
+
+        Returns:
+            Never returns because the function always raises.
+
+        External dependencies:
+            * Intended to replace :func:`app._is_setup_required`.
+        """
+
+        raise RuntimeError("_is_setup_required should be skipped")
+
+    monkeypatch.setattr(app_module, "_is_setup_required", fail_if_called)
+    monkeypatch.setenv("MIGRATE_ON_STARTUP", "false")
+
+    app = create_app(ConfigWithErrors)
+    client = app.test_client()
+
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code == 302
+    assert "/setup" in response.headers.get("Location", "")
+
+    setup_page = client.get("/setup")
+    assert setup_page.status_code == 200
+
+    healthz = client.get("/healthz")
+    assert healthz.status_code == 200
 
 
 def test_setup_admin_creates_super_admin(app: Flask, client: FlaskClient) -> None:

@@ -426,20 +426,26 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                     "disabled."
                 )
         reload_overrides(app)
-        try:
-            app.config["SETUP_REQUIRED"] = _is_setup_required()
-            if app.config.pop("SETUP_VALIDATION_FAILED", False):
+        app.config["SETUP_REQUIRED"] = False
+        if not config_errors:
+            try:
+                app.config["SETUP_REQUIRED"] = _is_setup_required()
+                if app.config.pop("SETUP_VALIDATION_FAILED", False):
+                    non_config_errors.append(
+                        "Unable to validate setup status due to database errors."
+                    )
+            except Exception as exc:  # pragma: no cover - defensive guard
+                app.logger.warning(
+                    "Setup validation failed; enabling maintenance mode: %s", exc
+                )
                 non_config_errors.append(
                     "Unable to validate setup status due to database errors."
                 )
-        except Exception as exc:  # pragma: no cover - defensive guard
-            app.logger.warning(
-                "Setup validation failed; enabling maintenance mode: %s", exc
+                app.config["SETUP_REQUIRED"] = False
+        else:
+            app.logger.info(
+                "Skipping setup-required validation due to configuration errors."
             )
-            non_config_errors.append(
-                "Unable to validate setup status due to database errors."
-            )
-            app.config["SETUP_REQUIRED"] = False
 
         if config_errors:
             setup_errors.extend(config_errors)
