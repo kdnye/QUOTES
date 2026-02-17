@@ -908,13 +908,23 @@ def email_quote_to_me(quote_id: str):
         metadata = {}
     metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
 
-    email_body = _format_quote_copy_email_body(quote, metadata=metadata)
+    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
+    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+
+    email_body = _format_quote_copy_email_body(
+        quote,
+        metadata=metadata,
+        origin_notes=origin_notes,
+        dest_notes=dest_notes,
+    )
     action_url = url_for("quotes.new_quote", _external=True)
     html_body = _format_quote_copy_email_html(
         quote,
         metadata=metadata,
         intro_message=SELF_QUOTE_EMAIL_INTRO,
         action_url=action_url,
+        origin_notes=origin_notes,
+        dest_notes=dest_notes,
     )
 
     unsubscribe_link = "https://quote.freightservices.net/help"
