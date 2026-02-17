@@ -105,6 +105,9 @@
     </label>
   </div>
   <div class="mb-2">
+    <label>Shipper Reference <input type="text" name="shipper_reference" class="form-control"></label>
+  </div>
+  <div class="mb-2">
     <label>Phone <input type="text" name="shipper_phone" class="form-control"></label>
   </div>
   <div class="mb-3">
@@ -178,6 +181,9 @@
       </span>
       <input type="text" name="consignee_contact" class="form-control">
     </label>
+  </div>
+  <div class="mb-2">
+    <label>Consignee Reference <input type="text" name="consignee_reference" class="form-control"></label>
   </div>
   <div class="mb-2">
     <label>Phone <input type="text" name="consignee_phone" class="form-control"></label>
@@ -379,6 +385,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     state: f.shipper_state.value,
     zip: f.shipper_zip.value,
     contact: f.shipper_contact.value,
+    reference: f.shipper_reference.value,
     phone: f.shipper_phone.value,
     notes: normalizeFreeformNotes(f.shipper_notes.value)
   };
@@ -397,6 +404,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     state: f.consignee_state.value,
     zip: f.consignee_zip.value,
     contact: f.consignee_contact.value,
+    reference: f.consignee_reference.value,
     phone: f.consignee_phone.value,
     notes: normalizeFreeformNotes(f.consignee_notes.value)
   };
@@ -450,6 +458,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Name:    ${shipper.name}\n`;
   body += `Address: ${shipper.street}\n`;
   body += `         ${shipper.city}, ${shipper.state} ${shipper.zip}\n`;
+  body += `Shipper Reference: ${shipper.reference}\n`;
   body += `Contact: ${shipper.contact}\n`;
   body += `Phone:   ${shipper.phone}\n`;
   if (shipper.notes) {
@@ -461,6 +470,7 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `Name:    ${consignee.name}\n`;
   body += `Address: ${consignee.street}\n`;
   body += `         ${consignee.city}, ${consignee.state} ${consignee.zip}\n`;
+  body += `Consignee Reference: ${consignee.reference}\n`;
   body += `Contact: ${consignee.contact}\n`;
   body += `Phone:   ${consignee.phone}\n`;
   if (consignee.notes) {
