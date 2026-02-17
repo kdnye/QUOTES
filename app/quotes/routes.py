@@ -15,7 +15,7 @@ from functools import lru_cache
 from types import MappingProxyType
 from typing import Mapping
 
-from flask import current_app, flash, jsonify, render_template, request
+from flask import current_app, flash, jsonify, render_template, request, url_for
 from flask_login import login_required, current_user
 from sqlalchemy import inspect
 from sqlalchemy.exc import OperationalError
@@ -40,6 +40,13 @@ from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 logger = logging.getLogger(__name__)
 
 READABLE_QUOTE_ID_PATTERN = re.compile(r"^Q-[A-HJ-NP-Z2-9]{8}$")
+SELF_QUOTE_EMAIL_INTRO = (
+    "Here's the copy of your quote you requested be sent to yourself."
+)
+EXTERNAL_QUOTE_EMAIL_INTRO = (
+    "A message from Freight Services, Here is the quote information "
+    "you were inquiring about."
+)
 
 
 def _get_client_ip() -> str | None:
@@ -642,6 +649,48 @@ def _format_quote_copy_email_body(
     return "\n".join(lines)
 
 
+def _format_quote_copy_email_html(
+    quote: Quote,
+    *,
+    metadata: dict[str, object],
+    intro_message: str,
+    action_url: str,
+) -> str:
+    """Compose a branded HTML quote summary email.
+
+    Args:
+        quote: Quote instance being rendered in the email.
+        metadata: Parsed ``quote.quote_metadata`` payload that may include
+            accessorial pricing entries.
+        intro_message: Message shown below the heading. Callers should only
+            vary this value across self-send and customer-send workflows.
+        action_url: Absolute URL linked from the call-to-action button.
+
+    Returns:
+        HTML markup for the quote summary email body.
+
+    External dependencies:
+        * Calls :func:`url_for` values provided by the route for CTA linking.
+    """
+
+    raw_accessorials = metadata.get("accessorials")
+    accessorials = raw_accessorials if isinstance(raw_accessorials, dict) else {}
+    accessorial_total = float(metadata.get("accessorial_total", 0.0) or 0.0)
+    base_charge = max(float(quote.total or 0.0) - accessorial_total, 0.0)
+    accessorial_names = ", ".join(accessorials.keys()) or "None"
+
+    return render_template(
+        "emails/quote_copy.html",
+        heading="Freight Services Quote Summary",
+        intro_message=intro_message,
+        quote=quote,
+        base_charge=base_charge,
+        accessorials=accessorials,
+        accessorial_names=accessorial_names,
+        action_url=action_url,
+    )
+
+
 def _render_email_request(
     quote_id: str,
     *,
@@ -757,17 +806,22 @@ def email_quote_to_me(quote_id: str):
         metadata = {}
     metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
 
-    email_body = _format_quote_copy_email_body(
+    email_body = _format_quote_copy_email_body(quote, metadata=metadata)
+    action_url = url_for("quotes.new_quote", _external=True)
+    html_body = _format_quote_copy_email_html(
         quote,
         metadata=metadata,
+        intro_message=SELF_QUOTE_EMAIL_INTRO,
+        action_url=action_url,
     )
 
     unsubscribe_link = "https://quote.freightservices.net/help"
     try:
         send_email(
             to=current_user.email,
-            subject=f"Freight Services Inc. Quote Copy - {quote.quote_id}",
+            subject=f"Freight Services Quote Details - {quote.quote_id}",
             body=email_body,
+            html_body=html_body,
             user=current_user,
             feature="quote_copy",
             headers={

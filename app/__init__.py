@@ -659,8 +659,13 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             return redirect(url_for("index"))
 
         quote = Quote.query.filter_by(quote_id=quote_id).first()
+        html_body = None
         if quote is not None:
-            from app.quotes.routes import _format_quote_copy_email_body
+            from app.quotes.routes import (
+                EXTERNAL_QUOTE_EMAIL_INTRO,
+                _format_quote_copy_email_body,
+                _format_quote_copy_email_html,
+            )
 
             metadata = quote.quote_metadata
             parsed_metadata = json.loads(metadata or "{}")
@@ -669,10 +674,16 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             parsed_metadata["accessorial_total"] = float(
                 parsed_metadata.get("accessorial_total", 0.0) or 0.0
             )
-            subject = f"Freight Services Inc. Quote Copy - {quote.quote_id}"
+            subject = f"Freight Services Quote Details - {quote.quote_id}"
             body = _format_quote_copy_email_body(
                 quote,
                 metadata=parsed_metadata,
+            )
+            html_body = _format_quote_copy_email_html(
+                quote,
+                metadata=parsed_metadata,
+                intro_message=EXTERNAL_QUOTE_EMAIL_INTRO,
+                action_url=url_for("quotes.new_quote", _external=True),
             )
         else:
             miles = get_distance_miles(origin_zip, dest_zip)
@@ -707,6 +718,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                         body,
                         feature="quote_email",
                         user=current_user,
+                        html_body=html_body,
                     )
                     flash("Quote email sent (fallback).", "success")
             else:
@@ -716,6 +728,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                     body,
                     feature="quote_email",
                     user=current_user,
+                    html_body=html_body,
                 )
                 flash("Quote email sent.", "success")
         except MailRateLimitError as exc:
