@@ -9,15 +9,49 @@
 
     <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 20px; border-collapse: collapse;">
         <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Quote Total:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">${{ '%.2f'|format(quote.total or 0.0) }}</td>
+        </tr>
+        <tr>
             <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Quote ID:</strong></td>
             <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ quote.quote_id }}</td>
         </tr>
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Route:</strong></td>
-            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ quote.origin }} to {{ quote.destination }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Origin ZIP:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ quote.origin }}</td>
         </tr>
         <tr>
-            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Weight:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Destination ZIP:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ quote.destination }}</td>
+        </tr>
+        {% if show_mileage %}
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Mileage:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                {% if mileage_value is not none %}{{ '%.2f'|format(mileage_value) }}{% else %}N/A{% endif %}
+            </td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Pieces:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ quote.pieces }}</td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Actual Weight:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                {{ '%.2f'|format(quote.actual_weight or 0.0) }} lbs
+                {% if uses_actual_weight %}<strong style="color: #0d6efd;"> (weight used for quote)</strong>{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Dimensional Weight:</strong></td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                {{ '%.2f'|format(quote.dim_weight or 0.0) }} lbs
+                {% if uses_dimensional_weight %}<strong style="color: #0d6efd;"> (weight used for quote)</strong>{% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Billable Weight:</strong></td>
             <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ '%.2f'|format(quote.weight or 0.0) }} lbs ({{ quote.weight_method }})</td>
         </tr>
         <tr>
@@ -26,7 +60,16 @@
         </tr>
         <tr>
             <td style="padding: 10px; border-bottom: 1px solid #dee2e6;"><strong>Accessorials:</strong></td>
-            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">{{ accessorial_names }}</td>
+            <td style="padding: 10px; border-bottom: 1px solid #dee2e6;">
+                {% if accessorials %}
+                    {% for name, amount in accessorials.items() %}
+                        <div>{{ name }}: ${{ '%.2f'|format(amount or 0.0) }}</div>
+                    {% endfor %}
+                {% else %}
+                    <div>None</div>
+                {% endif %}
+                <div style="margin-top: 6px;"><strong>Accessorials Total: ${{ '%.2f'|format(accessorial_total or 0.0) }}</strong></div>
+            </td>
         </tr>
     </table>
 
