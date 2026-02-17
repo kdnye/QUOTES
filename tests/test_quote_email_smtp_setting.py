@@ -192,10 +192,15 @@ def test_send_email_allowed_when_setting_enabled(
     assert send_calls
     assert send_calls[0]["kwargs"]["feature"] == "quote_email"
     assert (
-        send_calls[0]["args"][1]
-        == f"Freight Services Inc. Quote Copy - {quote.quote_id}"
+        send_calls[0]["args"][1] == f"Freight Services Quote Details - {quote.quote_id}"
     )
     assert f"Quote ID: {quote.quote_id}" in str(send_calls[0]["args"][2])
+    html_body = str(send_calls[0]["kwargs"]["html_body"])
+    assert (
+        "A message from Freight Services, Here is the quote information "
+        "you were inquiring about." in html_body
+    )
+    assert "requested be sent to yourself" not in html_body
 
 
 def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:

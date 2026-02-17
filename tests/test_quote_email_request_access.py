@@ -331,12 +331,18 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
     html = response.get_data(as_text=True)
     assert "Email a Copy to Myself" in html
     assert sent["to"] == customer.email
-    assert sent["subject"] == f"Freight Services Inc. Quote Copy - {quote.quote_id}"
+    assert sent["subject"] == f"Freight Services Quote Details - {quote.quote_id}"
     assert sent["feature"] == "quote_copy"
     assert sent["headers"] == {
         "List-Unsubscribe": "<https://quote.freightservices.net/help>",
         "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
     }
+    assert "html_body" in sent
+    html_body = str(sent["html_body"])
+    assert (
+        "Here's the copy of your quote you requested be sent to yourself." in html_body
+    )
+    assert "A message from Freight Services" not in html_body
     body = str(sent["body"])
     assert f"Quote ID: {quote.quote_id}" in body
     assert "Return Quote:" not in body
