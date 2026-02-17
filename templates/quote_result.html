@@ -1,5 +1,17 @@
 {% extends 'base.html' %}
 {% block content %}
+{% if origin_notes or dest_notes %}
+<div class="alert alert-warning border-warning shadow-sm mb-4" role="alert" style="border-width: 2px;">
+  <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Shipment Notes</h4>
+  {% if origin_notes %}
+  <p class="mb-2"><strong>Origin Zip Code Shipment Notes:</strong> {{ origin_notes }}</p>
+  {% endif %}
+  {% if dest_notes %}
+  <p class="mb-0"><strong>Destination Zip Code Shipment Note:</strong> {{ dest_notes }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
 <h2>Quote Result</h2>
 <p>Origin: {{ quote.origin }} | Destination: {{ quote.destination }}</p>
 <p>Type: {{ quote.quote_type }} | Weight: {{ '%.2f'|format(quote.weight) }} lbs ({{ quote.weight_method }})</p>

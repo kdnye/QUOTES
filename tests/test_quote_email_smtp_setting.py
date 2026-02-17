@@ -6,7 +6,7 @@ from flask.testing import FlaskClient
 
 import app as app_module
 from app import create_app
-from app.models import Quote, User, db
+from app.models import Quote, User, ZipZone, db
 from app.services.settings import (
     QUOTE_EMAIL_SMTP_SETTING_KEY,
     reload_overrides,
@@ -168,6 +168,17 @@ def test_send_email_allowed_when_setting_enabled(
     reload_overrides(current_app)
 
     quote = _create_quote_for_user(admin)
+    db.session.add_all(
+        [
+            ZipZone(zipcode="64101", dest_zone=1, notes="Origin appointment required"),
+            ZipZone(
+                zipcode="90210",
+                dest_zone=2,
+                notes="Destination has limited receiving hours",
+            ),
+        ]
+    )
+    db.session.commit()
 
     send_calls: list[dict[str, object]] = []
     monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 22.0)
@@ -197,6 +208,8 @@ def test_send_email_allowed_when_setting_enabled(
         send_calls[0]["args"][1] == f"Freight Services Quote Details - {quote.quote_id}"
     )
     assert f"Quote ID: {quote.quote_id}" in str(send_calls[0]["args"][2])
+    assert "Origin appointment required" in str(send_calls[0]["args"][2])
+    assert "Destination has limited receiving hours" in str(send_calls[0]["args"][2])
     html_body = str(send_calls[0]["kwargs"]["html_body"])
     assert (
         "A message from Freight Services, Here is the quote information "
@@ -205,6 +218,8 @@ def test_send_email_allowed_when_setting_enabled(
     assert "requested be sent to yourself" not in html_body
     assert "Mileage:" not in html_body
     assert "weight used for quote" in html_body
+    assert "Origin appointment required" in html_body
+    assert "Destination has limited receiving hours" in html_body
 
 
 def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:

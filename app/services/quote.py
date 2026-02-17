@@ -7,7 +7,7 @@ retrieve quote records for the application.
 
 import json
 
-from app.database import Session, Quote, EmailQuoteRequest, Accessorial
+from app.database import Session, Quote, EmailQuoteRequest, Accessorial, ZipZone
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
@@ -21,6 +21,40 @@ def get_accessorial_options(quote_type: str) -> list[str]:
     if quote_type == "Hotshot":
         names = [n for n in names if "guarantee" not in n.lower()]
     return names
+
+
+def get_zip_notes(zip_code: str, rate_set: str) -> str | None:
+    """Return shipment notes configured for a ZIP code.
+
+    Args:
+        zip_code: ZIP code used to query :class:`app.models.ZipZone`.
+        rate_set: Rate-set identifier associated with the quote workflow.
+
+    Returns:
+        Optional shipment notes text when available, otherwise ``None``.
+
+    External dependencies:
+        * Reads :class:`app.models.ZipZone` using :class:`app.database.Session`.
+    """
+
+    normalized_zip = str(zip_code or "").strip()
+    if not normalized_zip:
+        return None
+
+    with Session() as db:
+        zone_entry = (
+            db.query(ZipZone)
+            .filter_by(zipcode=normalized_zip, rate_set=rate_set)
+            .first()
+        )
+        if zone_entry is None and rate_set != DEFAULT_RATE_SET:
+            zone_entry = (
+                db.query(ZipZone)
+                .filter_by(zipcode=normalized_zip, rate_set=DEFAULT_RATE_SET)
+                .first()
+            )
+
+    return getattr(zone_entry, "notes", None) if zone_entry else None
 
 
 def create_quote(
@@ -134,6 +168,8 @@ def create_quote(
         "accessorial_total": accessorial_total,
         "miles": result.get("miles"),
         "pieces": pieces,
+        "origin_notes": get_zip_notes(origin, normalized_rate_set),
+        "dest_notes": get_zip_notes(destination, normalized_rate_set),
         "details": {
             k: v for k, v in result.items() if k not in {"quote_total", "miles", "zone"}
         },

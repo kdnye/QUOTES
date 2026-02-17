@@ -8,7 +8,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import Quote, User, db
+from app.models import Quote, User, ZipZone, db
 
 
 class TestQuoteLookupConfig:
@@ -185,6 +185,15 @@ def test_lookup_quote_post_existing_quote_renders_expected_result_fields(
         quote_metadata=json.dumps({"accessorial_total": 10.0, "pieces": 3}),
         total=210.0,
     )
+    db.session.add_all(
+        [
+            ZipZone(zipcode="30301", dest_zone=1, notes="Origin dock closes at 4 PM"),
+            ZipZone(
+                zipcode="60601", dest_zone=2, notes="Destination requires liftgate"
+            ),
+        ]
+    )
+    db.session.commit()
 
     response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
 
@@ -195,6 +204,9 @@ def test_lookup_quote_post_existing_quote_renders_expected_result_fields(
     assert "Quote Total" in html
     assert "$210.00" in html
     assert "Pieces: 3" in html
+    assert "Shipment Notes" in html
+    assert "Origin dock closes at 4 PM" in html
+    assert "Destination requires liftgate" in html
 
 
 def test_lookup_quote_post_malformed_metadata_renders_without_server_error(
