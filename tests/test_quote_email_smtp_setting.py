@@ -6,7 +6,7 @@ from flask.testing import FlaskClient
 
 import app as app_module
 from app import create_app
-from app.models import User, db
+from app.models import Quote, User, db
 from app.services.settings import (
     QUOTE_EMAIL_SMTP_SETTING_KEY,
     reload_overrides,
@@ -93,6 +93,36 @@ def _create_super_admin() -> User:
     return admin
 
 
+def _create_quote_for_user(user: User) -> Quote:
+    """Create a quote record owned by the provided user.
+
+    Args:
+        user: Authenticated user receiving quote ownership in tests.
+
+    Returns:
+        Quote: Persisted quote instance linked to ``user``.
+
+    External dependencies:
+        * Persists records via :mod:`app.models.db`.
+    """
+
+    quote = Quote(
+        quote_id="SMTP-QUOTE-001",
+        user_id=user.id,
+        quote_type="air",
+        origin="64101",
+        destination="90210",
+        weight=200.0,
+        weight_method="total",
+        pieces=1,
+        total=400.0,
+        quote_metadata='{"accessorial_total": 0.0, "accessorials": {}}',
+    )
+    db.session.add(quote)
+    db.session.commit()
+    return quote
+
+
 def test_send_email_blocked_when_setting_disabled(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -135,10 +165,14 @@ def test_send_email_allowed_when_setting_enabled(
     db.session.commit()
     reload_overrides(current_app)
 
-    send_calls: list[tuple] = []
+    quote = _create_quote_for_user(admin)
+
+    send_calls: list[dict[str, object]] = []
     monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 22.0)
     monkeypatch.setattr(
-        app_module, "send_email", lambda *args, **kwargs: send_calls.append(args)
+        app_module,
+        "send_email",
+        lambda *args, **kwargs: send_calls.append({"args": args, "kwargs": kwargs}),
     )
 
     client = app.test_client()
@@ -149,12 +183,19 @@ def test_send_email_allowed_when_setting_enabled(
             "origin_zip": "64101",
             "destination_zip": "90210",
             "email": "customer@example.com",
+            "quote_id": quote.quote_id,
         },
     )
 
     assert response.status_code == 302
     assert response.headers["Location"].endswith("/")
     assert send_calls
+    assert send_calls[0]["kwargs"]["feature"] == "quote_email"
+    assert (
+        send_calls[0]["args"][1]
+        == f"Freight Services Inc. Quote Copy - {quote.quote_id}"
+    )
+    assert f"Quote ID: {quote.quote_id}" in str(send_calls[0]["args"][2])
 
 
 def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:

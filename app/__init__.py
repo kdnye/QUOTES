@@ -16,6 +16,7 @@ from flask_limiter.util import get_remote_address
 from flask_wtf.csrf import CSRFProtect
 from markupsafe import Markup
 from datetime import datetime
+import json
 import os
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
@@ -618,6 +619,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         """Send a quote summary email on behalf of an authenticated user.
 
         Inputs:
+            quote_id: Public quote identifier for the quote result being shared.
             origin_zip: ZIP code for the quote origin provided via form data.
             destination_zip: ZIP code for the quote destination provided via form data.
             email: Recipient email address submitted in the POST body.
@@ -635,6 +637,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         """
         origin_zip = (request.form.get("origin_zip") or "").strip()
         dest_zip = (request.form.get("destination_zip") or "").strip()
+        quote_id = (request.form.get("quote_id") or "").strip()
         email = (request.form.get("email") or "").strip()
 
         if not user_has_mail_privileges(current_user):
@@ -655,17 +658,34 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             flash("Recipient email is required to send a quote.", "warning")
             return redirect(url_for("index"))
 
-        miles = get_distance_miles(origin_zip, dest_zip)
-        miles_text = f"{miles:,.2f} miles" if miles is not None else "N/A"
+        quote = Quote.query.filter_by(quote_id=quote_id).first()
+        if quote is not None:
+            from app.quotes.routes import _format_quote_copy_email_body
 
-        subject = f"Quote for {origin_zip} \u2192 {dest_zip}"
-        body = (
-            "Quote Details\n\n"
-            f"Origin ZIP: {origin_zip}\n"
-            f"Destination ZIP: {dest_zip}\n"
-            f"Estimated Distance: {miles_text}\n"
-            f"Generated: {datetime.utcnow().isoformat()}Z\n"
-        )
+            metadata = quote.quote_metadata
+            parsed_metadata = json.loads(metadata or "{}")
+            if not isinstance(parsed_metadata, dict):
+                parsed_metadata = {}
+            parsed_metadata["accessorial_total"] = float(
+                parsed_metadata.get("accessorial_total", 0.0) or 0.0
+            )
+            subject = f"Freight Services Inc. Quote Copy - {quote.quote_id}"
+            body = _format_quote_copy_email_body(
+                quote,
+                metadata=parsed_metadata,
+            )
+        else:
+            miles = get_distance_miles(origin_zip, dest_zip)
+            miles_text = f"{miles:,.2f} miles" if miles is not None else "N/A"
+
+            subject = f"Quote for {origin_zip} \u2192 {dest_zip}"
+            body = (
+                "Quote Details\n\n"
+                f"Origin ZIP: {origin_zip}\n"
+                f"Destination ZIP: {dest_zip}\n"
+                f"Estimated Distance: {miles_text}\n"
+                f"Generated: {datetime.utcnow().isoformat()}Z\n"
+            )
 
         try:
             if os.getenv("CELERY_BROKER_URL"):
