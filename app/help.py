@@ -5,6 +5,9 @@ from __future__ import annotations
 from typing import Final, List, TypedDict
 
 from flask import Blueprint, render_template
+from flask_login import current_user
+
+from app.policies import employee_required
 
 
 class HelpTopic(TypedDict):
@@ -49,7 +52,7 @@ HELP_TOPICS: Final[List[HelpTopic]] = [
         "endpoint": "help.booking",
         "summary": "Finalize shipments once a customer accepts a quote.",
         "details": [
-            "Convert an accepted quote into a booking by following your internal dispatch workflow.",
+            "Confirm pickup and delivery dates with your Freight Services contact after quote acceptance.",
             "Attach any supporting documents, such as proof of insurance or load confirmations, to the booking record.",
             "Coordinate with dispatch to schedule drivers and confirm pickup details with the shipper.",
         ],
@@ -67,6 +70,53 @@ HELP_TOPICS: Final[List[HelpTopic]] = [
     },
 ]
 """Ordered list of help topics displayed in the sidebar navigation."""
+
+
+def is_internal_employee(user: object) -> bool:
+    """Return whether ``user`` should see employee-only help content.
+
+    Args:
+        user: Object that may expose ``is_authenticated``, ``email``, ``role``,
+            and ``employee_approved`` attributes.
+
+    Returns:
+        ``True`` when the user is authenticated, uses a
+        ``@freightservices.net`` email, and is either an approved employee or
+        a super administrator.
+
+    External dependencies:
+        * Relies on the same role labels enforced by :mod:`app.policies`.
+    """
+
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    email = (getattr(user, "email", "") or "").strip().lower()
+    if not email.endswith("@freightservices.net"):
+        return False
+
+    role = getattr(user, "role", "")
+    if role == "super_admin":
+        return True
+
+    return role == "employee" and bool(getattr(user, "employee_approved", False))
+
+
+def _base_help_context() -> dict[str, bool]:
+    """Return common template flags used across help pages.
+
+    Args:
+        None.
+
+    Returns:
+        dict[str, bool]: Includes the ``is_internal`` flag for templates.
+
+    External dependencies:
+        * Calls :func:`is_internal_employee` with
+          :data:`flask_login.current_user`.
+    """
+
+    return {"is_internal": is_internal_employee(current_user)}
 
 
 def _render_help_page(active_topic: str | None) -> str:
@@ -89,6 +139,7 @@ def _render_help_page(active_topic: str | None) -> str:
         topics=HELP_TOPICS,
         active_topic=active_topic,
         selected_topic=selected_topic,
+        **_base_help_context(),
     )
 
 
@@ -152,7 +203,7 @@ def quote_types() -> str:
         ``help/quote_types.html`` template via :func:`flask.render_template`.
     """
 
-    return render_template("help/quote_types.html")
+    return render_template("help/quote_types.html", **_base_help_context())
 
 
 @help_bp.get("/booking")
@@ -188,6 +239,7 @@ def account_management() -> str:
 
 
 @help_bp.get("/admin")
+@employee_required(approved_only=True)
 def admin() -> str:
     """Outline administrator workflows for managing rates and approvals.
 
@@ -200,7 +252,7 @@ def admin() -> str:
         Rendered HTML string for the administrator help page.
     """
 
-    return render_template("help/admin.html")
+    return render_template("help/admin.html", **_base_help_context())
 
 
 @help_bp.get("/password-reset")
@@ -220,7 +272,7 @@ def password_reset_guide() -> str:
         Rendered HTML string for the password reset help page.
     """
 
-    return render_template("help/password_reset.html")
+    return render_template("help/password_reset.html", **_base_help_context())
 
 
 @help_bp.get("/register")
@@ -239,10 +291,11 @@ def account_setup_guide() -> str:
         Rendered HTML string for the account setup help page.
     """
 
-    return render_template("help/register.html")
+    return render_template("help/register.html", **_base_help_context())
 
 
 @help_bp.get("/emailing")
+@employee_required(approved_only=True)
 def emailing_guide() -> str:
     """Render the quote email request workflow documentation.
 
@@ -259,4 +312,4 @@ def emailing_guide() -> str:
         Rendered HTML string for the email workflow help page.
     """
 
-    return render_template("help/emailing.html")
+    return render_template("help/emailing.html", **_base_help_context())

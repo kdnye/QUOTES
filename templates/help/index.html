@@ -41,13 +41,18 @@
     {% else %}
     <h2>Welcome to the Quote Tool Help Center</h2>
     <p class="text-muted">
-      Choose a topic on the left to explore quick tips for getting started, creating quotes,
-      booking freight, and managing your account.
+      Choose a topic on the left to explore quick tips for account setup,
+      creating quotes, shipping terminology, and account security.
     </p>
     <p>
-      Each guide highlights the workflows our operations team uses most often, so you can move
-      from quoting to booking with confidence.
+      Our customer guides focus on what you need to submit accurate quote
+      requests and understand the resulting shipment details.
     </p>
+    <div class="alert alert-info" role="alert">
+      <strong>Weight rule used on quotes:</strong> Quotes use the greater of
+      actual vs. dimensional weight. Dimensional weight is calculated as
+      <code>(Length × Width × Height) ÷ 166</code>, using inches and pounds.
+    </div>
     <p>
       Locked out of your account? Follow the
       <a href="{{ url_for('help.password_reset_guide') }}">Password Reset guide</a>
@@ -58,11 +63,19 @@
       <a href="{{ url_for('help.account_setup_guide') }}">Account Setup guide</a>
       for the required fields and confirmation emails you&apos;ll receive after registering.
     </p>
-    <p>
-      Sending booking requests from a quote? Open the
-      <a href="{{ url_for('help.emailing_guide') }}">Email Request Workflow guide</a>
-      for the section-by-section message format and return quote checkbox behavior.
-    </p>
+    {% if is_internal %}
+    <div class="help-section border-top mt-5 pt-4 bg-light p-3 rounded">
+      <h2 class="h4 text-primary"><i class="bi bi-briefcase-fill"></i> Employee Resource Center</h2>
+      <p class="mb-2">
+        Internal-only references for quote overrides, manual adjustments, and
+        operational processes.
+      </p>
+      <ul class="mb-0">
+        <li><a href="{{ url_for('help.admin') }}">Operational Overrides Guide</a></li>
+        <li><a href="{{ url_for('help.emailing_guide') }}">Email Request Workflow guide</a></li>
+      </ul>
+    </div>
+    {% endif %}
     {% endif %}
   </div>
 </div>
