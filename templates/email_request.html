@@ -20,6 +20,30 @@
 </div>
 <form id="emailForm">
   <h4 class="d-flex align-items-center gap-2">
+    Scheduling
+    <span
+      class="text-info"
+      tabindex="0"
+      data-bs-toggle="tooltip"
+      data-bs-placement="right"
+      title="Select your preferred dates for shipment collection and delivery."
+    >
+      <i class="bi bi-info-circle-fill" aria-hidden="true"></i>
+      <span class="visually-hidden">Help for shipment scheduling section</span>
+    </span>
+  </h4>
+  <div class="row mb-4">
+    <div class="col-md-6 mb-2">
+      <label for="pickup_date" class="form-label">Desired Pickup Date</label>
+      <input id="pickup_date" type="date" name="pickup_date" class="form-control" required>
+    </div>
+    <div class="col-md-6 mb-2">
+      <label for="delivery_date" class="form-label">Desired Delivery Date</label>
+      <input id="delivery_date" type="date" name="delivery_date" class="form-control">
+    </div>
+  </div>
+
+  <h4 class="d-flex align-items-center gap-2">
     Shipper info
     <span
       class="text-info"
@@ -345,6 +369,8 @@ function normalizeFreeformNotes(value) {
 document.getElementById('emailForm').addEventListener('submit', function(e) {
   e.preventDefault();
   const f = e.target;
+  const pickupDate = f.pickup_date.value;
+  const deliveryDate = f.delivery_date.value || 'Not specified';
   const returnQuoteRequested = f.return_quote_requested.checked;
   const shipper = {
     name: f.shipper_name.value,
@@ -384,6 +410,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `QUOTE DETAILS\n`;
   body += `==========================================\n`;
   body += `Quote ID:      ${data.quote_id}\n`;
+  body += `Pickup Date:   ${pickupDate}\n`;
+  body += `Delivery Date: ${deliveryDate}\n`;
   body += `Return Quote:  ${returnQuoteRequested ? 'YES' : 'No'}\n\n`;
 
   // 2. Route & Shipment Specs
