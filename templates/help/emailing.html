@@ -17,7 +17,8 @@
 </p>
 <ul>
   <li>
-    <strong>Quote Details:</strong> Includes the quote ID and whether a return quote is requested.
+    <strong>Quote Details:</strong> Includes the quote ID, desired pickup and delivery dates,
+    and whether a return quote is requested.
   </li>
   <li>
     <strong>Shipment Specifications:</strong> Lists origin, destination, pieces, weight, weight type,
@@ -55,9 +56,11 @@
   notes.
 </p>
 <p>
-  In the composed message, the app always sets <strong>Return Quote: YES/No</strong> in Quote Details.
-  If the box is selected, a dedicated <strong>[ RETURN SHIPMENT REQUEST ]</strong> block is added
-  immediately after consignee notes so operations can review return handling requirements in one place.
+  In the composed message, Quote Details always includes the selected desired pickup date,
+  desired delivery date (or <strong>Not specified</strong>), and
+  <strong>Return Quote: YES/No</strong>. If the box is selected, a dedicated
+  <strong>[ RETURN SHIPMENT REQUEST ]</strong> block is added immediately after consignee notes
+  so operations can review return handling requirements in one place.
 </p>
 <p>
   The purpose is to alert operations that the same customer may need a quote for the reverse lane,

@@ -163,6 +163,10 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert 'name="shipper_notes"' in html
     assert 'id="consignee_notes"' in html
     assert 'name="consignee_notes"' in html
+    assert 'id="pickup_date"' in html
+    assert 'name="pickup_date"' in html
+    assert 'id="delivery_date"' in html
+    assert 'name="delivery_date"' in html
     assert 'id="return_quote_requested"' in html
     assert 'name="return_quote_requested"' in html
     assert 'id="return_pickup_date"' in html
@@ -177,10 +181,13 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
         "WILL YOU NEED A RETURN SHIPMENT/RETURN HANDLING REQUESTED "
         "(FSI WILL REPLY WITH RETURN QUOTE)" in html
     )
+    assert html.index('id="pickup_date"') < html.index('id="shipper_notes"')
     assert html.index('id="consignee_notes"') < html.index(
         'id="return_quote_requested"'
     )
     assert html.index('id="return_quote_requested"') < html.index("Compose Email")
+    assert "const pickupDate = f.pickup_date.value;" in html
+    assert "const deliveryDate = f.delivery_date.value || 'Not specified';" in html
     assert "const returnQuoteRequested = f.return_quote_requested.checked;" in html
     assert "normalizeFreeformNotes(f.shipper_notes.value)" in html
     assert "normalizeFreeformNotes(f.consignee_notes.value)" in html
@@ -190,6 +197,8 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
         in html
     )
     assert "[ RETURN SHIPMENT REQUEST ]" in html
+    assert "Pickup Date:" in html
+    assert "Delivery Date:" in html
     assert "Desired Pickup Date:" in html
     assert "Return Accessorial:" in html
 
