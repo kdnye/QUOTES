@@ -1,19 +1,19 @@
 {% extends 'base.html' %}
 {% block content %}
+<h2>Quote Result</h2>
+<p>Origin: {{ quote.origin }} | Destination: {{ quote.destination }}</p>
+
 {% if origin_notes or dest_notes %}
-<div class="alert alert-warning border-warning shadow-sm mb-4" role="alert" style="border-width: 2px;">
-  <h4 class="alert-heading"><i class="bi bi-exclamation-triangle-fill me-2"></i>Shipment Notes</h4>
+<div class="alert alert-warning border-warning shadow-sm mb-4" role="alert" style="max-width: 600px; border-width: 2px;">
   {% if origin_notes %}
-  <p class="mb-2"><strong>Origin Zip Code Shipment Notes:</strong> {{ origin_notes }}</p>
+  <p class="mb-2"><strong>Shipment Note for {{ quote.origin }}:</strong> {{ origin_notes }}</p>
   {% endif %}
   {% if dest_notes %}
-  <p class="mb-0"><strong>Destination Zip Code Shipment Note:</strong> {{ dest_notes }}</p>
+  <p class="mb-0"><strong>Shipment Note for {{ quote.destination }}:</strong> {{ dest_notes }}</p>
   {% endif %}
 </div>
 {% endif %}
 
-<h2>Quote Result</h2>
-<p>Origin: {{ quote.origin }} | Destination: {{ quote.destination }}</p>
 <p>Type: {{ quote.quote_type }} | Weight: {{ '%.2f'|format(quote.weight) }} lbs ({{ quote.weight_method }})</p>
 <p><strong>Rate set used:</strong> {{ quote.rate_set }}</p>
 <p><strong>Request IP:</strong> {{ quote.request_ip or "N/A" }}</p>
