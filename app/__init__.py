@@ -665,6 +665,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                 EXTERNAL_QUOTE_EMAIL_INTRO,
                 _format_quote_copy_email_body,
                 _format_quote_copy_email_html,
+                _get_zip_notes,
             )
 
             metadata = quote.quote_metadata
@@ -674,16 +675,23 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             parsed_metadata["accessorial_total"] = float(
                 parsed_metadata.get("accessorial_total", 0.0) or 0.0
             )
+            origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
+            dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+
             subject = f"Freight Services Quote Details - {quote.quote_id}"
             body = _format_quote_copy_email_body(
                 quote,
                 metadata=parsed_metadata,
+                origin_notes=origin_notes,
+                dest_notes=dest_notes,
             )
             html_body = _format_quote_copy_email_html(
                 quote,
                 metadata=parsed_metadata,
                 intro_message=EXTERNAL_QUOTE_EMAIL_INTRO,
                 action_url=url_for("quotes.new_quote", _external=True),
+                origin_notes=origin_notes,
+                dest_notes=dest_notes,
             )
         else:
             miles = get_distance_miles(origin_zip, dest_zip)

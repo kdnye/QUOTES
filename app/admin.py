@@ -218,11 +218,27 @@ class HotshotRateForm(FlaskForm):
 
 
 class ZipZoneForm(FlaskForm):
-    """Form for managing :class:`~app.models.ZipZone` records."""
+    """Form for managing :class:`~app.models.ZipZone` records.
+
+    Inputs:
+        zipcode: ZIP code whose zone mapping is being created or edited.
+        dest_zone: Destination zone number used during air quote lookups.
+        beyond: Optional indicator for beyond-area surcharges.
+        notes: Optional shipment instructions shown on quote results and emails.
+
+    Returns:
+        Validated WTForms field data consumed by ``new_zip_zone`` and
+        ``edit_zip_zone`` route handlers.
+
+    External dependencies:
+        Used by :func:`app.admin.new_zip_zone` and
+        :func:`app.admin.edit_zip_zone` to persist :class:`app.models.ZipZone`.
+    """
 
     zipcode = StringField("ZIP Code", validators=[DataRequired()])
     dest_zone = IntegerField("Destination Zone", validators=[DataRequired()])
     beyond = StringField("Beyond", validators=[Optional()])
+    notes = TextAreaField("Shipment Notes", validators=[Optional()])
 
 
 class CostZoneForm(FlaskForm):
@@ -538,6 +554,7 @@ TABLE_SPECS: Dict[str, TableSpec] = {
             ColumnSpec("ZIP Code", "zipcode", _parse_zipcode),
             ColumnSpec("Dest Zone", "dest_zone", _parse_required_int),
             ColumnSpec("Beyond", "beyond", _parse_optional_string, required=False),
+            ColumnSpec("Notes", "notes", _parse_optional_string, required=False),
         ),
         list_endpoint="admin.list_zip_zones",
         unique_attr="zipcode",
@@ -1502,6 +1519,7 @@ def new_zip_zone() -> Union[str, Response]:
             zipcode=form.zipcode.data,
             dest_zone=form.dest_zone.data,
             beyond=form.beyond.data,
+            notes=form.notes.data,
         )
         db.session.add(zz)
         db.session.commit()
@@ -1523,6 +1541,7 @@ def edit_zip_zone(zz_id: int) -> Union[str, Response]:
         zz.zipcode = form.zipcode.data
         zz.dest_zone = form.dest_zone.data
         zz.beyond = form.beyond.data
+        zz.notes = form.notes.data
         db.session.commit()
         flash("ZIP zone updated.", "success")
         return redirect(url_for("admin.list_zip_zones"))

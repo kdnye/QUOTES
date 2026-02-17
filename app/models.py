@@ -9,8 +9,8 @@ schema and relationships for their respective tables.
 
 from datetime import datetime
 import uuid
-import secrets  
-import string   
+import secrets
+import string
 from typing import Optional
 from flask_login import UserMixin
 from flask_sqlalchemy import SQLAlchemy
@@ -36,13 +36,15 @@ RATE_UPLOADS_TABLE = "rate_uploads"
 
 RATE_SET_DEFAULT = "default"
 
+
 def generate_readable_id():
     """Generates a unique, readable ID like 'Q-7X9B2A'."""
     # Use uppercase and digits, excluding ambiguous characters (I, 1, O, 0)
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     # Generate 8 random characters
-    suffix = ''.join(secrets.choice(alphabet) for _ in range(8))
+    suffix = "".join(secrets.choice(alphabet) for _ in range(8))
     return f"Q-{suffix}"
+
 
 db = SQLAlchemy()
 
@@ -356,6 +358,7 @@ class ZipZone(db.Model):
     zipcode = db.Column(db.String(10), nullable=False)
     dest_zone = db.Column(db.Integer, nullable=False)
     beyond = db.Column(db.String(20))  # indicator for beyond-area surcharges
+    notes = db.Column(db.Text, nullable=True)
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
     )

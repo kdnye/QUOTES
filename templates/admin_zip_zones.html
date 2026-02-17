@@ -15,6 +15,7 @@
         <th>ZIP Code</th>
         <th>Dest Zone</th>
         <th>Beyond</th>
+        <th>Shipment Notes</th>
         <th>Edit</th>
         <th>Delete</th>
       </tr>
@@ -26,6 +27,7 @@
         <td>{{ z.zipcode }}</td>
         <td>{{ z.dest_zone }}</td>
         <td>{{ z.beyond }}</td>
+        <td style="white-space: pre-wrap;">{{ z.notes or '' }}</td>
         <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_zip_zone', zz_id=z.id) }}">Edit</a></td>
         <td>
           <form method="post" action="{{ url_for('admin.delete_zip_zone', zz_id=z.id) }}" onsubmit="return confirm('Delete this ZIP zone?');">

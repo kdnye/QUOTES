@@ -6,7 +6,7 @@ from flask.testing import FlaskClient
 
 import app as app_module
 from app import create_app
-from app.models import Quote, User, db
+from app.models import Quote, User, ZipZone, db
 from app.services.settings import (
     QUOTE_EMAIL_SMTP_SETTING_KEY,
     reload_overrides,
@@ -168,6 +168,17 @@ def test_send_email_allowed_when_setting_enabled(
     reload_overrides(current_app)
 
     quote = _create_quote_for_user(admin)
+    db.session.add_all(
+        [
+            ZipZone(zipcode="64101", dest_zone=1, notes="Origin appointment required"),
+            ZipZone(
+                zipcode="90210",
+                dest_zone=2,
+                notes="Destination has limited receiving hours",
+            ),
+        ]
+    )
+    db.session.commit()
 
     send_calls: list[dict[str, object]] = []
     monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 22.0)
@@ -197,6 +208,8 @@ def test_send_email_allowed_when_setting_enabled(
         send_calls[0]["args"][1] == f"Freight Services Quote Details - {quote.quote_id}"
     )
     assert f"Quote ID: {quote.quote_id}" in str(send_calls[0]["args"][2])
+    assert "Origin appointment required" in str(send_calls[0]["args"][2])
+    assert "Destination has limited receiving hours" in str(send_calls[0]["args"][2])
     html_body = str(send_calls[0]["kwargs"]["html_body"])
     assert (
         "A message from Freight Services, Here is the quote information "
@@ -205,6 +218,8 @@ def test_send_email_allowed_when_setting_enabled(
     assert "requested be sent to yourself" not in html_body
     assert "Mileage:" not in html_body
     assert "weight used for quote" in html_body
+    assert "Origin appointment required" in html_body
+    assert "Destination has limited receiving hours" in html_body
 
 
 def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:
@@ -233,3 +248,74 @@ def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> No
     assert 'href="/quotes/new"' in html
     assert "Create New Quote" in html
     assert "btn btn-outline-primary" in html
+
+
+def test_admin_zip_zone_form_and_list_display_notes(app: Flask) -> None:
+    """Show shipment notes controls on ZIP zone admin pages.
+
+    Args:
+        app: Flask application fixture backed by a PostgreSQL test database.
+
+    Returns:
+        None. Performs HTML assertions against the form and list templates.
+
+    External dependencies:
+        * Creates a super admin using :func:`_create_super_admin`.
+        * Authenticates the session with :func:`_login_client`.
+        * Calls :meth:`flask.testing.FlaskClient.get` to render admin pages.
+    """
+
+    admin = _create_super_admin()
+    db.session.add(
+        ZipZone(zipcode="10001", dest_zone=1, beyond="N", notes="Dock side only")
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+
+    form_response = client.get("/admin/zip_zones/new")
+    list_response = client.get("/admin/zip_zones")
+
+    assert form_response.status_code == 200
+    assert "Shipment Notes" in form_response.get_data(as_text=True)
+
+    assert list_response.status_code == 200
+    html = list_response.get_data(as_text=True)
+    assert "Shipment Notes" in html
+    assert "Dock side only" in html
+
+
+def test_admin_zip_zone_create_persists_notes(app: Flask) -> None:
+    """Persist shipment notes when creating ZIP zones from the admin form.
+
+    Args:
+        app: Flask application fixture backed by a PostgreSQL test database.
+
+    Returns:
+        None. Verifies a created :class:`app.models.ZipZone` stores notes.
+
+    External dependencies:
+        * Uses :func:`_create_super_admin` and :func:`_login_client` for auth.
+        * Calls :meth:`flask.testing.FlaskClient.post` on ``/admin/zip_zones/new``.
+        * Queries :class:`app.models.ZipZone` via :mod:`app.models.db`.
+    """
+
+    admin = _create_super_admin()
+    client = app.test_client()
+    _login_client(client, admin.id)
+
+    response = client.post(
+        "/admin/zip_zones/new",
+        data={
+            "zipcode": "73301",
+            "dest_zone": 3,
+            "beyond": "Y",
+            "notes": "Call before delivery",
+        },
+    )
+
+    assert response.status_code == 302
+    created = ZipZone.query.filter_by(zipcode="73301").first()
+    assert created is not None
+    assert created.notes == "Call before delivery"
