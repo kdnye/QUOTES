@@ -34,6 +34,16 @@
     >More info</a>
     {{ form.beyond(class="form-control") }}
   </div>
+  <div class="mb-3">
+    {{ form.notes.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Add handling notes or destination restrictions shown on quotes and emails."
+    >More info</a>
+    {{ form.notes(class="form-control", rows="3") }}
+  </div>
   <button class="btn btn-primary" type="submit">Save</button>
   <a class="btn btn-secondary" href="{{ url_for('admin.list_zip_zones') }}">Cancel</a>
 </form>
