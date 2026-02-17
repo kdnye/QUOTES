@@ -78,7 +78,7 @@
       <i
         class="bi bi-question-circle ms-1 text-secondary"
         data-bs-toggle="tooltip"
-        title="Enter the shipment's actual scale weight in pound, For individual pieces over 300 lbs please contact operations@freightservices.net for assistance. The greater of Actual vs Dimensional weight will apply"
+        title="Enter the shipment's measured scale weight in pounds. Quotes use the greater of actual vs dimensional weight."
       ></i>
     </label>
     <input type="number" step="0.01" min="0" id="weight_actual" name="weight_actual" class="form-control" required />
@@ -90,7 +90,7 @@
       <i
         class="bi bi-question-circle ms-1 text-secondary"
         data-bs-toggle="tooltip"
-        title="Provide the packaged dimensions of the freight in inches.For individual pieces over 300 lbs please contact operations@freightservices.net for assistance. The greater of Actual vs Dimensional weight will apply"
+        title="Provide packaged dimensions in inches. Dimensional weight = (Length × Width × Height) / 166."
       ></i>
     </label>
     <div class="row g-2">
@@ -287,4 +287,3 @@
   <button type="submit" class="btn btn-primary mt-4">Calculate</button>
 </form>
 {% endblock %}
-
