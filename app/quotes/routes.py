@@ -531,6 +531,8 @@ def lookup_quote():
 
     threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
     exceeds_threshold = bool(threshold_warning)
+    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
+    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
 
     quote_email_smtp_enabled = is_quote_email_smtp_enabled()
     user_can_send_quote_email = user_has_mail_privileges(current_user)
@@ -539,6 +541,8 @@ def lookup_quote():
         "quote_result.html",
         quote=quote,
         metadata=metadata,
+        origin_notes=origin_notes,
+        dest_notes=dest_notes,
         exceeds_threshold=exceeds_threshold,
         can_request_booking_email=bool(
             getattr(current_user, "is_authenticated", False)
@@ -574,9 +578,14 @@ def _quote_template_context(
     threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
     exceeds_threshold = bool(threshold_warning)
 
+    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
+    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+
     return {
         "quote": quote,
         "metadata": metadata,
+        "origin_notes": origin_notes,
+        "dest_notes": dest_notes,
         "exceeds_threshold": exceeds_threshold,
         "can_request_booking_email": bool(
             getattr(current_user, "is_authenticated", False)
@@ -589,10 +598,47 @@ def _quote_template_context(
     }
 
 
+def _get_zip_notes(zip_code: str, rate_set: str | None) -> str | None:
+    """Look up shipment notes for a ZIP code in ``zip_zones``.
+
+    Args:
+        zip_code: ZIP code used for the :class:`app.models.ZipZone` lookup.
+        rate_set: Quote rate-set value used for primary lookup and fallback.
+
+    Returns:
+        Shipment notes string when configured, otherwise ``None``.
+
+    External dependencies:
+        * Reads :class:`app.models.ZipZone` through :mod:`app.models.db`.
+        * Calls :func:`app.services.rate_sets.normalize_rate_set` to align
+          lookup values with quote generation.
+    """
+
+    normalized_zip = (zip_code or "").strip()
+    if not normalized_zip:
+        return None
+
+    normalized_rate_set = normalize_rate_set(rate_set or DEFAULT_RATE_SET)
+    zone_entry = ZipZone.query.filter_by(
+        zipcode=normalized_zip,
+        rate_set=normalized_rate_set,
+    ).first()
+
+    if zone_entry is None and normalized_rate_set != DEFAULT_RATE_SET:
+        zone_entry = ZipZone.query.filter_by(
+            zipcode=normalized_zip,
+            rate_set=DEFAULT_RATE_SET,
+        ).first()
+
+    return getattr(zone_entry, "notes", None) if zone_entry else None
+
+
 def _format_quote_copy_email_body(
     quote: Quote,
     *,
     metadata: dict[str, object],
+    origin_notes: str | None = None,
+    dest_notes: str | None = None,
 ) -> str:
     """Compose plain-text quote details for the self-email workflow.
 
@@ -634,8 +680,10 @@ def _format_quote_copy_email_body(
         "",
         "SHIPMENT SPECIFICATIONS",
         "------------------------------------------",
-        f"Origin ZIP: {quote.origin}",
-        f"Destination ZIP: {quote.destination}",
+        f"Origin ZIP: {quote.origin}"
+        + (f" (Note: {origin_notes})" if origin_notes else ""),
+        f"Destination ZIP: {quote.destination}"
+        + (f" (Note: {dest_notes})" if dest_notes else ""),
     ]
 
     if (quote.quote_type or "").strip().lower() == "hotshot":
@@ -690,6 +738,8 @@ def _format_quote_copy_email_html(
     metadata: dict[str, object],
     intro_message: str,
     action_url: str,
+    origin_notes: str | None = None,
+    dest_notes: str | None = None,
 ) -> str:
     """Compose a branded HTML quote summary email.
 
@@ -724,6 +774,14 @@ def _format_quote_copy_email_html(
         heading="Freight Services Quote Summary",
         intro_message=intro_message,
         quote=quote,
+        origin_display=(
+            f"{quote.origin} (Note: {origin_notes})" if origin_notes else quote.origin
+        ),
+        dest_display=(
+            f"{quote.destination} (Note: {dest_notes})"
+            if dest_notes
+            else quote.destination
+        ),
         base_charge=base_charge,
         accessorials=accessorials,
         accessorial_total=accessorial_total,
