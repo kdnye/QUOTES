@@ -161,8 +161,10 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert expected_heading in html
     assert 'id="shipper_notes"' in html
     assert 'name="shipper_notes"' in html
+    assert 'name="shipper_reference"' in html
     assert 'id="consignee_notes"' in html
     assert 'name="consignee_notes"' in html
+    assert 'name="consignee_reference"' in html
     assert 'id="pickup_date"' in html
     assert 'name="pickup_date"' in html
     assert 'id="delivery_date"' in html
@@ -189,6 +191,8 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert "const pickupDate = f.pickup_date.value;" in html
     assert "const deliveryDate = f.delivery_date.value || 'Not specified';" in html
     assert "const returnQuoteRequested = f.return_quote_requested.checked;" in html
+    assert "reference: f.shipper_reference.value," in html
+    assert "reference: f.consignee_reference.value," in html
     assert "normalizeFreeformNotes(f.shipper_notes.value)" in html
     assert "normalizeFreeformNotes(f.consignee_notes.value)" in html
     assert "normalizeFreeformNotes(f.return_notes.value)" in html
@@ -201,6 +205,8 @@ def test_email_request_form_includes_return_quote_checkbox_and_email_body_line(
     assert "Delivery Date:" in html
     assert "Desired Pickup Date:" in html
     assert "Return Accessorial:" in html
+    assert "Shipper Reference:" in html
+    assert "Consignee Reference:" in html
 
 
 def test_email_request_form_includes_maps_bootstrap_when_key_present(
