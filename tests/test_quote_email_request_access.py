@@ -7,7 +7,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import Quote, User, db
+from app.models import Quote, User, ZipZone, db
 
 
 class TestQuoteEmailAccessConfig:
@@ -306,6 +306,16 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
     db.session.commit()
 
     quote = _create_quote_for_user(customer)
+    db.session.add_all(
+        [
+            ZipZone(zipcode="64101", dest_zone=1, notes="Origin dock closes at 4 PM."),
+            ZipZone(
+                zipcode="90210",
+                dest_zone=1,
+                notes="Destination requires 24-hour notice.",
+            ),
+        ]
+    )
     quote.quote_metadata = json.dumps(
         {
             "accessorial_total": 470.0,
@@ -360,12 +370,17 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
     assert "Accessorials Total: $470.00" in html_body
     assert "Dimensional Weight:" in html_body
     assert "(weight used for quote)" in html_body
+    assert "Origin ZIP:</strong> 64101 (Note: Origin dock closes at 4 PM.)" in html_body
+    assert (
+        "Destination ZIP:</strong> 90210 (Note: Destination requires 24-hour notice.)"
+        in html_body
+    )
     body = str(sent["body"])
     assert f"Quote ID: {quote.quote_id}" in body
     assert "Return Quote:" not in body
     assert "Base Charge: $ 755.00" in body
-    assert "Origin ZIP: 64101" in body
-    assert "Destination ZIP: 90210" in body
+    assert "Origin ZIP: 64101 (Note: Origin dock closes at 4 PM.)" in body
+    assert "Destination ZIP: 90210 (Note: Destination requires 24-hour notice.)" in body
     assert "Mileage: 1,250.50" in body
     assert "Actual Weight: 200.00 lbs" in body
     assert "Dimensional Weight: 260.00 lbs  <-- WEIGHT USED FOR QUOTE" in body
