@@ -113,10 +113,12 @@ def _create_quote_for_user(user: User) -> Quote:
         origin="64101",
         destination="90210",
         weight=200.0,
-        weight_method="total",
+        weight_method="Actual",
         pieces=1,
         total=400.0,
-        quote_metadata='{"accessorial_total": 0.0, "accessorials": {}}',
+        actual_weight=200.0,
+        dim_weight=180.0,
+        quote_metadata='{"accessorial_total": 0.0, "accessorials": {}, "miles": 99.0}',
     )
     db.session.add(quote)
     db.session.commit()
@@ -201,6 +203,8 @@ def test_send_email_allowed_when_setting_enabled(
         "you were inquiring about." in html_body
     )
     assert "requested be sent to yourself" not in html_body
+    assert "Mileage:" not in html_body
+    assert "weight used for quote" in html_body
 
 
 def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:

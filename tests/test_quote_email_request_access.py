@@ -302,15 +302,23 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
     quote = _create_quote_for_user(customer)
     quote.quote_metadata = json.dumps(
         {
-            "accessorial_total": 25.0,
+            "accessorial_total": 470.0,
             "accessorials": {
-                "Liftgate Pickup/Delivery": 25.0,
+                "PickUp After Hours (17:01-07:59)": 110.0,
+                "Weekend PickUp": 125.0,
+                "Delivery After Hours (17:01-07:59)": 110.0,
+                "Weekend Delivery": 125.0,
             },
             "pieces": 2,
+            "miles": 1250.5,
         }
     )
     quote.pieces = 2
-    quote.total = 225.0
+    quote.actual_weight = 200.0
+    quote.dim_weight = 260.0
+    quote.weight = 260.0
+    quote.weight_method = "Dimensional"
+    quote.total = 1225.0
     db.session.commit()
 
     sent: dict[str, object] = {}
@@ -343,11 +351,21 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
         "Here's the copy of your quote you requested be sent to yourself." in html_body
     )
     assert "A message from Freight Services" not in html_body
+    assert "Accessorials Total: $470.00" in html_body
+    assert "Dimensional Weight:" in html_body
+    assert "(weight used for quote)" in html_body
     body = str(sent["body"])
     assert f"Quote ID: {quote.quote_id}" in body
     assert "Return Quote:" not in body
-    assert "Base Charge: $ 200.00" in body
-    assert "TOTAL: $ 225.00" in body
+    assert "Base Charge: $ 755.00" in body
+    assert "Origin ZIP: 64101" in body
+    assert "Destination ZIP: 90210" in body
+    assert "Mileage: 1,250.50" in body
+    assert "Actual Weight: 200.00 lbs" in body
+    assert "Dimensional Weight: 260.00 lbs  <-- WEIGHT USED FOR QUOTE" in body
+    assert "Billable Weight: 260.00 lbs" in body
+    assert "Accessorials Total: $ 470.00" in body
+    assert "Quote Total: $ 1225.00" in body
 
     with client.session_transaction() as session:
         assert ("success", f"Quote details sent to {customer.email}") in session[
