@@ -29,6 +29,7 @@ from flask import (
     flash,
     redirect,
     render_template,
+    render_template_string,
     request,
     session,
     url_for,
@@ -795,10 +796,56 @@ def reset_request() -> Union[str, Response]:
                     _external=True,
                 )
                 subject = "Reset your Freight Services password"
+                user_agent = request.user_agent
+                template_vars = {
+                    "name": (getattr(user, "first_name", "") or "there").strip()
+                    or "there",
+                    "product_name": "Freight Services",
+                    "action_url": reset_url,
+                    "operating_system": user_agent.platform or "unknown",
+                    "browser_name": user_agent.browser or "unknown",
+                    "support_url": url_for("help.help_index", _external=True),
+                }
+                html_template = """
+                <h1>Hi {{name}},</h1>
+                <p>You recently requested to reset your password for your {{ product_name }} account. Use the button below to reset it. <strong>This password reset is only valid for the next 24 hours.</strong></p>
+                <table class="body-action" align="center" width="100%" cellpadding="0" cellspacing="0">
+                  <tr>
+                    <td align="center">
+                      <table width="100%" border="0" cellspacing="0" cellpadding="0">
+                        <tr>
+                          <td align="center">
+                            <table border="0" cellspacing="0" cellpadding="0">
+                              <tr>
+                                <td>
+                                  <a href="{{action_url}}" class="button button--green" target="_blank">Reset your password</a>
+                                </td>
+                              </tr>
+                            </table>
+                          </td>
+                        </tr>
+                      </table>
+                    </td>
+                  </tr>
+                </table>
+                <p>For security, this request was received from a {{operating_system}} device using {{browser_name}}. If you did not request a password reset, please ignore this email or <a href="{{support_url}}">contact support</a> if you have questions.</p>
+                <p>Thanks,<br>The {{ product_name }} Team</p>
+                <table class="body-sub">
+                  <tr>
+                    <td>
+                      <p class="sub">If you’re having trouble with the button above, copy and paste the URL below into your web browser.</p>
+                      <p class="sub">{{action_url}}</p>
+                    </td>
+                  </tr>
+                </table>
+                """
+                rendered_html = render_template_string(html_template, **template_vars)
                 body = (
-                    "We received a request to reset your Freight Services account password.\n\n"
-                    f"Use this link to set a new password:\n{reset_url}\n\n"
-                    "If you did not request this, you can ignore this email."
+                    f"Hi {template_vars['name']},\n\n"
+                    "You recently requested to reset your password. "
+                    "Use the link below to set a new password (valid for 24 hours):\n"
+                    f"{reset_url}\n\n"
+                    "If you did not request a password reset, you can ignore this email."
                 )
                 try:
                     send_email(
@@ -807,6 +854,7 @@ def reset_request() -> Union[str, Response]:
                         body,
                         feature="password_reset",
                         user=None,
+                        html_body=rendered_html,
                     )
                 except (MailRateLimitError, smtplib.SMTPException) as exc:
                     current_app.logger.exception(
