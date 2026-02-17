@@ -117,6 +117,12 @@ def test_reset_request_sends_email(app: Flask, monkeypatch: pytest.MonkeyPatch) 
     assert "reset" in subject.lower()
     assert kwargs["feature"] == "password_reset"
     assert "user" not in kwargs or kwargs["user"] is None
+    assert "html_body" in kwargs
+    assert "Hi there," in kwargs["html_body"]
+    assert "This password reset is only valid for the next 24 hours." in kwargs[
+        "html_body"
+    ]
+    assert "contact support" in kwargs["html_body"]
 
 
 @pytest.mark.parametrize(

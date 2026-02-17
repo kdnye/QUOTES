@@ -269,6 +269,7 @@ def send_email(
     feature: str = "general",
     user: Optional[User] = None,
     headers: Optional[Mapping[str, str]] = None,
+    html_body: Optional[str] = None,
 ) -> None:
     """Send an email using SMTP after enforcing safety policies.
 
@@ -283,6 +284,9 @@ def send_email(
             available. Enables per-user throttles.
         headers: Optional message headers (for example ``List-Unsubscribe``)
             to attach before delivery.
+        html_body: Optional pre-rendered HTML payload. When provided, this
+            bypasses :func:`services.mail._build_professional_html_email` so
+            flows such as password-reset can send purpose-built markup.
 
     Raises:
         MailRateLimitError: When rate limits configured in
@@ -317,7 +321,8 @@ def send_email(
         for header_name, header_value in headers.items():
             msg[header_name] = header_value
     msg.set_content(body)
-    msg.add_alternative(_build_professional_html_email(subject, body), subtype="html")
+    final_html = html_body or _build_professional_html_email(subject, body)
+    msg.add_alternative(final_html, subtype="html")
     enforce_mail_rate_limit(feature, user, to)
 
     overrides = None

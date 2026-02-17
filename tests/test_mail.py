@@ -494,3 +494,98 @@ def test_send_email_includes_html_alternative(
     html_content = html_part.get_content()
     assert "Freight Services" in html_content
     assert '<a href="https://example.com/quotes/123"' in html_content
+
+
+def test_send_email_uses_custom_html_body(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Prefer explicit HTML content over the default Freight Services wrapper.
+
+    Args:
+        app: Flask application fixture providing configuration and DB context.
+        monkeypatch: Fixture used to replace SMTP calls in-process.
+
+    Returns:
+        ``None``. Assertions validate custom HTML is attached unchanged.
+
+    External dependencies:
+        * Calls :func:`app.services.mail.send_email` with ``html_body``.
+        * Uses :class:`email.message.EmailMessage` MIME helpers from stdlib.
+    """
+
+    captured: dict[str, object] = {}
+
+    class CaptureSMTP:
+        """SMTP fake that captures the outbound message for assertions."""
+
+        def __init__(self, host: str, port: int) -> None:
+            """Store host and port for parity with the real SMTP class.
+
+            Args:
+                host: SMTP hostname requested by the mail helper.
+                port: SMTP port requested by the mail helper.
+
+            Returns:
+                ``None``.
+
+            External dependencies:
+                * Mirrors :class:`smtplib.SMTP` constructor signature.
+            """
+
+            captured["host"] = host
+            captured["port"] = port
+
+        def __enter__(self) -> "CaptureSMTP":
+            """Return self for context-managed SMTP interactions.
+
+            Returns:
+                ``self`` so ``send_message`` can be invoked.
+            """
+
+            return self
+
+        def __exit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> bool:
+            """Exit without suppressing exceptions.
+
+            Returns:
+                ``False`` to preserve normal exception propagation.
+            """
+
+            return False
+
+        def starttls(self) -> None:
+            """No-op TLS hook for compatibility with the SMTP interface."""
+
+            return None
+
+        def login(self, user: str, password: str) -> None:
+            """No-op login hook for compatibility with the SMTP interface."""
+
+            return None
+
+        def send_message(self, message: object) -> None:
+            """Capture the final message object sent by the mail helper."""
+
+            captured["message"] = message
+
+    custom_html = "<h1>Custom reset email</h1><p>Keep this markup.</p>"
+
+    monkeypatch.setattr(mail_service.smtplib, "SMTP", CaptureSMTP)
+
+    with app.app_context():
+        mail_service.send_email(
+            "recipient@example.com",
+            "Quote Ready",
+            "Fallback text body",
+            html_body=custom_html,
+        )
+
+    message = captured["message"]
+    plain_part, html_part = message.iter_parts()
+    assert "Fallback text body" in plain_part.get_content()
+    assert html_part.get_content().strip() == custom_html
