@@ -85,7 +85,7 @@ def test_help_emailing_route_renders_workflow_content() -> None:
     assert "Quote Details" in html
     assert "Shipment Specifications" in html
     assert "Pricing Breakdown" in html
-    assert "Logistics Contacts" in html
+    assert "Shipment Details" in html
     assert "Actual" in html
     assert "Dimensional" in html
     assert "operations@freightservices.net" in html
