@@ -132,7 +132,7 @@ def test_lookup_quote_post_invalid_uuid_renders_lookup_with_flash(
 def test_lookup_quote_post_missing_quote_renders_lookup_with_not_found_flash(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Show a not-found flash when no quote matches a valid UUID input."""
+    """Show a not-found flash when no quote matches a valid readable ID."""
 
     client = app.test_client()
     _create_user_and_login(client)
@@ -142,7 +142,7 @@ def test_lookup_quote_post_missing_quote_renders_lookup_with_not_found_flash(
         lambda template_name, **_: f"template={template_name}",
     )
 
-    response = client.post("/quotes/lookup", data={"quote_id": str(uuid.uuid4())})
+    response = client.post("/quotes/lookup", data={"quote_id": "Q-ABCDEFGH"})
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
@@ -162,7 +162,7 @@ def test_lookup_quote_post_found_quote_renders_result_context(
     user = _create_user_and_login(client)
 
     quote = Quote(
-        quote_id=str(uuid.uuid4()),
+        quote_id="Q-BCDFGHJ2",
         quote_type="Air",
         origin="10001",
         destination="94105",
@@ -200,3 +200,38 @@ def test_lookup_quote_post_found_quote_renders_result_context(
     assert context["quote_email_smtp_enabled"] is True
     assert context["user_can_send_quote_email"] is True
     assert context["can_send_quote_email"] is True
+
+
+def test_lookup_quote_post_lowercase_quote_id_normalizes_to_match(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Lookup should normalize lowercase IDs before querying the database."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    quote = Quote(
+        quote_id="Q-PLMNBV23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=120.0,
+        total=300.0,
+        quote_metadata="{}",
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.post("/quotes/lookup", data={"quote_id": " q-plmnbv23 "})
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
