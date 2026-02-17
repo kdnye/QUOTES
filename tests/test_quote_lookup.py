@@ -201,10 +201,14 @@ def test_lookup_quote_post_existing_quote_renders_expected_result_fields(
     html = response.get_data(as_text=True)
     assert "Quote Result" in html
     assert "Origin: 30301 | Destination: 60601" in html
+    assert html.index("Origin: 30301 | Destination: 60601") < html.index(
+        "Shipment Note for 30301:"
+    )
     assert "Quote Total" in html
     assert "$210.00" in html
     assert "Pieces: 3" in html
-    assert "Shipment Notes" in html
+    assert "Shipment Note for 30301:" in html
+    assert "Shipment Note for 60601:" in html
     assert "Origin dock closes at 4 PM" in html
     assert "Destination requires liftgate" in html
 
