@@ -101,7 +101,7 @@ def _create_quote(
 
     Args:
         user: Owner of the quote.
-        quote_id: Public UUID string used by ``/quotes/lookup``.
+        quote_id: Public readable ID string used by ``/quotes/lookup``.
         quote_metadata: JSON or malformed text saved on ``Quote.quote_metadata``.
         total: Quote total used by ``quote_result.html`` calculations.
 
@@ -145,7 +145,7 @@ def test_lookup_quote_get_renders_heading_for_authenticated_user(app: Flask) -> 
 
 
 def test_lookup_quote_post_invalid_uuid_shows_validation_flash(app: Flask) -> None:
-    """POST requests with invalid UUID input should render danger flash feedback."""
+    """POST requests with invalid IDs should render danger flash feedback."""
 
     client = app.test_client()
     _create_user_and_login(client)
@@ -159,12 +159,12 @@ def test_lookup_quote_post_invalid_uuid_shows_validation_flash(app: Flask) -> No
 
 
 def test_lookup_quote_post_missing_quote_shows_not_found_flash(app: Flask) -> None:
-    """Valid UUIDs without matching rows should show a not-found danger flash."""
+    """Valid readable IDs without matching rows should show not-found flash."""
 
     client = app.test_client()
     _create_user_and_login(client)
 
-    response = client.post("/quotes/lookup", data={"quote_id": str(uuid.uuid4())})
+    response = client.post("/quotes/lookup", data={"quote_id": "Q-ZYXWVUT2"})
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
@@ -181,7 +181,7 @@ def test_lookup_quote_post_existing_quote_renders_expected_result_fields(
     user = _create_user_and_login(client)
     quote = _create_quote(
         user,
-        str(uuid.uuid4()),
+        "Q-HJKMNP23",
         quote_metadata=json.dumps({"accessorial_total": 10.0, "pieces": 3}),
         total=210.0,
     )
@@ -206,7 +206,7 @@ def test_lookup_quote_post_malformed_metadata_renders_without_server_error(
     user = _create_user_and_login(client)
     quote = _create_quote(
         user,
-        str(uuid.uuid4()),
+        "Q-HJKMNP23",
         quote_metadata="not-json-text",
         total=199.99,
     )
