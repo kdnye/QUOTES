@@ -462,21 +462,8 @@ def new_quote():
                     "exceeds_threshold": exceeds_threshold,
                 }
             )
-        quote_email_smtp_enabled = is_quote_email_smtp_enabled()
-        user_can_send_quote_email = user_has_mail_privileges(current_user)
         return render_template(
-            "quote_result.html",
-            quote=q,
-            metadata=metadata,
-            exceeds_threshold=exceeds_threshold,
-            can_request_booking_email=bool(
-                getattr(current_user, "is_authenticated", False)
-            ),
-            can_send_quote_email=(
-                user_can_send_quote_email and quote_email_smtp_enabled
-            ),
-            quote_email_smtp_enabled=quote_email_smtp_enabled,
-            user_can_send_quote_email=user_can_send_quote_email,
+            "quote_result.html", **_quote_template_context(q, metadata)
         )
 
     return render_template(
