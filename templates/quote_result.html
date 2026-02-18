@@ -23,10 +23,8 @@
 
 <div class="fsi-summary">
   <p class="fsi-body mb-2 fs-5">Pieces: {{ metadata.pieces }}</p>
-  <div class="quote-total-highlight fsi-summary__total">
-    <p class="fsi-section-title fsi-summary__label fw-bold mb-1">Quote Total</p>
-    <p class="quote-total-amount fsi-summary__amount">${{ '%.2f'|format(grand_total) }}</p>
-  </div>
+  <div class="quote-total-highlight fsi-summary__total p-3 rounded shadow-sm"> <p class="fsi-section-title fsi-summary__label fw-bold mb-2 fs-4">Quote Total</p> <p class="quote-total-amount fsi-summary__amount display-6 fw-bold text-primary">${{ '%.2f'|format(grand_total) }}</p> </div>
+</div>
 </div>
 <div class="fsi-notice fsi-notice--warning mt-2" role="note">
   <small>
