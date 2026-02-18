@@ -80,12 +80,8 @@ def is_internal_employee(user: object) -> bool:
             and ``employee_approved`` attributes.
 
     Returns:
-        ``True`` when the user is authenticated, uses a
-        ``@freightservices.net`` email, and is either an approved employee or
-        a super administrator.
-
-    External dependencies:
-        * Relies on the same role labels enforced by :mod:`app.policies`.
+        ``True`` only when the user is authenticated and uses a
+        ``@freightservices.net`` email address.
     """
 
     if not getattr(user, "is_authenticated", False):
@@ -95,11 +91,7 @@ def is_internal_employee(user: object) -> bool:
     if not email.endswith("@freightservices.net"):
         return False
 
-    role = getattr(user, "role", "")
-    if role == "super_admin":
-        return True
-
-    return role == "employee" and bool(getattr(user, "employee_approved", False))
+    return True
 
 
 def _base_help_context() -> dict[str, bool]:
