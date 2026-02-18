@@ -80,7 +80,10 @@ def test_base_template_uses_branded_header_classes() -> None:
 
     assert 'class="navbar navbar-expand-lg fsi-navbar"' in base_template
     assert 'class="navbar-brand fsi-brand"' in base_template
-    assert 'class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new"' in base_template
+    assert 'data-bs-theme="light"' in base_template
+    assert 'prefers-color-scheme: dark' in base_template
+    assert 'href="/quotes/new">Get New Quote</a>' in base_template
+    assert '@media (prefers-color-scheme: dark)' in theme_css
     assert '.fsi-brand__lockup' in theme_css
     assert '.fsi-nav-link--cta' in theme_css
     assert '.btn.fsi-button-primary' in theme_css
