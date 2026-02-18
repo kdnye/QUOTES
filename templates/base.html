@@ -131,6 +131,8 @@
     <script>
       document.addEventListener("DOMContentLoaded", () => {
         const toggle = document.getElementById("darkModeToggle");
+        const systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+        let userOverride = false;
 
         const applyTheme = (theme) => {
           document.documentElement.setAttribute("data-bs-theme", theme);
@@ -139,14 +141,21 @@
           }
         };
 
-        const savedTheme = localStorage.getItem("theme") || "light";
-        applyTheme(savedTheme);
+        applyTheme(systemThemeQuery.matches ? "dark" : "light");
+
+        const applySystemTheme = (event) => {
+          if (!userOverride) {
+            applyTheme(event.matches ? "dark" : "light");
+          }
+        };
+
+        systemThemeQuery.addEventListener("change", applySystemTheme);
 
         if (toggle) {
           toggle.addEventListener("change", () => {
+            userOverride = true;
             const selectedTheme = toggle.checked ? "dark" : "light";
             applyTheme(selectedTheme);
-            localStorage.setItem("theme", selectedTheme);
           });
         }
 

@@ -83,9 +83,13 @@ def test_base_template_uses_branded_header_classes() -> None:
     assert 'data-bs-theme="light"' in base_template
     assert 'id="darkModeToggle"' in base_template
     assert (
-        'const savedTheme = localStorage.getItem("theme") || "light";' in base_template
+        'const systemThemeQuery = window.matchMedia("(prefers-color-scheme: dark)");'
+        in base_template
     )
-    assert 'localStorage.setItem("theme", selectedTheme);' in base_template
+    assert 'applyTheme(systemThemeQuery.matches ? "dark" : "light");' in base_template
+    assert 'systemThemeQuery.addEventListener("change", applySystemTheme);' in base_template
+    assert 'let userOverride = false;' in base_template
+    assert 'userOverride = true;' in base_template
     assert 'href="/quotes/new">Get New Quote</a>' in base_template
     assert '[data-bs-theme="dark"] {' in theme_css
     assert "@media (prefers-color-scheme: dark)" not in theme_css
