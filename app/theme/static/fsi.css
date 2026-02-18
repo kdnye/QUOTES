@@ -152,6 +152,10 @@
     color: #0d4f8f;
 }
 
+[data-bs-theme="dark"] .fsi-notice--info {
+    color: #dbeaff;
+}
+
 .fsi-email-request__return-label {
     color: #3f4750;
 }
