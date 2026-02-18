@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
-<h1>Create New Quote</h1>
-<form method="post">
+<h1 class="fsi-display mb-3">Create New Quote</h1>
+<form method="post" class="fsi-body">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
   <div class="mb-3">
@@ -143,14 +143,14 @@
 
   {% if accessorial_options %}
   <div class="mt-3">
-    <h5>
+    <h2 class="fsi-section-title h5 mb-3">
       Accessorials
       <i
         class="bi bi-question-circle ms-1 text-secondary"
         data-bs-toggle="tooltip"
         title="Select any optional services or fees needed for this shipment."
       ></i>
-    </h5>
+    </h2>
     {% for acc in accessorial_options %}
     <div class="form-check">
       <input class="form-check-input" type="checkbox" id="acc_{{ loop.index }}" name="accessorials" value="{{ acc }}" />
