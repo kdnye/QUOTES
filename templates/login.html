@@ -5,7 +5,7 @@
     <div class="col-md-6 col-lg-4">
       <div class="card shadow-sm">
         <div class="card-body p-4">
-          <h1 class="h4 text-center mb-3">Log in to your account</h1>
+          <h1 class="fsi-display h4 text-center mb-3">Log in to your account</h1>
           {% if oidc_enabled %}
           <div class="alert alert-info small" role="alert">
             Freight Services employees ({{ employee_domain }}) should sign in with single sign-on.
@@ -14,7 +14,7 @@
             Sign in with SSO
           </a>
           {% endif %}
-          <form method="post" novalidate>
+          <form method="post" novalidate class="fsi-body">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-3">
               <label class="form-label" for="email">Email address</label>
@@ -46,7 +46,7 @@
           </form>
         </div>
       </div>
-      <p class="text-center small mt-3">
+      <p class="fsi-body text-center small mt-3">
         Need an account?
         <a href="{{ url_for('auth.register') }}">Register here</a>.
       </p>
