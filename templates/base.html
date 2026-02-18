@@ -33,15 +33,20 @@
         >
           <span class="navbar-toggler-icon"></span>
         </button>
-        <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
-          <ul class="navbar-nav ms-auto fsi-navbar__menu d-grid gap-3">
-            <li class="nav-item">
-              <a class="fsi-brand__lockup d-flex align-items-center justify-content-center" aria-hidden="true" href="/quotes/new">Get New Quote</a>
-            </li>
-            <li class="nav-item">
-              <a class="fsi-brand__lockup d-flex align-items-center justify-content-center" aria-hidden="true" href="{{ url_for('quotes.lookup_quote') }}">Quote Lookup</a>
-            </li>
-            <li class="nav-item">
+       <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
+         <ul class="navbar-nav ms-auto fsi-navbar__menu d-grid gap-3">
+          <li class="nav-item">
+            <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
+               aria-hidden="true" 
+               href="/quotes/new">Get New Quote</a>
+         </li>
+         <li class="nav-item">
+          <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
+             aria-hidden="true" 
+             href="{{ url_for('quotes.lookup_quote') }}">Quote Lookup</a>
+         </li>
+        </ul>
+       </div>
               <a
                 class="nav-link fsi-nav-link fsi-nav-link--icon d-flex align-items-center justify-content-center"
                 href="{{ url_for('help.help_index') }}"
