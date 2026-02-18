@@ -64,6 +64,12 @@ def _build_help_test_app() -> Flask:
             "employee",
             True,
         ),
+        "domain_customer": _StubUser(
+            "domain_customer",
+            "ops@freightservices.net",
+            "customer",
+            False,
+        ),
     }
 
     @login_manager.user_loader
@@ -221,18 +227,8 @@ def test_help_emailing_route_renders_workflow_content() -> None:
     assert "operations@freightservices.net" in html
 
 
-def test_help_index_links_to_emailing_guide() -> None:
-    """Expose the emailing guide link only for authenticated employees.
-
-    Args:
-        None.
-
-    Returns:
-        None. Assertions verify the index page includes a guide link.
-
-    External dependencies:
-        * Calls ``help.help_index`` through :meth:`flask.testing.FlaskClient.get`.
-    """
+def test_help_index_renders_structured_sections() -> None:
+    """Render the updated help portal sections for authenticated users."""
 
     app = _build_help_test_app()
     client = app.test_client()
@@ -242,8 +238,10 @@ def test_help_index_links_to_emailing_guide() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Email Request Workflow guide" in html
-    assert 'href="/help/emailing"' in html
+    assert "Shipment Calculation Guide" in html
+    assert "User Account &amp; Security" in html
+    assert "Booking &amp; Operations" in html
+    assert "Legal &amp; Privacy Policy" in html
 
 
 def test_help_index_hides_employee_resources_for_customers() -> None:
@@ -267,8 +265,8 @@ def test_help_index_hides_employee_resources_for_customers() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Employee Resource Center" not in html
-    assert "Operational Overrides Guide" not in html
+    assert "Internal technical notes:" not in html
+    assert "Margin controls and adjustment math" not in html
 
 
 def test_help_index_shows_employee_resources_for_internal_users() -> None:
@@ -292,8 +290,24 @@ def test_help_index_shows_employee_resources_for_internal_users() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Employee Resource Center" in html
-    assert "Operational Overrides Guide" in html
+    assert "Internal technical notes:" in html
+    assert "Margin controls and adjustment math" in html
+
+
+def test_help_index_treats_company_email_as_internal_even_without_employee_role() -> (
+    None
+):
+    """Show internal notes when an authenticated account uses company email domain."""
+
+    app = _build_help_test_app()
+    client = app.test_client()
+    client.get("/auth/login-as/domain_customer")
+
+    response = client.get("/help/")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Internal technical notes:" in html
 
 
 def test_help_admin_requires_employee_authentication() -> None:

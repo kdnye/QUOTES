@@ -375,6 +375,10 @@ def test_email_self_route_sends_quote_copy_and_flashes_success(
         "Destination ZIP:</strong> 90210 (Note: Destination requires 24-hour notice.)"
         in html_body
     )
+    assert (
+        "All quotes are subject to final evaluation and approval by Freight Services."
+        in html_body
+    )
     body = str(sent["body"])
     assert f"Quote ID: {quote.quote_id}" in body
     assert "Return Quote:" not in body
@@ -425,3 +429,7 @@ def test_quote_result_template_contains_email_self_form(app: Flask) -> None:
     assert "Email a Copy to Myself" in html
     assert f"/quotes/{quote.quote_id}/email-self" in html
     assert 'name="return_quote"' not in html
+    assert (
+        "Disclaimer: All quotes are subject to final evaluation and approval by Freight Services."
+        in html
+    )

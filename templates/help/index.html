@@ -3,80 +3,122 @@
 {% block title %}Help Center · Quote Tool{% endblock %}
 
 {% block content %}
-<div class="row">
-  <div class="col-lg-4 mb-3">
-    <div class="list-group">
-      {% for topic in topics %}
-      <a
-        class="list-group-item list-group-item-action {% if topic.slug == active_topic %}active{% endif %}"
-        href="{{ url_for(topic.endpoint) }}"
-      >
-        <div class="d-flex w-100 justify-content-between">
-          <h5 class="mb-1">{{ topic.title }}</h5>
-        </div>
-        <p class="mb-1 small {% if topic.slug == active_topic %}text-white-50{% else %}text-muted{% endif %}">
-          {{ topic.summary }}
-        </p>
-      </a>
-      {% endfor %}
-    </div>
+<div class="container px-0">
+  <div class="mb-4">
+    <h2 class="mb-2">Help Center</h2>
+    <p class="text-muted mb-0">
+      Use this guide to understand how quote calculations, account access,
+      booking workflows, and policy terms work across the Freight Services portal.
+    </p>
   </div>
-  <div class="col-lg-8">
-    {% if selected_topic %}
-    <h2>{{ selected_topic.title }}</h2>
-    <p class="text-muted">{{ selected_topic.summary }}</p>
-    {% if selected_topic.slug == "getting-started" %}
-    <div class="alert alert-info" role="alert">
-      Need a step-by-step tour of the registration form?
-      <a class="alert-link" href="{{ url_for('help.account_setup_guide') }}"
-        >Open the Account Setup guide.</a
-      >
+
+  <div class="accordion" id="helpAccordion">
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingCalculation">
+        <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCalculation" aria-expanded="true" aria-controls="collapseCalculation">
+          1) Shipment Calculation Guide
+        </button>
+      </h2>
+      <div id="collapseCalculation" class="accordion-collapse collapse show" aria-labelledby="headingCalculation" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <h3 class="h5">Chargeable Weight Rule</h3>
+          <p class="mb-2">Every quote uses the greater value between actual weight and dimensional weight. This final value is the chargeable (billable) weight.</p>
+
+          <h3 class="h5">166 Factor Formula</h3>
+          <p class="mb-2">Dimensional weight is calculated as:</p>
+          <p><code>(Length × Width × Height) ÷ 166</code></p>
+          <p class="text-muted">Use inches for dimensions and pounds for weight.</p>
+
+          <h3 class="h5">ZIP Code Shipment Notes</h3>
+          <p class="mb-2">Origin and destination ZIP codes may include shipment notes. These notes provide local handling guidance that can affect services needed at pickup or delivery.</p>
+
+          <h3 class="h5">Final Rate Approval</h3>
+          <p class="mb-2">Invoices may increase after final review when shipment conditions differ from the original request, including:</p>
+          <ul class="mb-0">
+            <li>Weight discrepancies between provided and verified shipment weight.</li>
+            <li>Site requirements discovered during execution (for example, dock constraints or special handling needs).</li>
+            <li>Limited access designations identified after booking.</li>
+          </ul>
+
+          {% if is_internal %}
+          <div class="alert alert-secondary mt-3 mb-0">
+            <strong>Internal technical notes:</strong>
+            Margin controls and adjustment math are applied in the quote engine before total presentation. ZIP notes are sourced from ZIP-zone records and mapped using origin/destination ZIP lookups.
+          </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
-    {% endif %}
-    <ul>
-      {% for detail in selected_topic.details %}
-      <li>{{ detail }}</li>
-      {% endfor %}
-    </ul>
-    {% else %}
-    <h2>Welcome to the Quote Tool Help Center</h2>
-    <p class="text-muted">
-      Choose a topic on the left to explore quick tips for account setup,
-      creating quotes, shipping terminology, and account security.
-    </p>
-    <p>
-      Our customer guides focus on what you need to submit accurate quote
-      requests and understand the resulting shipment details.
-    </p>
-    <div class="alert alert-info" role="alert">
-      <strong>Weight rule used on quotes:</strong> Quotes use the greater of
-      actual vs. dimensional weight. Dimensional weight is calculated as
-      <code>(Length × Width × Height) ÷ 166</code>, using inches and pounds.
+
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingAccount">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAccount" aria-expanded="false" aria-controls="collapseAccount">
+          2) User Account &amp; Security
+        </button>
+      </h2>
+      <div id="collapseAccount" class="accordion-collapse collapse" aria-labelledby="headingAccount" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <h3 class="h5">Registration Requirements</h3>
+          <p>Account registration requires a valid business email address. Personal or disposable email addresses are not accepted for production quoting access.</p>
+
+          <h3 class="h5">Password Reset Window</h3>
+          <p class="mb-0">Password reset links remain valid for 24 hours from the time the request is created. If the link expires, submit a new reset request.</p>
+
+          {% if is_internal %}
+          <div class="alert alert-secondary mt-3 mb-0">
+            <strong>Internal technical notes:</strong>
+            Password reset tokens are time-bound and should be audited with standard account-security logging when customer access issues are escalated.
+          </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
-    <p>
-      Locked out of your account? Follow the
-      <a href="{{ url_for('help.password_reset_guide') }}">Password Reset guide</a>
-      to request a link and choose a new password safely.
-    </p>
-    <p>
-      Brand-new to the platform? Review the
-      <a href="{{ url_for('help.account_setup_guide') }}">Account Setup guide</a>
-      for the required fields and confirmation emails you&apos;ll receive after registering.
-    </p>
-    {% if is_internal %}
-    <div class="help-section border-top mt-5 pt-4 bg-light p-3 rounded">
-      <h2 class="h4 text-primary"><i class="bi bi-briefcase-fill"></i> Employee Resource Center</h2>
-      <p class="mb-2">
-        Internal-only references for quote overrides, manual adjustments, and
-        operational processes.
-      </p>
-      <ul class="mb-0">
-        <li><a href="{{ url_for('help.admin') }}">Operational Overrides Guide</a></li>
-        <li><a href="{{ url_for('help.emailing_guide') }}">Email Request Workflow guide</a></li>
-      </ul>
+
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingBooking">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBooking" aria-expanded="false" aria-controls="collapseBooking">
+          3) Booking &amp; Operations
+        </button>
+      </h2>
+      <div id="collapseBooking" class="accordion-collapse collapse" aria-labelledby="headingBooking" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <h3 class="h5">Using Quote ID for Lookups</h3>
+          <p class="mb-2">Use the generated Quote ID to retrieve saved quote details from the lookup workflow. This ID is the fastest way to reopen an existing quote.</p>
+
+          <h3 class="h5">Pickup and Delivery Dates</h3>
+          <p class="mb-2">Booking requests must include both pickup and delivery dates so dispatch can validate timeline feasibility and carrier availability.</p>
+
+          <h3 class="h5">Send to Myself Receipts</h3>
+          <p class="mb-0">Use the <strong>Send to Myself</strong> button on the quote results page to email yourself a receipt copy with pricing and shipment details.</p>
+
+          {% if is_internal %}
+          <div class="alert alert-secondary mt-3 mb-0">
+            <strong>Internal technical notes:</strong>
+            Quote lookup and email workflows should reuse shared quote context helpers so shipment notes, permissions, and accessorial totals remain consistent across first-load and follow-up actions.
+          </div>
+          {% endif %}
+        </div>
+      </div>
     </div>
-    {% endif %}
-    {% endif %}
+
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingLegal">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLegal" aria-expanded="false" aria-controls="collapseLegal">
+          4) Legal &amp; Privacy Policy
+        </button>
+      </h2>
+      <div id="collapseLegal" class="accordion-collapse collapse" aria-labelledby="headingLegal" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <h3 class="h5">Website Terms of Use</h3>
+          <ul class="mb-2">
+            <li>Freight Services provides online quote and related marketing service information through this website.</li>
+            <li>By using this platform, users consent to receive electronic communications related to accounts, quotes, and service operations.</li>
+            <li>For HR-related policy questions, contact <a href="mailto:hr@freightservices.net">hr@freightservices.net</a>.</li>
+          </ul>
+          <p class="mb-0 text-muted">This summary is informational and does not replace the full legal terms provided by Freight Services.</p>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 {% endblock %}
