@@ -82,12 +82,15 @@ def test_base_template_uses_branded_header_classes() -> None:
     assert 'class="navbar-brand fsi-brand"' in base_template
     assert 'data-bs-theme="light"' in base_template
     assert 'id="darkModeToggle"' in base_template
-    assert 'const savedTheme = localStorage.getItem("theme") || "light";' in base_template
+    assert (
+        'const savedTheme = localStorage.getItem("theme") || "light";' in base_template
+    )
     assert 'localStorage.setItem("theme", selectedTheme);' in base_template
     assert 'href="/quotes/new">Get New Quote</a>' in base_template
-    assert '@media (prefers-color-scheme: dark)' in theme_css
-    assert '.fsi-brand__lockup' in theme_css
-    assert '.fsi-nav-link--cta' in theme_css
-    assert '.btn.fsi-button-primary' in theme_css
-    assert '.btn.fsi-button-secondary' in theme_css
+    assert '[data-bs-theme="dark"] {' in theme_css
+    assert "@media (prefers-color-scheme: dark)" not in theme_css
+    assert ".fsi-brand__lockup" in theme_css
+    assert ".fsi-nav-link--cta" in theme_css
+    assert ".btn.fsi-button-primary" in theme_css
+    assert ".btn.fsi-button-secondary" in theme_css
     assert '[data-bs-theme="dark"] .fsi-notice--info' in theme_css
