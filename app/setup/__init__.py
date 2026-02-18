@@ -423,8 +423,8 @@ def setup_admin() -> ResponseReturnValue:
 
         if not is_valid_password(password):
             errors.append(
-                "Password must be at least 14 characters and include upper, lower, "
-                "number, and symbol characters (or 24+ characters for a passphrase)."
+                "Password must be at least 12 characters and include upper, lower, "
+                "number, and symbol characters (or 28+ characters for a passphrase)."
             )
 
         if User.query.filter_by(email=email_value).first():
