@@ -1,0 +1,59 @@
+/*
+ * FSI theme tokens and base typography.
+ * Keep all font loading centralized here so templates can stay lean and only
+ * include this single stylesheet via the fsi_theme() helper.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Roboto:ital,wght@0,300;0,400;0,500;0,700;1,400&display=swap");
+
+:root {
+    /* Typography */
+    --fsi-font-heading: "Bebas Neue", "Roboto", "Lato", Arial, sans-serif;
+    --fsi-font-body: "Roboto", "Lato", Arial, sans-serif;
+
+    /* Brand colors */
+    --fsi-color-primary: #2d78e4;
+    --fsi-color-text: #0a0a0a;
+    --fsi-color-text-strong: #000000;
+    --fsi-color-surface: #f4f4f4;
+    --fsi-color-surface-alt: #f1f1f1;
+    --fsi-color-white: #ffffff;
+
+    /* Spacing scale */
+    --fsi-space-1: 0.25rem;
+    --fsi-space-2: 0.5rem;
+    --fsi-space-3: 0.75rem;
+    --fsi-space-4: 1rem;
+    --fsi-space-5: 1.5rem;
+    --fsi-space-6: 2rem;
+
+    /* Radius tokens */
+    --fsi-radius-sm: 0.25rem;
+    --fsi-radius-md: 0.5rem;
+    --fsi-radius-lg: 0.75rem;
+    --fsi-radius-pill: 9999px;
+
+    /* Shared shadows */
+    --fsi-shadow-sm: 0 1px 2px rgb(0 0 0 / 8%);
+    --fsi-shadow-md: 0 4px 12px rgb(0 0 0 / 10%);
+    --fsi-shadow-lg: 0 8px 24px rgb(0 0 0 / 14%);
+}
+
+html,
+body {
+    font-family: var(--fsi-font-body);
+    color: var(--fsi-color-text);
+    background-color: var(--fsi-color-surface);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+.display,
+.display-heading {
+    font-family: var(--fsi-font-heading);
+    color: var(--fsi-color-text-strong);
+    letter-spacing: 0.02em;
+}
