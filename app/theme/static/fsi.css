@@ -101,37 +101,41 @@
     color: var(--fsi-color-warning);
 }
 
-.fsi-button-primary,
-.fsi-button-secondary {
+.btn.fsi-button-primary,
+.btn.fsi-button-secondary {
     border-radius: var(--fsi-radius-pill);
     border-width: 1px;
     border-style: solid;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     font-weight: 600;
     letter-spacing: 0.02em;
     padding: var(--fsi-space-2) var(--fsi-space-4);
+    text-decoration: none;
 }
 
-.fsi-button-primary {
+.btn.fsi-button-primary {
     background-color: var(--fsi-color-primary);
     border-color: var(--fsi-color-primary);
     color: var(--fsi-color-white);
 }
 
-.fsi-button-primary:hover,
-.fsi-button-primary:focus-visible {
+.btn.fsi-button-primary:hover,
+.btn.fsi-button-primary:focus-visible {
     background-color: var(--fsi-color-primary-strong);
     border-color: var(--fsi-color-primary-strong);
     color: var(--fsi-color-white);
 }
 
-.fsi-button-secondary {
+.btn.fsi-button-secondary {
     background-color: var(--fsi-color-secondary-soft);
     border-color: rgb(92 102 112 / 30%);
     color: var(--fsi-color-secondary);
 }
 
-.fsi-button-secondary:hover,
-.fsi-button-secondary:focus-visible {
+.btn.fsi-button-secondary:hover,
+.btn.fsi-button-secondary:focus-visible {
     background-color: rgb(92 102 112 / 18%);
     border-color: rgb(92 102 112 / 44%);
     color: #434c55;
@@ -321,4 +325,3 @@ body {
 .fsi-admin-zip-zones__notes {
     white-space: pre-wrap;
 }
-

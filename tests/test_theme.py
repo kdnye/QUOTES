@@ -83,3 +83,5 @@ def test_base_template_uses_branded_header_classes() -> None:
     assert 'class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new"' in base_template
     assert '.fsi-brand__lockup' in theme_css
     assert '.fsi-nav-link--cta' in theme_css
+    assert '.btn.fsi-button-primary' in theme_css
+    assert '.btn.fsi-button-secondary' in theme_css
