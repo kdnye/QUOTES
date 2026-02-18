@@ -36,7 +36,7 @@
         <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
           <ul class="navbar-nav ms-auto fsi-navbar__menu">
             <li class="nav-item">
-              <a class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new">Get New Quote</a>
+              <a class="fsi-brand__lockup" aria-hidden="true" href="/quotes/new">Get New Quote</a>
             </li>
             <li class="nav-item">
               <a
@@ -54,7 +54,7 @@
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
             </li>
             <li class="nav-item">
-              <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
+              <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">All Quotes</a>
             </li>
             {% elif current_user.role == 'employee' and current_user.employee_approved %}
             <li class="nav-item">
