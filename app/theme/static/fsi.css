@@ -304,3 +304,21 @@ body {
 .fsi-pre-wrap {
     white-space: pre-wrap;
 }
+
+.fsi-email-request__return-panel {
+    margin-top: var(--fsi-space-4);
+    padding: var(--fsi-space-4);
+    border: 3px solid rgb(166 92 0 / 36%);
+    border-radius: var(--fsi-radius-md);
+    background-color: #fff3cd;
+}
+
+.fsi-admin-quotes__metadata {
+    max-width: 420px;
+    white-space: pre-wrap;
+}
+
+.fsi-admin-zip-zones__notes {
+    white-space: pre-wrap;
+}
+

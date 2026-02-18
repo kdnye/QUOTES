@@ -40,7 +40,7 @@
           <td class="text-break">{{ q.weight_method }}</td>
           <td class="text-break">{{ q.zone }}</td>
           <td>${{ '%.2f'|format(q.total or 0) }}</td>
-          <td class="text-break" style="max-width:420px; white-space:pre-wrap;">{{ q.quote_metadata }}</td>
+          <td class="text-break fsi-admin-quotes__metadata">{{ q.quote_metadata }}</td>
           <td class="text-break">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '' }}</td>
           <td>
             {% if can_use_email_request %}
