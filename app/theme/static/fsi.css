@@ -57,3 +57,116 @@ h6,
     color: var(--fsi-color-text-strong);
     letter-spacing: 0.02em;
 }
+
+.fsi-navbar {
+    background-color: var(--fsi-color-white);
+    border-bottom: 1px solid rgb(0 0 0 / 8%);
+    box-shadow: var(--fsi-shadow-sm);
+    padding-block: var(--fsi-space-2);
+}
+
+.fsi-navbar__container {
+    gap: var(--fsi-space-3);
+}
+
+.fsi-brand {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--fsi-space-3);
+    text-decoration: none;
+}
+
+.fsi-brand__lockup {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.25rem;
+    height: 2.25rem;
+    border-radius: var(--fsi-radius-sm);
+    background: linear-gradient(135deg, #0f4fad, var(--fsi-color-primary));
+    color: var(--fsi-color-white);
+    font-weight: 700;
+    font-size: 0.9rem;
+    letter-spacing: 0.08em;
+}
+
+.fsi-brand__text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.05;
+}
+
+.fsi-brand__site,
+.fsi-brand__app {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fsi-color-text-strong);
+    font-size: 0.7rem;
+    font-weight: 700;
+}
+
+.fsi-brand__app {
+    color: var(--fsi-color-primary);
+}
+
+.fsi-navbar__toggler {
+    border-color: rgb(0 0 0 / 15%);
+}
+
+.fsi-navbar__menu {
+    align-items: center;
+    gap: var(--fsi-space-2);
+}
+
+.fsi-nav-link {
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: var(--fsi-color-text-strong);
+    padding: var(--fsi-space-2) var(--fsi-space-3);
+}
+
+.fsi-nav-link:hover,
+.fsi-nav-link:focus {
+    color: var(--fsi-color-primary);
+}
+
+.fsi-nav-link--icon {
+    min-width: 2rem;
+}
+
+.fsi-nav-link--cta {
+    border: 1px solid rgb(45 120 228 / 32%);
+    border-radius: var(--fsi-radius-pill);
+    color: var(--fsi-color-primary);
+    background-color: rgb(45 120 228 / 8%);
+}
+
+.fsi-nav-link--cta:hover,
+.fsi-nav-link--cta:focus {
+    background-color: rgb(45 120 228 / 14%);
+    color: #1751a8;
+}
+
+@media (max-width: 991.98px) {
+    .fsi-navbar__collapse {
+        margin-top: var(--fsi-space-2);
+    }
+
+    .fsi-navbar__menu {
+        align-items: stretch;
+        gap: 0;
+    }
+
+    .fsi-nav-link {
+        padding-inline: 0;
+        padding-block: var(--fsi-space-2);
+    }
+
+    .fsi-nav-link--cta {
+        text-align: center;
+        margin-block: var(--fsi-space-2);
+        padding-inline: var(--fsi-space-3);
+    }
+}
