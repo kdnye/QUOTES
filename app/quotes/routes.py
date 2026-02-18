@@ -516,27 +516,12 @@ def lookup_quote():
     except json.JSONDecodeError:
         metadata = {}
 
-    threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
-    exceeds_threshold = bool(threshold_warning)
-    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
-
-    quote_email_smtp_enabled = is_quote_email_smtp_enabled()
-    user_can_send_quote_email = user_has_mail_privileges(current_user)
+    if not isinstance(metadata, dict):
+        metadata = {}
 
     return render_template(
         "quote_result.html",
-        quote=quote,
-        metadata=metadata,
-        origin_notes=origin_notes,
-        dest_notes=dest_notes,
-        exceeds_threshold=exceeds_threshold,
-        can_request_booking_email=bool(
-            getattr(current_user, "is_authenticated", False)
-        ),
-        can_send_quote_email=(user_can_send_quote_email and quote_email_smtp_enabled),
-        quote_email_smtp_enabled=quote_email_smtp_enabled,
-        user_can_send_quote_email=user_can_send_quote_email,
+        **_quote_template_context(quote, metadata),
     )
 
 
@@ -769,6 +754,8 @@ def _format_quote_copy_email_html(
             if dest_notes
             else quote.destination
         ),
+        origin_zip_note=origin_notes,
+        dest_zip_note=dest_notes,
         base_charge=base_charge,
         accessorials=accessorials,
         accessorial_total=accessorial_total,
