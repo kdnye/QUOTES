@@ -62,7 +62,7 @@ def test_init_fsi_theme_registers_blueprint_when_assets_exist() -> None:
 
 
 def test_base_template_uses_branded_header_classes() -> None:
-    """Verify the base layout uses branded navigation and text-first actions.
+    """Verify base layout includes branding and theme toggle wiring.
 
     Args:
         None.
@@ -81,7 +81,9 @@ def test_base_template_uses_branded_header_classes() -> None:
     assert 'class="navbar navbar-expand-lg fsi-navbar"' in base_template
     assert 'class="navbar-brand fsi-brand"' in base_template
     assert 'data-bs-theme="light"' in base_template
-    assert 'prefers-color-scheme: dark' in base_template
+    assert 'id="darkModeToggle"' in base_template
+    assert 'const savedTheme = localStorage.getItem("theme") || "light";' in base_template
+    assert 'localStorage.setItem("theme", selectedTheme);' in base_template
     assert 'href="/quotes/new">Get New Quote</a>' in base_template
     assert '@media (prefers-color-scheme: dark)' in theme_css
     assert '.fsi-brand__lockup' in theme_css
