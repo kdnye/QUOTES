@@ -19,6 +19,7 @@ Services portal.
 - Quotes saved in a database
 - Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
 - Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
+- Theme now supports dark mode and automatically follows each user's system color-scheme preference
 
 ## Feature status
 
