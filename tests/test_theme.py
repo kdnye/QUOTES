@@ -90,3 +90,4 @@ def test_base_template_uses_branded_header_classes() -> None:
     assert '.fsi-nav-link--cta' in theme_css
     assert '.btn.fsi-button-primary' in theme_css
     assert '.btn.fsi-button-secondary' in theme_css
+    assert '[data-bs-theme="dark"] .fsi-notice--info' in theme_css
