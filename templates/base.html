@@ -13,99 +13,98 @@
     {% block head %}{% endblock %}
   </head>
   <body>
-    <nav class="navbar navbar-expand-lg fsi-navbar">
-      <div class="container-fluid fsi-navbar__container">
-        <a class="navbar-brand fsi-brand" href="/" aria-label="Freight Services Quote Tool Home">
-          <span class="fsi-brand__lockup" aria-hidden="true">FSI</span>
-          <span class="fsi-brand__text">
-            <span class="fsi-brand__site">Freight Services Inc.</span>
-            <span class="fsi-brand__app">Quote Tool</span>
-          </span>
-        </a>
-        <button
-          class="navbar-toggler fsi-navbar__toggler"
-          type="button"
-          data-bs-toggle="collapse"
-          data-bs-target="#mainNav"
-          aria-controls="mainNav"
-          aria-expanded="false"
-          aria-label="Toggle navigation"
-        >
-          <span class="navbar-toggler-icon"></span>
-        </button>
-       <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
-         <ul class="navbar-nav ms-auto fsi-navbar__menu d-grid gap-3">
-          <li class="nav-item">
-            <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
-               aria-hidden="true" 
-               href="/quotes/new">Get New Quote</a>
-         </li>
-         <li class="nav-item">
+   <nav class="navbar navbar-expand-lg fsi-navbar">
+  <div class="container-fluid fsi-navbar__container">
+    <a class="navbar-brand fsi-brand" href="/" aria-label="Freight Services Quote Tool Home">
+      <span class="fsi-brand__lockup" aria-hidden="true">FSI</span>
+      <span class="fsi-brand__text">
+        <span class="fsi-brand__site">Freight Services Inc.</span>
+        <span class="fsi-brand__app">Quote Tool</span>
+      </span>
+    </a>
+
+    <button
+      class="navbar-toggler fsi-navbar__toggler"
+      type="button"
+      data-bs-toggle="collapse"
+      data-bs-target="#mainNav"
+      aria-controls="mainNav"
+      aria-expanded="false"
+      aria-label="Toggle navigation"
+    >
+      <span class="navbar-toggler-icon"></span>
+    </button>
+
+    <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
+      <ul class="navbar-nav ms-auto fsi-navbar__menu d-flex align-items-lg-center gap-3">
+        
+        <li class="nav-item">
+          <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
+             aria-hidden="true" 
+             href="/quotes/new">Get New Quote</a>
+        </li>
+        <li class="nav-item">
           <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
              aria-hidden="true" 
              href="{{ url_for('quotes.lookup_quote') }}">Quote Lookup</a>
-         </li>
-        </ul>
-       </div>
-              <a
-                class="nav-link fsi-nav-link fsi-nav-link--icon d-flex align-items-center justify-content-center"
-                href="{{ url_for('help.help_index') }}"
-                aria-label="Help"
-                title="Help"
-              >
-                <span aria-hidden="true" class="fw-semibold">?</span>
-              </a>
-            </li>
-            {% if current_user.is_authenticated %}
-            {% if current_user.role == 'super_admin' or current_user.is_admin %}
+        </li>
+
+        <li class="nav-item">
+          <a
+            class="nav-link fsi-nav-link fsi-nav-link--icon d-flex align-items-center justify-content-center"
+            href="{{ url_for('help.help_index') }}"
+            aria-label="Help"
+            title="Help"
+          >
+            <span aria-hidden="true" class="fw-semibold">?</span>
+          </a>
+        </li>
+
+        {% if current_user.is_authenticated %}
+          {% if current_user.role == 'super_admin' or current_user.is_admin %}
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
             </li>
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">All Quotes</a>
             </li>
-            {% elif current_user.role == 'employee' and current_user.employee_approved %}
+          {% elif current_user.role == 'employee' and current_user.employee_approved %}
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin.dashboard') }}">Team Dashboard</a>
             </li>
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
             </li>
-            {% endif %}
-            <li class="nav-item dropdown">
-              <a
-                class="nav-link fsi-nav-link dropdown-toggle d-flex align-items-center gap-2"
-                href="#"
-                id="accountMenu"
-                role="button"
-                data-bs-toggle="dropdown"
-                aria-expanded="false"
-              >
-                <i class="bi bi-person-circle" aria-hidden="true"></i>
-                <span class="fw-semibold">{{ current_user.first_name or current_user.email }}</span>
-              </a>
-              <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
-                <li class="dropdown-header small text-muted">
-                  Signed in as<br />
-                  <strong>{{ current_user.name or current_user.email }}</strong>
-                </li>
-                <li>
-                  <a class="dropdown-item" href="{{ url_for('auth.settings') }}">Account settings</a>
-                </li>
-                <li>
-                  <a class="dropdown-item" href="{{ url_for('auth.reset_request') }}">Password reset</a>
-                </li>
-                <li><hr class="dropdown-divider" /></li>
-                <li>
-                  <a class="dropdown-item" href="{{ url_for('auth.logout') }}">Sign out</a>
-                </li>
-              </ul>
-            </li>
-            {% endif %}
-          </ul>
-        </div>
-      </div>
-    </nav>
+          {% endif %}
+
+          <li class="nav-item dropdown">
+            <a
+              class="nav-link fsi-nav-link dropdown-toggle d-flex align-items-center gap-2"
+              href="#"
+              id="accountMenu"
+              role="button"
+              data-bs-toggle="dropdown"
+              aria-expanded="false"
+            >
+              <i class="bi bi-person-circle" aria-hidden="true"></i>
+              <span class="fw-semibold">{{ current_user.first_name or current_user.email }}</span>
+            </a>
+            <ul class="dropdown-menu dropdown-menu-end" aria-labelledby="accountMenu">
+              <li class="dropdown-header small text-muted">
+                Signed in as<br />
+                <strong>{{ current_user.name or current_user.email }}</strong>
+              </li>
+              <li><a class="dropdown-item" href="{{ url_for('auth.settings') }}">Account settings</a></li>
+              <li><a class="dropdown-item" href="{{ url_for('auth.reset_request') }}">Password reset</a></li>
+              <li><hr class="dropdown-divider" /></li>
+              <li><a class="dropdown-item" href="{{ url_for('auth.logout') }}">Sign out</a></li>
+            </ul>
+          </li>
+        {% endif %}
+      </ul>
+    </div>
+  </div>
+</nav>
 
     <main class="{% block main_class %}container{% endblock %} py-4">
       {% with messages = get_flashed_messages(with_categories=true) %}
