@@ -59,3 +59,27 @@ def test_init_fsi_theme_registers_blueprint_when_assets_exist() -> None:
     with app.test_request_context():
         rendered = render_template_string("{{ fsi_theme() }}")
         assert "/theme/static/fsi.css" in rendered
+
+
+def test_base_template_uses_branded_header_classes() -> None:
+    """Verify the base layout uses branded navigation and text-first actions.
+
+    Args:
+        None.
+
+    Returns:
+        ``None``. Verifies behavior through assertions.
+
+    External Dependencies:
+        * Reads ``templates/base.html`` with :class:`pathlib.Path`.
+        * Reads ``app/theme/static/fsi.css`` with :class:`pathlib.Path`.
+    """
+
+    base_template = Path("templates/base.html").read_text()
+    theme_css = Path("app/theme/static/fsi.css").read_text()
+
+    assert 'class="navbar navbar-expand-lg fsi-navbar"' in base_template
+    assert 'class="navbar-brand fsi-brand"' in base_template
+    assert 'class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new"' in base_template
+    assert '.fsi-brand__lockup' in theme_css
+    assert '.fsi-nav-link--cta' in theme_css
