@@ -178,8 +178,8 @@ def _issue_registration_challenge() -> str:
 
 
 PASSWORD_REQUIREMENTS_HELP = (
-    "Use at least 14 characters with upper- and lower-case letters, a number, and a "
-    "symbol, or supply a 24+ character passphrase."
+    "Use at least 12 characters with upper- and lower-case letters, a number, and a "
+    "symbol, or supply a 28+ character passphrase."
 )
 
 

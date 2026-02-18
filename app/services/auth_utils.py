@@ -35,11 +35,27 @@ def hash_reset_token(token: str) -> str:
 
 
 def is_valid_password(password: str) -> bool:
-    """Validate password complexity or allow long passphrases."""
-    if len(password) >= 24:
+    """Return ``True`` when ``password`` satisfies the project policy.
+
+    Args:
+        password: Plain-text password submitted from account setup, registration,
+            or password reset forms.
+
+    Returns:
+        ``True`` when the value is either:
+        * at least 12 characters and includes uppercase, lowercase, number,
+          and symbol characters, or
+        * at least 28 characters long (passphrase mode) with no other checks.
+
+    External Dependencies:
+        * Uses :func:`re.search` from Python's standard library to detect
+          required character classes.
+    """
+
+    if len(password) >= 28:
         return True
-    return (
-        len(password) >= 14
+    return bool(
+        len(password) >= 12
         and re.search(r"[A-Z]", password)
         and re.search(r"[a-z]", password)
         and re.search(r"[0-9]", password)
