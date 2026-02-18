@@ -242,6 +242,34 @@ def test_help_index_renders_structured_sections() -> None:
     assert "User Account &amp; Security" in html
     assert "Booking &amp; Operations" in html
     assert "Legal &amp; Privacy Policy" in html
+    assert "Read Full Terms in App" in html
+
+
+def test_help_terms_of_use_route_renders_freight_services_content() -> None:
+    """Serve the full Freight Services terms of use page for end users.
+
+    Args:
+        None.
+
+    Returns:
+        None. Assertions verify legal headings and contact details render.
+
+    External dependencies:
+        * Calls ``help.terms_of_use`` through
+          :meth:`flask.testing.FlaskClient.get`.
+    """
+
+    app = _build_help_test_app()
+    client = app.test_client()
+
+    response = client.get("/help/terms-of-use")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Freight Services Terms and Conditions" in html
+    assert "Class Action Waiver" in html
+    assert "Liability Disclaimer" in html
+    assert "humanresources@freightservices.net" in html
 
 
 def test_help_index_hides_employee_resources_for_customers() -> None:
