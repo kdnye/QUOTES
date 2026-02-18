@@ -110,12 +110,22 @@
       <div id="collapseLegal" class="accordion-collapse collapse" aria-labelledby="headingLegal" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
           <h3 class="h5">Website Terms of Use</h3>
-          <ul class="mb-2">
-            <li>Freight Services provides online quote and related marketing service information through this website.</li>
-            <li>By using this platform, users consent to receive electronic communications related to accounts, quotes, and service operations.</li>
-            <li>For HR-related policy questions, contact <a href="mailto:hr@freightservices.net">hr@freightservices.net</a>.</li>
-          </ul>
-          <p class="mb-0 text-muted">This summary is informational and does not replace the full legal terms provided by Freight Services.</p>
+          <p class="mb-2">
+            Review the complete Freight Services website terms, including
+            arbitration language, class action waiver, liability disclaimer,
+            intellectual property restrictions, and contact information.
+          </p>
+          <div class="d-flex flex-wrap gap-2 align-items-center">
+            <a class="btn btn-sm btn-outline-primary" href="{{ url_for('help.terms_of_use') }}">Read Full Terms in App</a>
+            <a
+              class="btn btn-sm btn-outline-secondary"
+              href="https://freightservices.net/wp-content/uploads/2025/09/Website-Terms-of-Use.pdf"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open Official PDF
+            </a>
+          </div>
         </div>
       </div>
     </div>

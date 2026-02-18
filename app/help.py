@@ -305,3 +305,22 @@ def emailing_guide() -> str:
     """
 
     return render_template("help/emailing.html", **_base_help_context())
+
+
+@help_bp.get("/terms-of-use")
+def terms_of_use() -> str:
+    """Render the Freight Services website terms of use.
+
+    The view exposes the complete legal terms provided by Freight Services so
+    users can review rights, restrictions, arbitration language, and contact
+    information in one location. It relies on :func:`flask.render_template` to
+    display the ``templates/help/terms_of_use.html`` document.
+
+    Args:
+        None.
+
+    Returns:
+        Rendered HTML string for the terms-of-use help page.
+    """
+
+    return render_template("help/terms_of_use.html", **_base_help_context())
