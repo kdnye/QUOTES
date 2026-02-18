@@ -34,3 +34,28 @@ def test_init_fsi_theme_skips_blueprint_when_assets_missing(
     with app.test_request_context():
         rendered = render_template_string("{{ fsi_theme() }}")
         assert rendered == ""
+
+
+def test_init_fsi_theme_registers_blueprint_when_assets_exist() -> None:
+    """Ensure theme blueprint and helper link are available with assets.
+
+    Args:
+        None.
+
+    Returns:
+        ``None``. Verifies behavior through assertions.
+
+    External Dependencies:
+        * Calls :func:`app.quote.theme.init_fsi_theme`.
+        * Renders the helper via :func:`flask.render_template_string`.
+    """
+
+    app = Flask("theme-with-assets")
+
+    theme_module.init_fsi_theme(app)
+
+    assert theme_module.bp.name in app.blueprints
+
+    with app.test_request_context():
+        rendered = render_template_string("{{ fsi_theme() }}")
+        assert "/theme/static/fsi.css" in rendered
