@@ -80,6 +80,44 @@ def test_base_template_uses_branded_header_classes() -> None:
 
     assert 'class="navbar navbar-expand-lg fsi-navbar"' in base_template
     assert 'class="navbar-brand fsi-brand"' in base_template
-    assert 'class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new"' in base_template
-    assert '.fsi-brand__lockup' in theme_css
-    assert '.fsi-nav-link--cta' in theme_css
+    assert (
+        'class="nav-link fsi-nav-link fsi-nav-link--cta" href="/quotes/new"'
+        in base_template
+    )
+    assert ".fsi-brand__lockup" in theme_css
+    assert ".fsi-nav-link--cta" in theme_css
+
+
+def test_quote_and_auth_templates_use_reusable_theme_utilities() -> None:
+    """Confirm quote and login templates reference shared FSI utility classes.
+
+    Args:
+        None.
+
+    Returns:
+        ``None``. Verifies behavior through assertions.
+
+    External Dependencies:
+        * Reads ``app/theme/static/fsi.css`` with :class:`pathlib.Path`.
+        * Reads template files with :class:`pathlib.Path`.
+    """
+
+    theme_css = Path("app/theme/static/fsi.css").read_text()
+    quote_result_template = Path("templates/quote_result.html").read_text()
+    new_quote_template = Path("templates/new_quote.html").read_text()
+    login_template = Path("templates/login.html").read_text()
+
+    assert ".fsi-card" in theme_css
+    assert ".fsi-summary" in theme_css
+    assert ".fsi-notice--warning" in theme_css
+    assert ".fsi-notice--info" in theme_css
+    assert ".fsi-btn-primary" in theme_css
+    assert ".fsi-btn-secondary" in theme_css
+
+    assert 'class="fsi-summary my-4"' in quote_result_template
+    assert 'class="fsi-notice fsi-notice--warning mt-2"' in quote_result_template
+    assert 'class="btn fsi-btn-secondary"' in quote_result_template
+    assert 'class="fsi-card mt-3"' in new_quote_template
+    assert 'class="btn fsi-btn-primary mt-4"' in new_quote_template
+    assert 'class="fsi-card"' in login_template
+    assert 'class="btn fsi-btn-primary" type="submit"' in login_template

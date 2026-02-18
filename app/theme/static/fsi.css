@@ -12,10 +12,20 @@
 
     /* Brand colors */
     --fsi-color-primary: #2d78e4;
+    --fsi-color-primary-dark: #1751a8;
+    --fsi-color-secondary: #5f6c80;
+    --fsi-color-secondary-dark: #4e596b;
     --fsi-color-text: #0a0a0a;
     --fsi-color-text-strong: #000000;
     --fsi-color-surface: #f4f4f4;
     --fsi-color-surface-alt: #f1f1f1;
+    --fsi-color-summary-bg: #ffd7b8;
+    --fsi-color-warning-bg: #fff4de;
+    --fsi-color-warning-border: #f0c171;
+    --fsi-color-warning-text: #5f420f;
+    --fsi-color-info-bg: #eaf3ff;
+    --fsi-color-info-border: #94b8f3;
+    --fsi-color-info-text: #1a3f77;
     --fsi-color-white: #ffffff;
 
     /* Spacing scale */
@@ -146,7 +156,89 @@ h6,
 .fsi-nav-link--cta:hover,
 .fsi-nav-link--cta:focus {
     background-color: rgb(45 120 228 / 14%);
-    color: #1751a8;
+    color: var(--fsi-color-primary-dark);
+}
+
+.fsi-card {
+    background-color: var(--fsi-color-white);
+    border: 1px solid rgb(0 0 0 / 9%);
+    border-radius: var(--fsi-radius-md);
+    box-shadow: var(--fsi-shadow-sm);
+    padding: var(--fsi-space-4);
+}
+
+.fsi-card + .fsi-card {
+    margin-top: var(--fsi-space-4);
+}
+
+.fsi-summary {
+    background-color: var(--fsi-color-summary-bg);
+    border: 1px solid rgb(0 0 0 / 10%);
+    border-radius: var(--fsi-radius-md);
+    color: var(--fsi-color-text);
+    padding: var(--fsi-space-4);
+}
+
+.fsi-summary__label {
+    color: rgb(0 0 0 / 70%);
+    font-size: 0.85rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+}
+
+.fsi-notice {
+    border: 1px solid transparent;
+    border-radius: var(--fsi-radius-md);
+    padding: var(--fsi-space-3) var(--fsi-space-4);
+}
+
+.fsi-notice--warning {
+    background-color: var(--fsi-color-warning-bg);
+    border-color: var(--fsi-color-warning-border);
+    color: var(--fsi-color-warning-text);
+}
+
+.fsi-notice--info {
+    background-color: var(--fsi-color-info-bg);
+    border-color: var(--fsi-color-info-border);
+    color: var(--fsi-color-info-text);
+}
+
+.fsi-btn-primary,
+.fsi-btn-secondary {
+    border-radius: var(--fsi-radius-pill);
+    font-weight: 500;
+    padding: var(--fsi-space-2) var(--fsi-space-4);
+}
+
+.fsi-btn-primary {
+    background-color: var(--fsi-color-primary);
+    border-color: var(--fsi-color-primary);
+    color: var(--fsi-color-white);
+}
+
+.fsi-btn-primary:hover,
+.fsi-btn-primary:focus {
+    background-color: var(--fsi-color-primary-dark);
+    border-color: var(--fsi-color-primary-dark);
+    color: var(--fsi-color-white);
+}
+
+.fsi-btn-secondary {
+    background-color: var(--fsi-color-secondary);
+    border-color: var(--fsi-color-secondary);
+    color: var(--fsi-color-white);
+}
+
+.fsi-btn-secondary:hover,
+.fsi-btn-secondary:focus {
+    background-color: var(--fsi-color-secondary-dark);
+    border-color: var(--fsi-color-secondary-dark);
+    color: var(--fsi-color-white);
+}
+
+.fsi-text-prewrap {
+    white-space: pre-wrap;
 }
 
 @media (max-width: 991.98px) {
