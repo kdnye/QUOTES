@@ -28,6 +28,7 @@
     --fsi-color-info-soft: rgb(45 111 183 / 12%);
     --fsi-color-warning: #cfac4e;
     --fsi-color-warning-soft: rgb(207 172 78 / 20%);
+    --fsi-color-warning-text: #1c3564;
     --fsi-color-muted-earth: #a5a897;
     --fsi-color-sage-light: #bfb88f;
 
@@ -64,6 +65,7 @@
     --fsi-color-info-soft: rgb(25 103 178 / 28%);
     --fsi-color-warning: #ffc27a;
     --fsi-color-warning-soft: rgb(166 92 0 / 34%);
+    --fsi-color-warning-text: #ffe6bf;
     --fsi-shadow-sm: 0 1px 2px rgb(0 0 0 / 28%);
     --fsi-shadow-md: 0 4px 12px rgb(0 0 0 / 34%);
     --fsi-shadow-lg: 0 8px 24px rgb(0 0 0 / 44%);
@@ -155,7 +157,7 @@
 .fsi-notice--warning {
     background-color: var(--fsi-color-warning-soft);
     border-color: rgb(207 172 78 / 42%);
-    color: var(--fsi-color-warning);
+    color: var(--fsi-color-warning-text);
 }
 
 .btn.fsi-button-primary,
