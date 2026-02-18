@@ -77,7 +77,7 @@
     }
 
     .fsi-notice--info {
-        color: #afd5ff;
+        color: var(--fsi-color-text);
     }
 
     .fsi-nav-link--cta {
@@ -99,6 +99,10 @@
     .fsi-email-request__return-panel {
         border-color: rgb(255 194 122 / 52%);
         background-color: rgb(166 92 0 / 34%);
+    }
+
+    .fsi-email-request__return-label {
+        color: #3f4750;
     }
 }
 
@@ -146,6 +150,10 @@
     background-color: var(--fsi-color-info-soft);
     border-color: rgb(25 103 178 / 32%);
     color: #0d4f8f;
+}
+
+.fsi-email-request__return-label {
+    color: #3f4750;
 }
 
 .fsi-notice--warning {
