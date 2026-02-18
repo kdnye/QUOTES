@@ -39,6 +39,9 @@
               <a class="fsi-brand__lockup" aria-hidden="true" href="/quotes/new">Get New Quote</a>
             </li>
             <li class="nav-item">
+              <a class="fsi-brand__lockup" aria-hidden="true" href="{{ url_for('quotes.lookup_quote') }}">Quote Lookup</a>
+            </li>
+            <li class="nav-item">
               <a
                 class="nav-link fsi-nav-link fsi-nav-link--icon d-flex align-items-center justify-content-center"
                 href="{{ url_for('help.help_index') }}"
@@ -64,9 +67,6 @@
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
             </li>
             {% endif %}
-            <li class="nav-item">
-              <a class="nav-link fsi-nav-link" href="{{ url_for('quotes.lookup_quote') }}">Quote Lookup</a>
-            </li>
             <li class="nav-item dropdown">
               <a
                 class="nav-link fsi-nav-link dropdown-toggle d-flex align-items-center gap-2"
