@@ -242,6 +242,7 @@ def test_help_index_renders_structured_sections() -> None:
     assert "Generating a Quote" in html
     assert "Reviewing Results" in html
     assert "Managing &amp; Finalizing Shipments" in html
+    assert "Self-Service Quote Tool User Guide" in html
     assert "Operations booking fee" in html
     assert "Read Full Terms in App" in html
 
