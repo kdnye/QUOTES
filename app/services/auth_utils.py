@@ -44,7 +44,7 @@ def is_valid_password(password: str) -> bool:
     Returns:
         ``True`` when the value is either:
         * at least 12 characters and includes uppercase, lowercase, number,
-          and symbol characters, or
+          or symbol characters, or
         * at least 28 characters long (passphrase mode) with no other checks.
 
     External Dependencies:
@@ -52,14 +52,15 @@ def is_valid_password(password: str) -> bool:
           required character classes.
     """
 
-    if len(password) >= 28:
+   if len(password) >= 28:
         return True
+        
     return bool(
         len(password) >= 12
         and re.search(r"[A-Z]", password)
         and re.search(r"[a-z]", password)
-        and re.search(r"[0-9]", password)
-        and re.search(r"[^a-zA-Z0-9]", password)
+        # Use the pipe symbol (|) for "OR" logic between digits and non-alphanumeric symbols
+        and re.search(r"[0-9]|[^a-zA-Z0-9]", password)
     )
 
 
