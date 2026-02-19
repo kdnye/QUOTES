@@ -89,6 +89,12 @@
         color: #dbeaff;
     }
 
+    .fsi-notice--info {
+        color: #dbeaff;
+        border-color: rgb(45 120 228 / 48%);
+        background-color: rgb(45 120 228 / 24%);
+    }
+
     .btn.fsi-button-secondary:hover,
     .btn.fsi-button-secondary:focus-visible {
         color: #d4dce5;
