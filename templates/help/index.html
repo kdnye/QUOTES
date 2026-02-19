@@ -7,8 +7,8 @@
   <div class="mb-4">
     <h2 class="mb-2">Help Center</h2>
     <p class="text-muted mb-0">
-      Use this guide to understand how quote calculations, account access,
-      booking workflows, and policy terms work across the Freight Services portal.
+      Use this guide to generate self-service freight quotes, review costs,
+      and move shipments from quote to booking in the Freight Services portal.
     </p>
   </div>
 
@@ -16,34 +16,24 @@
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingCalculation">
         <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCalculation" aria-expanded="true" aria-controls="collapseCalculation">
-          1) Shipment Calculation Guide
+          1) Tool Overview
         </button>
       </h2>
       <div id="collapseCalculation" class="accordion-collapse collapse show" aria-labelledby="headingCalculation" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
-          <h3 class="h5">Chargeable Weight Rule</h3>
-          <p class="mb-2">Every quote uses the greater value between actual weight and dimensional weight. This final value is the chargeable (billable) weight.</p>
+          <h3 class="h5">Purpose</h3>
+          <p class="mb-2">The FSI Self-Service Quote Tool is designed to help customers obtain rapid shipment pricing and proceed to booking without waiting for manual quote turnaround.</p>
 
-          <h3 class="h5">166 Factor Formula</h3>
-          <p class="mb-2">Dimensional weight is calculated as:</p>
-          <p><code>(Length × Width × Height) ÷ 166</code></p>
-          <p class="text-muted">Use inches for dimensions and pounds for weight.</p>
-
-          <h3 class="h5">ZIP Code Shipment Notes</h3>
-          <p class="mb-2">Origin and destination ZIP codes may include shipment notes. These notes provide local handling guidance that can affect services needed at pickup or delivery.</p>
-
-          <h3 class="h5">Final Rate Approval</h3>
-          <p class="mb-2">Invoices may increase after final review when shipment conditions differ from the original request, including:</p>
+          <h3 class="h5">Supported Service Types</h3>
           <ul class="mb-0">
-            <li>Weight discrepancies between provided and verified shipment weight.</li>
-            <li>Site requirements discovered during execution (for example, dock constraints or special handling needs).</li>
-            <li>Limited access designations identified after booking.</li>
+            <li>Domestic door-to-door next day air freight.</li>
+            <li>Direct point-to-point hotshot cargo runs.</li>
           </ul>
 
           {% if is_internal %}
           <div class="alert alert-secondary mt-3 mb-0">
             <strong>Internal technical notes:</strong>
-            Margin controls and adjustment math are applied in the quote engine before total presentation. ZIP notes are sourced from ZIP-zone records and mapped using origin/destination ZIP lookups.
+            Keep customer-facing language focused on speed, transparency, and self-service workflows. Avoid exposing margin math or backend pricing-control terminology in shared documentation.
           </div>
           {% endif %}
         </div>
@@ -53,21 +43,29 @@
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingAccount">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAccount" aria-expanded="false" aria-controls="collapseAccount">
-          2) User Account &amp; Security
+          2) Generating a Quote
         </button>
       </h2>
       <div id="collapseAccount" class="accordion-collapse collapse" aria-labelledby="headingAccount" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
-          <h3 class="h5">Registration Requirements</h3>
-          <p>Account registration requires a valid business email address. Personal or disposable email addresses are not accepted for production quoting access.</p>
+          <h3 class="h5">Required Inputs</h3>
+          <ol>
+            <li>Origin ZIP code</li>
+            <li>Destination ZIP code</li>
+            <li>Total weight</li>
+            <li>Number of pieces</li>
+            <li>Service type (<strong>Hotshot</strong> or <strong>Next Day Air</strong>)</li>
+            <li>Any required accessorial services (for example, liftgate, residential delivery, limited access)</li>
+          </ol>
 
-          <h3 class="h5">Password Reset Window</h3>
-          <p class="mb-0">Password reset links remain valid for 24 hours from the time the request is created. If the link expires, submit a new reset request.</p>
+          <div class="alert alert-warning mb-0" role="alert">
+            <strong>Important:</strong> Accessorial selections impact the final total. If required services are omitted during quote entry, rates may increase during final shipment review.
+          </div>
 
           {% if is_internal %}
           <div class="alert alert-secondary mt-3 mb-0">
             <strong>Internal technical notes:</strong>
-            Password reset tokens are time-bound and should be audited with standard account-security logging when customer access issues are escalated.
+            Accessorial logic and ZIP validation are implemented by the quote services layer. Ensure new accessorial codes are documented for customer users when added to admin rate tables.
           </div>
           {% endif %}
         </div>
@@ -77,24 +75,25 @@
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingBooking">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseBooking" aria-expanded="false" aria-controls="collapseBooking">
-          3) Booking &amp; Operations
+          3) Reviewing Results
         </button>
       </h2>
       <div id="collapseBooking" class="accordion-collapse collapse" aria-labelledby="headingBooking" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
-          <h3 class="h5">Using Quote ID for Lookups</h3>
-          <p class="mb-2">Use the generated Quote ID to retrieve saved quote details from the lookup workflow. This ID is the fastest way to reopen an existing quote.</p>
-
-          <h3 class="h5">Pickup and Delivery Dates</h3>
-          <p class="mb-2">Booking requests must include both pickup and delivery dates so dispatch can validate timeline feasibility and carrier availability.</p>
-
-          <h3 class="h5">Send to Myself Receipts</h3>
-          <p class="mb-0">Use the <strong>Send to Myself</strong> button on the quote results page to email yourself a receipt copy with pricing and shipment details.</p>
+          <h3 class="h5">Quote Result Breakdown</h3>
+          <p class="mb-2">After you submit a quote request, review the following fields before continuing:</p>
+          <ul class="mb-2">
+            <li><strong>Base Charge</strong>: core transportation rate based on service, distance, and shipment details.</li>
+            <li><strong>Accessorials</strong>: itemized costs for selected specialized services.</li>
+            <li><strong>Total Miles</strong>: estimated route distance used for quote generation.</li>
+            <li><strong>Warnings</strong>: highlighted notices when shipment details exceed standard thresholds.</li>
+          </ul>
+          <p class="mb-0">Always validate that the quote matches shipment requirements before selecting a booking pathway.</p>
 
           {% if is_internal %}
           <div class="alert alert-secondary mt-3 mb-0">
             <strong>Internal technical notes:</strong>
-            Quote lookup and email workflows should reuse shared quote context helpers so shipment notes, permissions, and accessorial totals remain consistent across first-load and follow-up actions.
+            Warning and threshold language should remain aligned with active validation logic so help content mirrors quote-result messaging.
           </div>
           {% endif %}
         </div>
@@ -104,11 +103,28 @@
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingLegal">
         <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLegal" aria-expanded="false" aria-controls="collapseLegal">
-          4) Legal &amp; Privacy Policy
+          4) Managing &amp; Finalizing Shipments
         </button>
       </h2>
       <div id="collapseLegal" class="accordion-collapse collapse" aria-labelledby="headingLegal" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
+          <h3 class="h5">Booking and Sharing Options</h3>
+          <ol>
+            <li><strong>Book Directly via TS2000</strong>: Select <strong>Book Quote</strong> to continue in the Freight Services TransSoft portal.</li>
+            <li><strong>Email for Operations Booking</strong>: Select <strong>Email to Request Booking</strong> to have operations finalize the load.</li>
+            <li><strong>Save/Share Quote</strong>: Use <strong>Send to Myself</strong> for your own copy, or <strong>Email this quote summary</strong> (staff-level accounts) to send customer-ready details.</li>
+          </ol>
+
+          <div class="alert alert-info" role="alert">
+            <strong>Operations booking fee:</strong> A $15 administrative fee applies when operations finalizes booking from email requests.
+          </div>
+
+          <h3 class="h5">Important Disclaimers</h3>
+          <ul>
+            <li>All automated quotes are subject to final evaluation and approval by Freight Services Inc.</li>
+            <li>Rates may increase when shipment requirements differ from original quote inputs, including missing accessorial services.</li>
+          </ul>
+
           <h3 class="h5">Website Terms of Use</h3>
           <p class="mb-2">
             Review the complete Freight Services website terms, including
