@@ -757,7 +757,7 @@ def update_theme() -> Response:
     payload = request.get_json(silent=True) or {}
     user = cast(User, current_user)
     user.theme_preference = _sanitize_theme_preference(payload.get("theme"))
-    db.session.add(user)
+    db.session.commit()
     db.session.commit()
     return jsonify({"status": "success", "theme": user.theme_preference})
 
