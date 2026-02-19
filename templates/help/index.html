@@ -18,19 +18,27 @@
     <div class="accordion-item">
       <h2 class="accordion-header" id="headingCalculation">
         <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#collapseCalculation" aria-expanded="true" aria-controls="collapseCalculation">
-          1) Tool Overview
+          1) Tool Overview & Calculation Guide
         </button>
       </h2>
       <div id="collapseCalculation" class="accordion-collapse collapse show" aria-labelledby="headingCalculation" data-bs-parent="#helpAccordion">
         <div class="accordion-body">
-          <h3 class="h5">Purpose</h3>
-          <p class="mb-2">The FSI Self-Service Quote Tool is designed to help customers obtain rapid shipment pricing and proceed to booking without waiting for manual quote turnaround.</p>
+          <h3 class="h5">Application Purpose</h3>
+          <p class="mb-2">The Quote Tool is a web application for generating rapid freight quotes for <strong>Hotshot</strong> (expedited truck) and <strong>Air</strong> shipments. Users can register, calculate quotes, and email details; all quotes are saved to the database for future lookup.</p>
 
-          <h3 class="h5">Supported Service Types</h3>
-          <ul class="mb-0">
-            <li>Domestic door-to-door next day air freight.</li>
-            <li>Direct point-to-point hotshot cargo runs.</li>
+          <h3 class="h5">Technical Engine</h3>
+          <ul class="mb-2">
+            <li><strong>Routing:</strong> The pricing engine utilizes Google Maps integration and internal rate tables.</li>
+            <li><strong>ZIP Validation:</strong> ZIP codes are validated against Google Places to ensure routing accuracy.</li>
+            <li><strong>Service Defaults:</strong> New quotes default to <strong>Air</strong> mode unless the user explicitly selects <strong>Hotshot</strong>.</li>
           </ul>
+
+          <h3 class="h5">Standard Formulas</h3>
+          <p class="mb-1"><strong>Dimensional Weight (Dim Weight):</strong></p>
+          <p><code>((Length × Width × Height) / 166) × Pieces</code></p>
+          
+          <p class="mb-1"><strong>Billable Weight:</strong></p>
+          <p>The system bills based on the greater of the two values: <code>Max(Actual Weight, Dimensional Weight)</code>.</p>
 
           {% if is_internal %}
           <div class="alert alert-secondary mt-3 mb-0">
@@ -195,6 +203,28 @@
         </div>
       </div>
     </div>
+
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="headingLimits">
+        <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLimits" aria-expanded="false" aria-controls="collapseLimits">
+          6) Shipment Validation &amp; Operational Limits
+        </button>
+      </h2>
+      <div id="collapseLimits" class="accordion-collapse collapse" aria-labelledby="headingLimits" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <h3 class="h5">Threshold Warnings</h3>
+          <p class="mb-2">The system issues warnings to ensure specialized handling for large or high-value loads:</p>
+          <ul class="mb-2">
+            <li><strong>Air Service:</strong> A warning is generated if billable weight exceeds 1,200 lbs.</li>
+            <li><strong>General Limits:</strong> A warning is generated if billable weight exceeds 3,000 lbs or if the quote total exceeds $6,000.</li>
+          </ul>
+
+          <h3 class="h5">Air Freight Restrictions</h3>
+          <p class="mb-0">Air service validation will fail if the billable weight per individual piece exceeds <strong>300 lbs</strong> (calculated as billable weight ÷ pieces).</p>
+        </div>
+      </div>
+    </div>
+
   </div>
 </div>
 {% endblock %}
