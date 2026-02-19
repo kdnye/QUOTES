@@ -190,7 +190,7 @@ def _build_help_test_app() -> Flask:
               :func:`app.quote.theme.init_fsi_theme` in the production app.
         """
 
-        return {"fsi_theme": lambda: ""}
+        return {"fsi_theme": lambda: "", "csrf_token": lambda: "test-csrf-token"}
 
     app.register_blueprint(help_bp, url_prefix="/help")
     return app
@@ -242,6 +242,8 @@ def test_help_index_renders_structured_sections() -> None:
     assert "User Account &amp; Security" in html
     assert "Booking &amp; Operations" in html
     assert "Legal &amp; Privacy Policy" in html
+    assert "Self-Service Quote Tool User Guide" in html
+    assert "Operations booking fee" in html
     assert "Read Full Terms in App" in html
 
 
