@@ -52,7 +52,7 @@ def is_valid_password(password: str) -> bool:
           required character classes.
     """
 
-   if len(password) >= 28:
+    if len(password) >= 28:
         return True
         
     return bool(
