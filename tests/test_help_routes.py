@@ -190,7 +190,7 @@ def _build_help_test_app() -> Flask:
               :func:`app.quote.theme.init_fsi_theme` in the production app.
         """
 
-        return {"fsi_theme": lambda: ""}
+        return {"fsi_theme": lambda: "", "csrf_token": lambda: "test-csrf-token"}
 
     app.register_blueprint(help_bp, url_prefix="/help")
     return app
@@ -238,10 +238,11 @@ def test_help_index_renders_structured_sections() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Shipment Calculation Guide" in html
-    assert "User Account &amp; Security" in html
-    assert "Booking &amp; Operations" in html
-    assert "Legal &amp; Privacy Policy" in html
+    assert "Tool Overview" in html
+    assert "Generating a Quote" in html
+    assert "Reviewing Results" in html
+    assert "Managing &amp; Finalizing Shipments" in html
+    assert "Operations booking fee" in html
     assert "Read Full Terms in App" in html
 
 
@@ -294,7 +295,7 @@ def test_help_index_hides_employee_resources_for_customers() -> None:
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Internal technical notes:" not in html
-    assert "Margin controls and adjustment math" not in html
+    assert "Keep customer-facing language focused on speed" not in html
 
 
 def test_help_index_shows_employee_resources_for_internal_users() -> None:
@@ -319,7 +320,7 @@ def test_help_index_shows_employee_resources_for_internal_users() -> None:
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "Internal technical notes:" in html
-    assert "Margin controls and adjustment math" in html
+    assert "Keep customer-facing language focused on speed" in html
 
 
 def test_help_index_treats_company_email_as_internal_even_without_employee_role() -> (
