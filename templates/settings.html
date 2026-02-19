@@ -110,7 +110,7 @@
       <h2 class="h4">Email privileges</h2>
       <p class="text-muted">
         Toggle this option if an administrator has approved you to send booking
-        request emails. You can disable it at any time.
+        request emails.
       </p>
       <div class="form-check">
         <input
@@ -119,10 +119,16 @@
           id="can_send_mail"
           name="can_send_mail"
           {% if form_state.can_send_mail %}checked{% endif %}
+          {% if not current_user.is_admin %}disabled{% endif %}
         />
         <label class="form-check-label" for="can_send_mail">
           Allow this account to send quote emails
         </label>
+        {% if not current_user.is_admin %}
+          <div class="form-text text-muted small">
+            <i class="bi bi-lock-fill"></i> This setting is managed by system administrators.
+          </div>
+        {% endif %}
       </div>
       <hr class="my-4" />
       <h2 class="h4">Update password</h2>
