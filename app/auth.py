@@ -27,6 +27,7 @@ from flask import (
     Response,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     render_template_string,
@@ -175,6 +176,26 @@ def _issue_registration_challenge() -> str:
     second_term = secrets.randbelow(8) + 2
     session["registration_challenge_answer"] = str(first_term + second_term)
     return f"What is {first_term} + {second_term}?"
+
+
+def _sanitize_theme_preference(raw_value: Optional[str]) -> str:
+    """Return a safe theme preference value for persisted account settings.
+
+    Args:
+        raw_value: Candidate preference from request payloads.
+
+    Returns:
+        One of ``"auto"``, ``"light"``, or ``"dark"``. Invalid values
+        default to ``"auto"`` so callers cannot persist unsupported themes.
+
+    External dependencies:
+        * None. The helper is pure and only normalizes in-memory values.
+    """
+
+    normalized = (raw_value or "auto").strip().lower()
+    if normalized in {"auto", "light", "dark"}:
+        return normalized
+    return "auto"
 
 
 PASSWORD_REQUIREMENTS_HELP = (
@@ -714,6 +735,31 @@ def settings() -> Union[str, Response]:
         form_state=form_state,
         password_hint=PASSWORD_REQUIREMENTS_HELP,
     )
+
+
+@auth_bp.route("/settings/theme", methods=["POST"])
+@login_required
+def update_theme() -> Response:
+    """Persist an authenticated user's theme preference via JSON requests.
+
+    Request JSON:
+        - theme: ``"auto"``, ``"light"``, or ``"dark"``.
+
+    Returns:
+        JSON response confirming success with the sanitized preference value.
+
+    External dependencies:
+        * Reads JSON payload through :meth:`flask.Request.get_json`.
+        * Persists values using :data:`app.models.db.session` and
+          :data:`flask_login.current_user`.
+    """
+
+    payload = request.get_json(silent=True) or {}
+    user = cast(User, current_user)
+    user.theme_preference = _sanitize_theme_preference(payload.get("theme"))
+    db.session.commit()
+    db.session.commit()
+    return jsonify({"status": "success", "theme": user.theme_preference})
 
 
 @auth_bp.route("/logout")

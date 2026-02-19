@@ -72,6 +72,9 @@ class User(UserMixin, db.Model):
             access.
         can_send_mail: Boolean toggle that explicitly permits the user to send
             outbound emails, bypassing role checks for mail-only workflows.
+        theme_preference: Appearance mode persisted for the account.
+            Accepted values are ``"auto"`` (follow system preference),
+            ``"light"``, and ``"dark"``.
         admin_previous_role: Cached role restored when administrative access is
             revoked. Persisted only while :attr:`is_admin` is ``True``.
         admin_previous_employee_approved: Cached ``employee_approved`` value
@@ -98,6 +101,9 @@ class User(UserMixin, db.Model):
     )
     employee_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     can_send_mail: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    theme_preference: Mapped[str] = db.Column(
+        db.String(10), nullable=False, default="auto"
+    )
     admin_previous_role: Mapped[Optional[str]] = db.Column(
         Enum("customer", "employee", name="user_admin_previous_role"),
         nullable=True,
