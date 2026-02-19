@@ -625,9 +625,10 @@ def settings() -> Union[str, Response]:
     :mod:`services.auth_utils`, including
     :func:`services.auth_utils.is_valid_email`,
     :func:`services.auth_utils.is_valid_phone`, and
-    :func:`services.auth_utils.is_valid_password`. It also allows users to
-    toggle the ``can_send_mail`` flag used by
-    :func:`services.mail.user_has_mail_privileges`.
+    :func:`services.auth_utils.is_valid_password`. Only administrators may
+    modify the ``can_send_mail`` flag used by
+    :func:`services.mail.user_has_mail_privileges`; non-admin submissions keep
+    the stored value.
 
     Returns:
         Renders ``settings.html`` with any validation feedback when invoked via
@@ -645,6 +646,9 @@ def settings() -> Union[str, Response]:
         company_name = (request.form.get("company_name") or "").strip()
         company_phone = (request.form.get("company_phone") or "").strip()
         can_send_mail = bool(request.form.get("can_send_mail"))
+        can_manage_mail_privileges = bool(getattr(user, "is_admin", False))
+        if not can_manage_mail_privileges:
+            can_send_mail = bool(getattr(user, "can_send_mail", False))
         current_password = request.form.get("current_password", "")
         new_password = request.form.get("new_password", "")
         confirm_password = request.form.get("confirm_password", "")
