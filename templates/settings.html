@@ -78,6 +78,35 @@
         </div>
       </div>
       <hr class="my-4" />
+      <div class="fsi-card mb-4 p-3 rounded border">
+        <h2 class="fsi-section-title h5">Appearance Settings</h2>
+
+        <div class="form-check form-switch mb-3">
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="overrideSystem"
+            {% if current_user.theme_preference != 'auto' %}checked{% endif %}
+          />
+          <label class="form-check-label" for="overrideSystem">
+            Override System Preference
+          </label>
+        </div>
+
+        <div
+          class="form-check form-switch ms-4"
+          id="manualToggleContainer"
+          style="display: {% if current_user.theme_preference == 'auto' %}none{% else %}block{% endif %};"
+        >
+          <input
+            class="form-check-input"
+            type="checkbox"
+            id="darkModeToggle"
+            {% if current_user.theme_preference == 'dark' %}checked{% endif %}
+          />
+          <label class="form-check-label" for="darkModeToggle">Enable Dark Mode</label>
+        </div>
+      </div>
       <h2 class="h4">Email privileges</h2>
       <p class="text-muted">
         Toggle this option if an administrator has approved you to send booking
