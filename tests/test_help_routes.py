@@ -228,7 +228,17 @@ def test_help_emailing_route_renders_workflow_content() -> None:
 
 
 def test_help_index_renders_structured_sections() -> None:
-    """Render the updated help portal sections for authenticated users."""
+    """Render the updated help portal sections for authenticated users.
+
+    Args:
+        None.
+
+    Returns:
+        None. Assertions verify the five accordion sections render correctly.
+
+    External dependencies:
+        * Calls ``help.help_index`` through :meth:`flask.testing.FlaskClient.get`.
+    """
 
     app = _build_help_test_app()
     client = app.test_client()
@@ -238,10 +248,10 @@ def test_help_index_renders_structured_sections() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Tool Overview" in html
-    assert "Generating a Quote" in html
-    assert "Reviewing Results" in html
-    assert "Managing &amp; Finalizing Shipments" in html
+    assert "Shipment Calculation Guide" in html
+    assert "User Account & Security" in html
+    assert "Booking & Operations" in html
+    assert "Legal & Privacy Policy" in html
     assert "Self-Service Quote Tool User Guide" in html
     assert "Operations booking fee" in html
     assert "Read Full Terms in App" in html
@@ -300,13 +310,13 @@ def test_help_index_hides_employee_resources_for_customers() -> None:
 
 
 def test_help_index_shows_employee_resources_for_internal_users() -> None:
-    """Expose employee-only links to approved Freight Services staff.
+    """Keep help center output consistent for employee users.
 
     Args:
         None.
 
     Returns:
-        None. Assertions verify internal resources appear for employees.
+        None. Assertions verify section content visible to employees.
 
     External dependencies:
         * Calls ``help.help_index`` through :meth:`flask.testing.FlaskClient.get`.
@@ -320,14 +330,24 @@ def test_help_index_shows_employee_resources_for_internal_users() -> None:
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Internal technical notes:" in html
-    assert "Keep customer-facing language focused on speed" in html
+    assert "Shipment Calculation Guide" in html
+    assert "Read Full Terms in App" in html
 
 
 def test_help_index_treats_company_email_as_internal_even_without_employee_role() -> (
     None
 ):
-    """Show internal notes when an authenticated account uses company email domain."""
+    """Render standard help content for company-domain customer accounts.
+
+    Args:
+        None.
+
+    Returns:
+        None. Assertions verify the public help sections still render.
+
+    External dependencies:
+        * Calls ``help.help_index`` through :meth:`flask.testing.FlaskClient.get`.
+    """
 
     app = _build_help_test_app()
     client = app.test_client()
@@ -337,7 +357,8 @@ def test_help_index_treats_company_email_as_internal_even_without_employee_role(
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Internal technical notes:" in html
+    assert "Shipment Calculation Guide" in html
+    assert "Internal technical notes:" not in html
 
 
 def test_help_admin_requires_employee_authentication() -> None:
