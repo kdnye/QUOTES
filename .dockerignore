@@ -16,3 +16,6 @@ dist/
 *.sqlite3
 *.db
 *.xlsx
+venv/
+*.pyc
+.git/

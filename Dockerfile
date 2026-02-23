@@ -29,4 +29,4 @@ USER app
 
 EXPOSE 8080
 
-CMD ["/app/scripts/start_gunicorn.sh"]
+CMD ["/bin/bash", "/app/scripts/start_gunicorn.sh"]
