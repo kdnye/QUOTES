@@ -88,6 +88,35 @@
   help you trace changes.
 </p>
 
+
+<h2 id="preflight">Admin pre-flight checklist</h2>
+<p>
+  Before onboarding new users, verify these dependencies so the quote engine
+  stays operational.
+</p>
+<ul>
+  <li>
+    <strong>Google Maps/Places API:</strong> Confirm the API key in
+    <code>.env</code> is active. ZIP validation in
+    <code>app/quote/zip_validation.py</code> depends on this service.
+  </li>
+  <li>
+    <strong>SMTP and mail permissions:</strong> Verify the mail server is
+    accepting outbound traffic and that appropriate users have
+    <code>can_send_mail</code> enabled.
+  </li>
+  <li>
+    <strong>Rate CSV parity:</strong> Validate
+    <code>rates/Hotshot_Rates.csv</code>, <code>rates/air_cost_zone.csv</code>,
+    and <code>rates/accessorial_cost.csv</code> against current fiscal sheets.
+  </li>
+  <li>
+    <strong>User access controls:</strong> Ensure Freight Services employee
+    accounts are approved and partner accounts keep restricted visibility for
+    booking and margin-related controls.
+  </li>
+</ul>
+
 <h2 id="email-controls">SMTP quote email controls</h2>
 <p>
   The admin dashboard includes a toggle for SMTP quote summary emails. Use it
