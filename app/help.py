@@ -324,3 +324,22 @@ def terms_of_use() -> str:
     """
 
     return render_template("help/terms_of_use.html", **_base_help_context())
+
+
+@help_bp.get("/quickstart-interactive")
+def quickstart_interactive() -> str:
+    """Render an interactive quick-start simulator for quote training.
+
+    The view serves a standalone HTML page that visualizes dimensional-weight
+    logic, warning thresholds, and sample quote lookup IDs used during
+    onboarding sessions. It relies on :func:`flask.render_template` to display
+    ``templates/help/quickstart_interactive.html``.
+
+    Args:
+        None.
+
+    Returns:
+        Rendered HTML string for the interactive quick-start guide.
+    """
+
+    return render_template("help/quickstart_interactive.html")
