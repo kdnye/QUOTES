@@ -321,6 +321,10 @@ Set production configuration in Cloud Run (or through a CI/CD system that
 targets Cloud Run). Store secrets in Secret Manager and reference them in the
 service configuration:
 
+If you deploy through Cloud Build, make sure the deploy step includes
+`--set-env-vars=FLASK_APP=app:create_app` so Gunicorn can resolve the Flask
+application factory entry point.
+
 ```dotenv
 FLASK_DEBUG=false
 GOOGLE_MAPS_API_KEY=your_google_key

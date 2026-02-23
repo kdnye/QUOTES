@@ -19,6 +19,7 @@ steps:
       - --region=${_REGION}
       - --platform=managed
       - --allow-unauthenticated
+      - --set-env-vars=FLASK_APP=app:create_app
       - --quiet
 substitutions:
   _IMAGE_URI: us-central1-docker.pkg.dev/PROJECT/REPO/quote-tool:latest
