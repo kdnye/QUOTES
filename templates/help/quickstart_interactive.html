@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Quote Tool | Interactive Quick Start</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  </head>
+  <body class="bg-slate-50 text-slate-800">
+    <main class="mx-auto max-w-6xl px-4 py-10">
+      <header class="mb-8 rounded-xl border bg-white p-6 shadow-sm">
+        <h1 class="text-3xl font-bold">Interactive Quick Start</h1>
+        <p class="mt-2 text-slate-600">
+          Practice quote-entry logic in a sandbox before using production rates.
+        </p>
+        <div class="mt-4 text-sm text-slate-500">
+          URL: <a class="text-blue-600 underline" href="https://quote.freightservices.net">quote.freightservices.net</a>
+        </div>
+      </header>
+
+      <section class="mb-8 grid gap-6 lg:grid-cols-2">
+        <article class="rounded-xl border bg-white p-6 shadow-sm">
+          <h2 class="mb-4 text-xl font-semibold">Quote Feasibility Simulator</h2>
+          <p class="mb-4 text-sm text-slate-600">
+            Dimensional formula: <code>((L × W × H) / 166) × pieces</code>
+          </p>
+          <div class="grid grid-cols-2 gap-3">
+            <label class="text-sm">Pieces
+              <input id="pieces" type="number" min="1" value="4" class="mt-1 w-full rounded border p-2" />
+            </label>
+            <label class="text-sm">Weight / piece (lbs)
+              <input id="weight" type="number" min="1" value="125" class="mt-1 w-full rounded border p-2" />
+            </label>
+            <label class="text-sm">Length (in)
+              <input id="length" type="number" min="1" value="30" class="mt-1 w-full rounded border p-2" />
+            </label>
+            <label class="text-sm">Width (in)
+              <input id="width" type="number" min="1" value="20" class="mt-1 w-full rounded border p-2" />
+            </label>
+            <label class="text-sm">Height (in)
+              <input id="height" type="number" min="1" value="24" class="mt-1 w-full rounded border p-2" />
+            </label>
+          </div>
+          <div id="status" class="mt-4 rounded border-l-4 border-blue-500 bg-blue-50 p-3 text-sm text-blue-800"></div>
+          <div class="mt-4 grid grid-cols-2 gap-3">
+            <div class="rounded border bg-slate-50 p-3">
+              <div class="text-xs uppercase text-slate-500">Actual weight</div>
+              <div id="actualOut" class="text-xl font-bold">0 lbs</div>
+            </div>
+            <div class="rounded border bg-slate-50 p-3">
+              <div class="text-xs uppercase text-slate-500">Billable weight</div>
+              <div id="billableOut" class="text-xl font-bold text-blue-700">0 lbs</div>
+            </div>
+          </div>
+        </article>
+
+        <article class="rounded-xl border bg-white p-6 shadow-sm">
+          <h2 class="mb-4 text-xl font-semibold">Actual vs Dimensional Weight</h2>
+          <div class="h-72"><canvas id="weightChart"></canvas></div>
+        </article>
+      </section>
+
+      <section class="mb-8 rounded-xl border bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold">Post-Quote Workflow</h2>
+        <ol class="mt-3 list-decimal space-y-2 pl-6 text-sm text-slate-700">
+          <li><strong>Save/Submit:</strong> Persists quote record for lookup.</li>
+          <li><strong>Email:</strong> Sends quote summary to user/client.</li>
+          <li><strong>Request Booking:</strong> Staff-only operational handoff.</li>
+        </ol>
+      </section>
+
+      <section class="mb-8 rounded-xl border bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold">Mock Quote Lookup</h2>
+        <p class="mt-2 text-sm text-slate-600">Try test IDs: Q-YFXRY54H, Q-3PNAQ92K, Q-2PR6U58J</p>
+        <div class="mt-3 flex gap-2">
+          <input id="lookup" class="w-full rounded border p-2" placeholder="Enter Quote ID" />
+          <button id="lookupBtn" class="rounded bg-blue-600 px-4 py-2 font-semibold text-white">Find</button>
+        </div>
+        <div id="lookupResult" class="mt-3 text-sm"></div>
+      </section>
+
+      <section class="rounded-xl border bg-white p-6 shadow-sm">
+        <h2 class="text-xl font-semibold">Admin Pre-Flight Checklist</h2>
+        <ul class="mt-3 list-disc space-y-1 pl-6 text-sm text-slate-700">
+          <li>Google Maps key active in <code>.env</code> for ZIP validation.</li>
+          <li>SMTP enabled and <code>can_send_mail</code> permission validated.</li>
+          <li>Rate CSVs current: Hotshot, air zones, and accessorial costs.</li>
+          <li>Employee approvals and partner visibility restrictions reviewed.</li>
+        </ul>
+      </section>
+    </main>
+
+    <script>
+      const quoteFixtures = {
+        "Q-YFXRY54H": { route: "90210 → 10001", service: "Air", total: "$4,250.00" },
+        "Q-3PNAQ92K": { route: "60601 → 33101", service: "Hotshot", total: "$1,850.00" },
+        "Q-2PR6U58J": { route: "75001 → 98101", service: "Air", total: "$2,100.00" },
+      };
+
+      const ctx = document.getElementById("weightChart");
+      const chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: ["Actual", "Dimensional"],
+          datasets: [{ data: [0, 0], backgroundColor: ["#94a3b8", "#2563eb"] }],
+        },
+        options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } },
+      });
+
+      function setStatus(title, description, color) {
+        const status = document.getElementById("status");
+        status.className = `mt-4 rounded border-l-4 p-3 text-sm ${color}`;
+        status.innerHTML = `<strong>${title}</strong><br>${description}`;
+      }
+
+      function recalc() {
+        const pieces = Number(document.getElementById("pieces").value || 0);
+        const weight = Number(document.getElementById("weight").value || 0);
+        const length = Number(document.getElementById("length").value || 0);
+        const width = Number(document.getElementById("width").value || 0);
+        const height = Number(document.getElementById("height").value || 0);
+
+        const actual = pieces * weight;
+        const dim = Math.ceil(((length * width * height) / 166) * pieces);
+        const billable = Math.max(actual, dim);
+
+        document.getElementById("actualOut").textContent = `${actual.toLocaleString()} lbs`;
+        document.getElementById("billableOut").textContent = `${billable.toLocaleString()} lbs`;
+        chart.data.datasets[0].data = [actual, dim];
+        chart.update();
+
+        if (weight > 300) {
+          setStatus(
+            "Air Block",
+            "Per-piece weight exceeds 300 lbs. Pro-tip: switch to Hotshot mode.",
+            "border-red-500 bg-red-50 text-red-800",
+          );
+          return;
+        }
+        if (billable > 3000 || billable * 1.5 > 6000) {
+          setStatus(
+            "Escalation Required",
+            "Billable load or estimated total exceeds standard auto-quote limits.",
+            "border-amber-500 bg-amber-50 text-amber-800",
+          );
+          return;
+        }
+        if (billable > 1200) {
+          setStatus(
+            "Air Advisory",
+            "Billable weight exceeds 1,200 lbs. Manual review may be needed.",
+            "border-amber-500 bg-amber-50 text-amber-800",
+          );
+          return;
+        }
+        setStatus("Quote Eligible", "Inputs are within standard air auto-quote thresholds.", "border-green-500 bg-green-50 text-green-800");
+      }
+
+      document.querySelectorAll("input[type='number']").forEach((input) => {
+        input.addEventListener("input", recalc);
+      });
+
+      document.getElementById("lookupBtn").addEventListener("click", () => {
+        const lookupId = document.getElementById("lookup").value.trim().toUpperCase();
+        const match = quoteFixtures[lookupId];
+        const result = document.getElementById("lookupResult");
+        if (!match) {
+          result.innerHTML = '<span class="text-red-600">Quote not found. Use one of the test IDs above.</span>';
+          return;
+        }
+        result.innerHTML = `<strong>${lookupId}</strong> • ${match.route} • ${match.service} • ${match.total}`;
+      });
+
+      recalc();
+    </script>
+  </body>
+</html>
