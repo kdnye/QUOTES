@@ -251,7 +251,10 @@ gcloud run deploy quote-tool \\
 For an interactive workflow, `scripts/deploy.sh` prompts for the required
 Cloud Run environment values, infers the active project and existing service
 image when possible, and deploys with the Cloud SQL connection values needed
-by the application.
+by the application. To prevent accidental placeholder rollouts, the script now
+fails fast when the selected image matches `gcr.io/cloudrun/placeholder` (or
+other `cloudrun/placeholder` variants) and asks you to provide your real
+Artifact Registry image URI.
 
 ### Cloud Run entrypoint
 
