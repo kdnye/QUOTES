@@ -101,6 +101,12 @@ require_no_commas() {
     fi
 }
 
+is_placeholder_image() {
+    local image_uri="$1"
+
+    [[ "${image_uri}" =~ (^|/)cloudrun/placeholder([:@]|$) ]]
+}
+
 upsert_secret() {
     local secret_name="$1"
     local secret_value="$2"
@@ -141,6 +147,13 @@ fi
 IMAGE_URI="$(prompt_with_optional_default "Container image URI" "${IMAGE_URI}")"
 if [[ -z "${IMAGE_URI}" ]]; then
     echo "Error: Container image URI is required." >&2
+    exit 1
+fi
+
+if is_placeholder_image "${IMAGE_URI}"; then
+    echo "Error: the selected image '${IMAGE_URI}' is the Cloud Run placeholder image." >&2
+    echo "Build and push your app image, then rerun this script with that URI." >&2
+    echo "Example: us-central1-docker.pkg.dev/${PROJECT_ID}/REPO_NAME/quote-tool:latest" >&2
     exit 1
 fi
 
