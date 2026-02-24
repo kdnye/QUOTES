@@ -8,6 +8,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     url_for,
 )
 from flask_login import LoginManager, current_user, login_required
@@ -18,6 +19,7 @@ from markupsafe import Markup
 from datetime import datetime
 import json
 import os
+from pathlib import Path
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
 from sqlalchemy.exc import OperationalError, SQLAlchemyError
@@ -511,9 +513,40 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         return (
             path.startswith("/setup")
             or path.startswith("/static")
+            or path == "/fsi-logo"
             or path == "/healthz"
             or path == "/healthz/config"
         )
+
+    @app.route("/fsi-logo", methods=["GET"])
+    def get_logo() -> ResponseReturnValue:
+        """Serve the FSI logo from the configured Cloud Run volume path.
+
+        Inputs:
+            None. Reads ``FSI_LOGO_PATH`` from ``app.config``.
+
+        Outputs:
+            Flask response streaming the configured image file.
+
+        External dependencies:
+            * Uses :class:`pathlib.Path` to validate filesystem existence.
+            * Calls :func:`flask.send_file` to stream the image safely.
+            * Logs failures with :attr:`flask.Flask.logger`.
+        """
+
+        configured_path = current_app.config.get("FSI_LOGO_PATH", "")
+        logo_path = Path(configured_path)
+        if not logo_path.is_file():
+            current_app.logger.warning("FSI logo not found at %s", logo_path)
+            abort(404)
+        try:
+            return send_file(logo_path)
+        except FileNotFoundError:
+            current_app.logger.warning("FSI logo not found at %s", logo_path)
+            abort(404)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            current_app.logger.exception("Unable to serve FSI logo: %s", exc)
+            abort(500)
 
     @app.before_request
     def _redirect_to_setup() -> Optional[ResponseReturnValue]:

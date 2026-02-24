@@ -197,6 +197,7 @@ required to read secrets and reach dependencies:
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | No | When set, `init_db.py` bootstraps an administrator account with these credentials. |
 | `HEALTHCHECK_REQUIRE_DB` | No | Set to a truthy value to require database connectivity for the `/healthz` probe endpoint. |
 | `HEALTHCHECK_DB_TIMEOUT_SECONDS` | No | Timeout (in seconds) for the optional database probe performed by `/healthz`. Defaults to `2.0`. |
+| `FSI_LOGO_PATH` | No | Filesystem path served at `/fsi-logo`. Defaults to `/logos/fsi-logo.png`, which expects a Cloud Run Cloud Storage volume mount at `/logos`. |
 
 Never commit the `.env` file to version control. Restrict filesystem
 permissions (`chmod 600 .env`) so only the deployment user can read it.
@@ -318,6 +319,17 @@ and liveness probes to fail when the database is unavailable, set
 `HEALTHCHECK_REQUIRE_DB=true` and optionally tune
 `HEALTHCHECK_DB_TIMEOUT_SECONDS` (defaults to `2.0`) so the probe times out
 quickly.
+
+
+### Cloud Run branding volume mount
+
+The navbar logo is served from the runtime filesystem path configured by
+`FSI_LOGO_PATH` (default: `/logos/fsi-logo.png`). In Cloud Run, mount the
+Cloud Storage bucket containing `fsi-logo.png` at `/logos` so the `/fsi-logo`
+endpoint can stream it without relying on packaged static assets.
+
+If you mount to a different location, set `FSI_LOGO_PATH` to the full file path
+inside the container.
 
 ### Cloud Run database configuration
 

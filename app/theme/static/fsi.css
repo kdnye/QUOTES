@@ -289,6 +289,13 @@ body {
     letter-spacing: 0.08em;
 }
 
+
+.fsi-brand__logo {
+    height: 2.25rem;
+    width: auto;
+    display: inline-block;
+}
+
 .fsi-brand__text {
     display: flex;
     flex-direction: column;

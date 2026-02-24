@@ -633,6 +633,7 @@ class Config:
         "y",
     }
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
+    FSI_LOGO_PATH = os.getenv("FSI_LOGO_PATH", "/logos/fsi-logo.png")
     DB_POOL_SIZE = _get_optional_int_from_env("DB_POOL_SIZE")
     DB_POOL_RECYCLE = _get_int_from_env("DB_POOL_RECYCLE", 1800)
     DB_POOL_MAX_OVERFLOW = _get_int_from_env("DB_POOL_MAX_OVERFLOW", 5)

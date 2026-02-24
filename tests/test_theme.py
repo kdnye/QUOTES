@@ -80,6 +80,7 @@ def test_base_template_uses_branded_header_classes() -> None:
 
     assert 'class="navbar navbar-expand-lg fsi-navbar"' in base_template
     assert 'class="navbar-brand fsi-brand"' in base_template
+    assert "url_for('get_logo')" in base_template
     assert 'data-bs-theme="light"' in base_template
     assert 'id="topbarDarkModeToggle"' in base_template
     assert (
