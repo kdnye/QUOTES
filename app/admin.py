@@ -47,6 +47,7 @@ from .models import (
     BeyondRate,
     CostZone,
     HotshotRate,
+    RateSetLogo,
     RateUpload,
     User,
     ZipZone,
@@ -262,6 +263,45 @@ class AirCostZoneForm(FlaskForm):
         _populate_rate_set_choices(self)
         if not self.rate_set.data:
             self.rate_set.data = DEFAULT_RATE_SET
+
+
+class RateSetLogoForm(FlaskForm):
+    """Form for assigning a customer logo file to a rate set.
+
+    Inputs:
+        rate_set: Selected rate set value from
+            :func:`app.services.rate_sets.get_available_rate_sets`.
+        filename: Exact file name stored in the mounted customer logos path.
+
+    Outputs:
+        Validated form values consumed by logo admin CRUD routes.
+
+    External dependencies:
+        * Calls :func:`app.admin._populate_rate_set_choices` so administrators
+          can pick from discovered and preconfigured rate sets.
+    """
+
+    rate_set = SelectField("Rate Set", validators=[DataRequired()])
+    filename = StringField(
+        "Filename (e.g., 'AGR Logo.png')", validators=[DataRequired()]
+    )
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the form and populate ``rate_set`` choices.
+
+        Inputs:
+            *args: Positional arguments forwarded to :class:`FlaskForm`.
+            **kwargs: Keyword arguments forwarded to :class:`FlaskForm`.
+
+        Outputs:
+            None.
+
+        External dependencies:
+            * Calls :func:`app.admin._populate_rate_set_choices`.
+        """
+
+        super().__init__(*args, **kwargs)
+        _populate_rate_set_choices(self)
 
 
 class AppSettingForm(FlaskForm):
@@ -1250,6 +1290,139 @@ def approve_employee(user_id: int) -> Response:
 
     redirect_target = request.form.get("next") or url_for("admin.dashboard")
     return redirect(redirect_target)
+
+
+# Rate-set logo mapping routes
+@admin_bp.route("/logos")
+@super_admin_required
+def list_logos() -> str:
+    """List all rate set logo mappings.
+
+    Inputs:
+        None.
+
+    Outputs:
+        Rendered logo management table.
+
+    External dependencies:
+        * Calls :attr:`app.models.RateSetLogo.query` to load mappings.
+        * Renders :mod:`templates/admin_logos.html`.
+    """
+
+    logos = RateSetLogo.query.order_by(RateSetLogo.rate_set).all()
+    return render_template("admin_logos.html", logos=logos)
+
+
+@admin_bp.route("/logos/new", methods=["GET", "POST"])
+@super_admin_required
+def new_logo() -> Union[str, Response]:
+    """Create a new rate-set logo mapping.
+
+    Inputs:
+        ``RateSetLogoForm`` values for ``rate_set`` and ``filename``.
+
+    Outputs:
+        Redirect to the logo list when the mapping is created, otherwise the
+        rendered form.
+
+    External dependencies:
+        * Calls :func:`app.services.rate_sets.normalize_rate_set`.
+        * Persists :class:`app.models.RateSetLogo` through ``db.session``.
+    """
+
+    form = RateSetLogoForm()
+    if request.method == "GET" and not form.rate_set.data:
+        form.rate_set.data = DEFAULT_RATE_SET
+
+    if form.validate_on_submit():
+        normalized_rate_set = normalize_rate_set(form.rate_set.data)
+
+        if RateSetLogo.query.filter_by(rate_set=normalized_rate_set).first():
+            flash(
+                f"A logo mapping for '{normalized_rate_set}' already exists.",
+                "warning",
+            )
+            return render_template("admin_logo_form.html", form=form, logo=None)
+
+        mapping = RateSetLogo(
+            rate_set=normalized_rate_set,
+            filename=form.filename.data.strip(),
+        )
+        db.session.add(mapping)
+        db.session.commit()
+        flash("Logo mapping created.", "success")
+        return redirect(url_for("admin.list_logos"))
+
+    return render_template("admin_logo_form.html", form=form, logo=None)
+
+
+@admin_bp.route("/logos/<int:logo_id>/edit", methods=["GET", "POST"])
+@super_admin_required
+def edit_logo(logo_id: int) -> Union[str, Response]:
+    """Edit an existing rate-set logo mapping.
+
+    Inputs:
+        logo_id: Primary key of the mapping to update.
+
+    Outputs:
+        Redirect to the logo list when successful, otherwise the rendered form.
+
+    External dependencies:
+        * Reads :class:`app.models.RateSetLogo` via ``db.session.get``.
+        * Calls :func:`app.services.rate_sets.normalize_rate_set`.
+    """
+
+    logo = db.session.get(RateSetLogo, logo_id)
+    if not logo:
+        abort(404)
+
+    form = RateSetLogoForm(obj=logo)
+    if form.validate_on_submit():
+        normalized_rate_set = normalize_rate_set(form.rate_set.data)
+
+        conflict = RateSetLogo.query.filter(
+            RateSetLogo.rate_set == normalized_rate_set,
+            RateSetLogo.id != logo.id,
+        ).first()
+        if conflict:
+            flash(
+                f"A logo mapping for '{normalized_rate_set}' already exists.",
+                "warning",
+            )
+            return render_template("admin_logo_form.html", form=form, logo=logo)
+
+        logo.rate_set = normalized_rate_set
+        logo.filename = form.filename.data.strip()
+        db.session.commit()
+        flash("Logo mapping updated.", "success")
+        return redirect(url_for("admin.list_logos"))
+
+    return render_template("admin_logo_form.html", form=form, logo=logo)
+
+
+@admin_bp.route("/logos/<int:logo_id>/delete", methods=["POST"])
+@super_admin_required
+def delete_logo(logo_id: int) -> Response:
+    """Delete a rate-set logo mapping.
+
+    Inputs:
+        logo_id: Primary key of the mapping to delete.
+
+    Outputs:
+        Redirect response to the logo listing route.
+
+    External dependencies:
+        * Calls ``db.session.delete`` and ``db.session.commit``.
+    """
+
+    logo = db.session.get(RateSetLogo, logo_id)
+    if not logo:
+        abort(404)
+
+    db.session.delete(logo)
+    db.session.commit()
+    flash("Logo mapping deleted.", "success")
+    return redirect(url_for("admin.list_logos"))
 
 
 # Accessorial routes

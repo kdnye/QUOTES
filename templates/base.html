@@ -24,6 +24,9 @@
       </span>
     </a>
 
+    {% if current_user.is_authenticated and current_user.rate_set and current_user.rate_set != 'default' %}
+    <img src="{{ url_for('get_customer_logo') }}" alt="{{ current_user.rate_set }} Logo" class="d-lg-none ms-auto me-3" height="32" onerror="this.style.display='none'">
+    {% endif %}
     <button
       class="navbar-toggler fsi-navbar__toggler"
       type="button"
@@ -38,7 +41,12 @@
 
     <div class="collapse navbar-collapse fsi-navbar__collapse" id="mainNav">
       <ul class="navbar-nav ms-auto fsi-navbar__menu d-flex align-items-lg-center gap-3">
-        
+        {% if current_user.is_authenticated and current_user.rate_set and current_user.rate_set != 'default' %}
+        <li class="nav-item d-none d-lg-flex align-items-center me-2">
+          <img src="{{ url_for('get_customer_logo') }}" alt="{{ current_user.rate_set }} Logo" height="32" onerror="this.style.display='none'">
+        </li>
+        {% endif %}
+
         <li class="nav-item">
           <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none" 
              aria-hidden="true" 

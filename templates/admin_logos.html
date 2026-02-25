@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Rate Set Logos{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <h1 class="mb-3">Rate Set Logos</h1>
+  <p class="text-muted">Map rate sets to specific logo files stored in the Cloud Storage volume.</p>
+  <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
+    <a class="btn btn-primary" href="{{ url_for('admin.new_logo') }}">Add Mapping</a>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-striped align-middle">
+      <thead>
+        <tr>
+          <th scope="col">Rate Set</th>
+          <th scope="col">Filename</th>
+          <th scope="col">Updated</th>
+          <th scope="col" class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for logo in logos %}
+        <tr>
+          <td><code>{{ logo.rate_set }}</code></td>
+          <td>{{ logo.filename }}</td>
+          <td>{{ logo.updated_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+          <td class="text-end">
+            <div class="btn-group btn-group-sm" role="group">
+              <a class="btn btn-outline-primary" href="{{ url_for('admin.edit_logo', logo_id=logo.id) }}">Edit</a>
+              <form class="d-inline" method="post" action="{{ url_for('admin.delete_logo', logo_id=logo.id) }}" onsubmit="return confirm('Delete this mapping?');">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <button class="btn btn-outline-danger" type="submit">Delete</button>
+              </form>
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+        {% if not logos %}
+        <tr><td colspan="4" class="text-center text-muted">No logos mapped.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

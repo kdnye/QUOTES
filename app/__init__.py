@@ -30,7 +30,7 @@ import redis as redispy
 
 from app.quote.distance import get_distance_miles
 from app.quote.theme import init_fsi_theme
-from .models import db, User, Quote, HotshotRate
+from .models import db, HotshotRate, Quote, RateSetLogo, User
 from app.services.mail import (
     MailRateLimitError,
     enforce_mail_rate_limit,
@@ -514,6 +514,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             path.startswith("/setup")
             or path.startswith("/static")
             or path == "/fsi-logo"
+            or path == "/customer-logo"
             or path == "/healthz"
             or path == "/healthz/config"
         )
@@ -547,6 +548,61 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         except Exception as exc:  # pragma: no cover - defensive fallback
             current_app.logger.exception("Unable to serve FSI logo: %s", exc)
             abort(500)
+
+    @app.route("/customer-logo", methods=["GET"])
+    def get_customer_logo() -> ResponseReturnValue:
+        """Serve the authenticated user's customer-specific logo when configured.
+
+        Inputs:
+            None directly. Uses :data:`flask_login.current_user.rate_set` and
+            the ``CUSTOMER_LOGOS_DIR`` environment variable.
+
+        Outputs:
+            HTTP 200 image response when a valid logo is found, otherwise
+            ``204 No Content`` to hide the optional client logo UI.
+
+        External dependencies:
+            * Queries :class:`app.models.RateSetLogo` for the filename mapping.
+            * Reads ``CUSTOMER_LOGOS_DIR`` with :func:`os.environ.get`.
+            * Streams files via :func:`flask.send_file`.
+        """
+
+        if not current_user.is_authenticated or not hasattr(current_user, "rate_set"):
+            return "", 204
+
+        rate_set = getattr(current_user, "rate_set", None)
+        if rate_set in {None, "", "default"}:
+            return "", 204
+
+        logo_mapping = RateSetLogo.query.filter_by(rate_set=rate_set).first()
+        if not logo_mapping or not logo_mapping.filename:
+            return "", 204
+
+        logo_dir = os.environ.get("CUSTOMER_LOGOS_DIR", "/logos/Logos")
+        base_path = Path(logo_dir).resolve()
+        requested_logo_path = (base_path / logo_mapping.filename).resolve()
+
+        if (
+            base_path not in requested_logo_path.parents
+            and requested_logo_path != base_path
+        ):
+            current_app.logger.warning(
+                "Rejected customer logo path outside configured directory: %s",
+                requested_logo_path,
+            )
+            return "", 204
+
+        if not requested_logo_path.is_file():
+            current_app.logger.warning(
+                "Customer logo not found: %s", requested_logo_path
+            )
+            return "", 204
+
+        try:
+            return send_file(requested_logo_path)
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            current_app.logger.exception("Unable to serve customer logo: %s", exc)
+            return "", 204
 
     @app.before_request
     def _redirect_to_setup() -> Optional[ResponseReturnValue]:

@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Edit' if logo else 'New' }} Logo Mapping{% endblock %}
+{% block content %}
+<div class="container py-4" style="max-width: 600px;">
+  <h1 class="mb-4">{{ 'Edit' if logo else 'New' }} Logo Mapping</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="mb-3">
+      {{ form.rate_set.label(class="form-label") }}
+      {{ form.rate_set(class="form-select" + (" is-invalid" if form.rate_set.errors else "")) }}
+      {% for error in form.rate_set.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+    </div>
+    <div class="mb-3">
+      {{ form.filename.label(class="form-label") }}
+      {{ form.filename(class="form-control" + (" is-invalid" if form.filename.errors else "")) }}
+      <div class="form-text">Exact filename in the Cloud Storage bucket (e.g., AGR Logo.png).</div>
+      {% for error in form.filename.errors %}<div class="invalid-feedback">{{ error }}</div>{% endfor %}
+    </div>
+    <div class="d-flex gap-2">
+      <button type="submit" class="btn btn-primary">Save Mapping</button>
+      <a href="{{ url_for('admin.list_logos') }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}
