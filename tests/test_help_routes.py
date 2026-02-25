@@ -175,6 +175,12 @@ def _build_help_test_app() -> Flask:
 
     app.register_blueprint(quotes_bp, url_prefix="/quotes")
 
+    @app.get("/fsi-logo")
+    def get_logo() -> tuple[str, int]:
+        """Return a placeholder logo response for base navbar rendering."""
+
+        return "logo", 200
+
     @app.context_processor
     def inject_theme_helper() -> dict[str, object]:
         """Provide template helpers expected by ``templates/base.html``.
