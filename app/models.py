@@ -33,6 +33,7 @@ AIR_COST_ZONES_TABLE = "air_cost_zones"
 ZIP_ZONES_TABLE = "zip_zones"
 COST_ZONES_TABLE = "cost_zones"
 RATE_UPLOADS_TABLE = "rate_uploads"
+RATE_SET_LOGOS_TABLE = "rate_set_logos"
 
 RATE_SET_DEFAULT = "default"
 
@@ -396,3 +397,34 @@ class RateUpload(db.Model):
     table_name = db.Column(db.String(50), nullable=False)
     filename = db.Column(db.String(255), nullable=False)
     uploaded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RateSetLogo(db.Model):
+    """Map a rate set to a customer logo file stored in mounted cloud storage.
+
+    Inputs:
+        rate_set: Normalized rate set identifier used to match the authenticated
+            user's ``rate_set`` value.
+        filename: Exact logo filename expected within the mounted
+            ``CUSTOMER_LOGOS_DIR`` directory.
+
+    Outputs:
+        Persisted mapping row consumed by ``app.__init__.get_customer_logo``.
+
+    External dependencies:
+        * Queried by :func:`app.__init__.get_customer_logo` to resolve the file
+          that should be returned by :func:`flask.send_file`.
+    """
+
+    __tablename__ = RATE_SET_LOGOS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    rate_set = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    filename = db.Column(db.String(255), nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
