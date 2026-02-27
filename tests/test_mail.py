@@ -25,6 +25,7 @@ class TestMailConfig:
     MAIL_PORT = 25
     MAIL_USE_TLS = False
     MAIL_USE_SSL = False
+    MAIL_POSTMARK_ONLY = False
 
 
 @pytest.fixture()
@@ -589,3 +590,33 @@ def test_send_email_uses_custom_html_body(
     plain_part, html_part = message.iter_parts()
     assert "Fallback text body" in plain_part.get_content()
     assert html_part.get_content().strip() == custom_html
+
+
+def test_send_email_requires_postmark_server_when_policy_enabled(app: Flask) -> None:
+    """Block sends when Postmark-only mode is enabled with a non-Postmark host."""
+
+    with app.app_context():
+        app.config["MAIL_POSTMARK_ONLY"] = True
+        app.config["MAIL_SERVER"] = "smtp.example.com"
+        app.config["MAIL_USERNAME"] = "token"
+        app.config["MAIL_PASSWORD"] = "secret"
+
+        with pytest.raises(
+            ValueError, match="MAIL_SERVER must be smtp.postmarkapp.com"
+        ):
+            mail_service.send_email("recipient@example.com", "Subject", "Body")
+
+
+def test_send_email_requires_postmark_credentials_when_policy_enabled(
+    app: Flask,
+) -> None:
+    """Block sends when Postmark-only mode is enabled without credentials."""
+
+    with app.app_context():
+        app.config["MAIL_POSTMARK_ONLY"] = True
+        app.config["MAIL_SERVER"] = "smtp.postmarkapp.com"
+        app.config["MAIL_USERNAME"] = ""
+        app.config["MAIL_PASSWORD"] = ""
+
+        with pytest.raises(ValueError, match="MAIL_USERNAME and MAIL_PASSWORD"):
+            mail_service.send_email("recipient@example.com", "Subject", "Body")
