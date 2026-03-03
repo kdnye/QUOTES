@@ -222,32 +222,52 @@ def test_send_email_allowed_when_setting_enabled(
     assert "Destination has limited receiving hours" in html_body
 
 
-def test_nav_shows_create_quote_button_for_authenticated_users(app: Flask) -> None:
-    """Show a prominent create-quote button in the header for signed-in users.
+def test_root_redirects_authenticated_users_to_new_quote(app: Flask) -> None:
+    """Send signed-in users from the root URL to the quote creation form.
 
     Args:
         app: Flask application fixture backed by a PostgreSQL test database.
 
     Returns:
-        None. Asserts against rendered navigation HTML.
+        None. Asserts root URL redirect behavior.
 
     External dependencies:
         * Creates a super admin using :func:`_create_super_admin`.
         * Authenticates the browser session via :func:`_login_client`.
-        * Calls :meth:`flask.testing.FlaskClient.get` to render the quote page.
+        * Calls :meth:`flask.testing.FlaskClient.get` to inspect root route
+          behavior.
     """
 
     admin = _create_super_admin()
     client = app.test_client()
     _login_client(client, admin.id)
 
-    response = client.get("/")
-    html = response.get_data(as_text=True)
+    response = client.get("/", follow_redirects=False)
 
-    assert response.status_code == 200
-    assert 'href="/quotes/new"' in html
-    assert "Create New Quote" in html
-    assert "btn btn-outline-primary" in html
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/quotes/new")
+
+
+def test_root_redirects_anonymous_users_to_login(app: Flask) -> None:
+    """Send anonymous visitors from root URL to the login page.
+
+    Args:
+        app: Flask application fixture backed by a PostgreSQL test database.
+
+    Returns:
+        None. Asserts root URL redirect behavior for unauthenticated sessions.
+
+    External dependencies:
+        * Calls :meth:`flask.testing.FlaskClient.get` to inspect root route
+          behavior.
+    """
+
+    client = app.test_client()
+
+    response = client.get("/", follow_redirects=False)
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/login")
 
 
 def test_admin_zip_zone_form_and_list_display_notes(app: Flask) -> None:
