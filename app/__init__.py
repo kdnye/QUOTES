@@ -645,9 +645,27 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(setup_bp)
 
     @app.route("/", methods=["GET"])
-    def index() -> str:
-        """Display a landing page explaining login requirements."""
-        return render_template("index.html")
+    def index() -> ResponseReturnValue:
+        """Route visitors to the correct default page based on login state.
+
+        Inputs:
+            None. Uses the active request context and
+            :data:`flask_login.current_user`.
+
+        Returns:
+            Redirect response to :func:`auth.login` when the requester is not
+            authenticated, or to :func:`quotes.new_quote` when already signed
+            in.
+
+        External dependencies:
+            * Reads :data:`flask_login.current_user` for authentication state.
+            * Uses :func:`flask.url_for` and :func:`flask.redirect` to build
+              deterministic route targets.
+        """
+
+        if current_user.is_authenticated:
+            return redirect(url_for("quotes.new_quote"))
+        return redirect(url_for("auth.login"))
 
     @app.route("/healthz", methods=["GET"])
     def healthz() -> ResponseReturnValue:
