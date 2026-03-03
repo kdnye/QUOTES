@@ -646,7 +646,7 @@ class Config:
     CACHE_REDIS_URL = _resolve_cache_redis_url()
     # Mail/reset settings (optional):
     MAIL_DEFAULT_SENDER = os.getenv("MAIL_DEFAULT_SENDER", "quote@freightservices.net")
-    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.gmail.com")
+    MAIL_SERVER = os.getenv("MAIL_SERVER", "smtp.postmarkapp.com")
     MAIL_PORT = _get_int_from_env("MAIL_PORT", 587)
     MAIL_USE_TLS = os.getenv("MAIL_USE_TLS", "true").lower() in {
         "true",
@@ -662,6 +662,12 @@ class Config:
     }
     MAIL_USERNAME = os.getenv("MAIL_USERNAME")
     MAIL_PASSWORD = os.getenv("MAIL_PASSWORD")
+    MAIL_POSTMARK_ONLY = os.getenv("MAIL_POSTMARK_ONLY", "true").lower() in {
+        "true",
+        "1",
+        "yes",
+        "y",
+    }
     MAIL_ALLOWED_SENDER_DOMAIN = _resolve_mail_allowed_sender_domain(
         MAIL_DEFAULT_SENDER
     )
