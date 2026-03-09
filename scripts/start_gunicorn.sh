@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
-# Start the Quote Tool with Gunicorn using configurable worker counts.
+# Start the Quote Tool with Gunicorn using threaded workers and
+# conservative connection lifecycle settings.
+#
+# Runtime behavior:
+#   - Worker model: gthread
+#   - Request timeout: 60 seconds
+#   - Keep-alive timeout: 5 seconds
 #
 # Environment variables:
 #   GUNICORN_WORKERS: Number of worker processes (default: 3)
@@ -18,5 +24,7 @@ exec gunicorn \
     -w "${workers}" \
     -k gthread \
     --threads "${threads}" \
+    --timeout 60 \
+    --keep-alive 5 \
     --bind "0.0.0.0:${port}" \
     "app.app:create_app()"
