@@ -163,31 +163,39 @@ def _parse_postgres_options(raw_options: str) -> Iterable[Tuple[str, str]]:
 
 
 def _build_sqlalchemy_engine_options(
-    *, pool_size: Optional[int], pool_recycle: int, max_overflow: int
+    *, pool_size: int, pool_recycle: int, max_overflow: int, pool_timeout: int
 ) -> Dict[str, Union[int, bool]]:
     """Return SQLAlchemy engine options for connection pooling.
 
     Args:
-        pool_size: Optional base pool size from ``DB_POOL_SIZE``. When ``None``,
-            SQLAlchemy's default pool size is used.
-        pool_recycle: Maximum connection age in seconds from ``DB_POOL_RECYCLE``.
-            Recycling connections before Cloud Run's idle timeout helps avoid
-            server-side disconnects on reused connections.
+        pool_size: Number of persistent connections kept ready in SQLAlchemy's
+            queue pool. The value comes from ``DB_POOL_SIZE`` and should be an
+            integer count of connections.
+        pool_recycle: Maximum connection age in seconds from
+            ``DB_POOL_RECYCLE``. Recycling connections before Cloud Run's idle
+            timeout helps avoid server-side disconnects on reused connections.
         max_overflow: Extra connections beyond ``pool_size`` from
             ``DB_POOL_MAX_OVERFLOW`` to handle short traffic bursts.
+        pool_timeout: Maximum number of seconds SQLAlchemy should wait for a
+            free pooled connection before raising a timeout. This value comes
+            from ``DB_POOL_TIMEOUT``.
 
     Returns:
         Dict[str, Union[int, bool]]: SQLAlchemy engine options to pass into
         :func:`sqlalchemy.create_engine`.
+
+    External Dependencies:
+        Calls :func:`sqlalchemy.create_engine` indirectly by returning keyword
+        arguments consumed by that function through :mod:`app.database`.
     """
 
     options: Dict[str, Union[int, bool]] = {
         "pool_pre_ping": True,
+        "pool_size": pool_size,
         "pool_recycle": pool_recycle,
         "max_overflow": max_overflow,
+        "pool_timeout": pool_timeout,
     }
-    if pool_size is not None:
-        options["pool_size"] = pool_size
     return options
 
 
@@ -582,6 +590,12 @@ def _resolve_oidc_allowed_domain() -> str:
 
 
 class Config:
+    """Application configuration populated from environment variables.
+
+    The class computes values at import time so Flask and scripts share a
+    single source of truth.
+    """
+
     SECRET_KEY = _resolve_secret_key()
     _raw_database_url = os.getenv("DATABASE_URL")
     _sanitized_database_url = _sanitize_database_url(
@@ -634,13 +648,20 @@ class Config:
     }
     GOOGLE_MAPS_API_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
     FSI_LOGO_PATH = os.getenv("FSI_LOGO_PATH", "/logos/fsi-logo.png")
-    DB_POOL_SIZE = _get_optional_int_from_env("DB_POOL_SIZE")
+    # SQLAlchemy connection pool knobs:
+    # - DB_POOL_SIZE: number of persistent connections kept open.
+    # - DB_POOL_MAX_OVERFLOW: temporary extra connections allowed during bursts.
+    # - DB_POOL_TIMEOUT: seconds to wait for a free connection before timeout.
+    # - DB_POOL_RECYCLE: max connection age in seconds before forced refresh.
+    DB_POOL_SIZE = _get_int_from_env("DB_POOL_SIZE", 15)
     DB_POOL_RECYCLE = _get_int_from_env("DB_POOL_RECYCLE", 1800)
-    DB_POOL_MAX_OVERFLOW = _get_int_from_env("DB_POOL_MAX_OVERFLOW", 5)
+    DB_POOL_MAX_OVERFLOW = _get_int_from_env("DB_POOL_MAX_OVERFLOW", 10)
+    DB_POOL_TIMEOUT = _get_int_from_env("DB_POOL_TIMEOUT", 30)
     SQLALCHEMY_ENGINE_OPTIONS = _build_sqlalchemy_engine_options(
         pool_size=DB_POOL_SIZE,
         pool_recycle=DB_POOL_RECYCLE,
         max_overflow=DB_POOL_MAX_OVERFLOW,
+        pool_timeout=DB_POOL_TIMEOUT,
     )
     CACHE_TYPE = _resolve_cache_type()
     CACHE_REDIS_URL = _resolve_cache_redis_url()

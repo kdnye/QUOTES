@@ -66,6 +66,30 @@ def test_create_engine_receives_configured_options(monkeypatch) -> None:
     importlib.reload(database)
 
 
+def test_build_sqlalchemy_engine_options_includes_concurrency_knobs() -> None:
+    """Ensure the pool configuration helper includes all concurrency knobs.
+
+    Returns:
+        None. Asserts the helper output includes explicit pool sizing,
+        overflow limits, recycle timing, timeout behavior, and pre-ping.
+    """
+
+    options = config._build_sqlalchemy_engine_options(
+        pool_size=15,
+        pool_recycle=1800,
+        max_overflow=10,
+        pool_timeout=30,
+    )
+
+    assert options == {
+        "pool_pre_ping": True,
+        "pool_size": 15,
+        "pool_recycle": 1800,
+        "max_overflow": 10,
+        "pool_timeout": 30,
+    }
+
+
 def test_escape_alembic_url_escapes_percent_signs() -> None:
     """Ensure Alembic URLs escape percent signs for ConfigParser safety.
 
