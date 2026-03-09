@@ -512,9 +512,9 @@ def _resolve_ratelimit_storage_uri() -> str:
     The function prioritises the ``RATELIMIT_STORAGE_URI`` environment variable
     retrieved via :func:`os.getenv`. When absent and the Compose ``cache``
     profile is enabled, a Redis URI targeting database ``1`` is returned so the
-    limiter keeps counters separate from the application cache. Otherwise the
-    function falls back to ``memory://`` which scopes counters to each Gunicorn
-    worker.
+    limiter keeps counters separate from the application cache and shared
+    across worker processes. Otherwise the function falls back to ``memory://``
+    which keeps counters local to each Gunicorn worker process.
 
     Returns:
         str: The storage URI consumed by :class:`flask_limiter.Limiter`.

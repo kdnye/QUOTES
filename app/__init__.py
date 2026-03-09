@@ -458,6 +458,18 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     has_config_errors = bool(config_errors)
     has_non_config_errors = bool(non_config_errors)
 
+    storage_url = os.getenv("SESSION_REDIS", "redis://localhost:6379/0")
+    try:
+        redispy.from_url(storage_url).ping()
+        app.config["RATELIMIT_STORAGE_URI"] = storage_url
+    except Exception as exc:  # pragma: no cover - operational fallback
+        app.config["RATELIMIT_STORAGE_URI"] = "memory://"
+        app.logger.warning(
+            "Redis unavailable for rate limiting; using in-memory counters "
+            "(per-worker only): %s",
+            exc,
+        )
+
     limiter.init_app(app)
 
     if setup_errors:
