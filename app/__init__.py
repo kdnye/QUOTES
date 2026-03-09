@@ -107,6 +107,35 @@ def _should_show_config_errors(app: Flask) -> bool:
     return not _is_production_environment()
 
 
+def _validate_quote_email_queue_config(app: Flask) -> List[str]:
+    """Return startup errors for production quote-email queue requirements.
+
+    Args:
+        app: Flask application used to inspect loaded runtime settings.
+
+    Returns:
+        List[str]: Configuration errors that should place the app in
+        maintenance mode.
+
+    External dependencies:
+        * Calls :func:`_is_production_environment` to detect production mode.
+        * Calls :func:`app.services.settings.is_quote_email_smtp_enabled` to
+          evaluate whether quote-email dispatch is enabled.
+        * Reads ``CELERY_BROKER_URL`` from :func:`os.getenv`.
+    """
+
+    if not _is_production_environment() or not is_quote_email_smtp_enabled():
+        return []
+
+    if os.getenv("CELERY_BROKER_URL"):
+        return []
+
+    return [
+        "CELERY_BROKER_URL must be set in production when "
+        "QUOTE_EMAIL_SMTP_ENABLED is true."
+    ]
+
+
 def _coerce_timeout_seconds(
     value: Optional[Union[str, float, int]],
     default: float = DEFAULT_HEALTHCHECK_DB_TIMEOUT,
@@ -359,7 +388,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.config["CONFIG_ERROR_DETAILS"] = raw_config_errors
     if raw_config_errors:
         app.logger.error("CONFIG_ERRORS: %s", raw_config_errors)
-    config_errors = raw_config_errors
+    config_errors = list(raw_config_errors)
     if config_errors and not _is_production_environment():
         app.logger.info(
             "Ignoring startup configuration errors because ENVIRONMENT/FLASK_ENV "
@@ -429,6 +458,14 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                     "disabled."
                 )
         reload_overrides(app)
+        runtime_config_errors = _validate_quote_email_queue_config(app)
+        if runtime_config_errors:
+            app.logger.error(
+                "Quote email configuration validation failed: %s",
+                runtime_config_errors,
+            )
+            raw_config_errors.extend(runtime_config_errors)
+            config_errors.extend(runtime_config_errors)
         app.config["SETUP_REQUIRED"] = False
         if not config_errors:
             try:
@@ -839,15 +876,22 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
                     flash("Quote email queued for delivery.", "success")
                 except Exception as exc:  # pragma: no cover - guarded fallback
                     current_app.logger.exception("Failed to queue email task: %s", exc)
-                    send_email(
-                        email,
-                        subject,
-                        body,
-                        feature="quote_email",
-                        user=current_user,
-                        html_body=html_body,
-                    )
-                    flash("Quote email sent (fallback).", "success")
+                    if _is_production_environment():
+                        flash(
+                            "Unable to queue quote email right now. "
+                            "Please retry in a few minutes.",
+                            "warning",
+                        )
+                    else:
+                        send_email(
+                            email,
+                            subject,
+                            body,
+                            feature="quote_email",
+                            user=current_user,
+                            html_body=html_body,
+                        )
+                        flash("Quote email sent (development fallback).", "success")
             else:
                 send_email(
                     email,

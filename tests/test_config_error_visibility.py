@@ -59,6 +59,7 @@ def _build_error_app(
         SQLALCHEMY_TRACK_MODIFICATIONS = False
         WTF_CSRF_ENABLED = False
         STARTUP_DB_CHECKS = False
+        QUOTE_EMAIL_SMTP_ENABLED = False
         CONFIG_ERRORS = ["Missing POSTGRES_PASSWORD"]
 
     return create_app(ErrorConfig)

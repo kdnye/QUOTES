@@ -699,6 +699,7 @@ class Config:
     MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY = int(
         os.getenv("MAIL_RATE_LIMIT_PER_RECIPIENT_PER_DAY", 25)
     )
+    CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "").strip()
     QUOTE_EMAIL_SMTP_ENABLED = os.getenv(
         "QUOTE_EMAIL_SMTP_ENABLED", "true"
     ).lower() in {

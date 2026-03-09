@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import sys
+import types
+
 import pytest
 from flask import Flask, current_app
 from flask.testing import FlaskClient
@@ -339,3 +342,71 @@ def test_admin_zip_zone_create_persists_notes(app: Flask) -> None:
     created = ZipZone.query.filter_by(zipcode="73301").first()
     assert created is not None
     assert created.notes == "Call before delivery"
+
+
+def test_send_email_queue_failure_in_production_does_not_use_sync_fallback(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Avoid synchronous fallback when Celery enqueue fails in production.
+
+    Args:
+        app: Flask application fixture backed by a PostgreSQL test database.
+        monkeypatch: Pytest fixture used to set environment and monkeypatch calls.
+
+    Returns:
+        None. Assertions verify queue failure behavior and user-safe messaging.
+
+    External dependencies:
+        * Sets ``ENVIRONMENT`` and ``CELERY_BROKER_URL`` via :mod:`pytest`
+          monkeypatch helpers.
+        * Injects a fake ``worker.email_tasks`` module through :mod:`sys.modules`.
+        * Calls :func:`app.send_email` route through
+          :class:`flask.testing.FlaskClient`.
+    """
+
+    admin = _create_super_admin()
+    set_setting(QUOTE_EMAIL_SMTP_SETTING_KEY, "true")
+    db.session.commit()
+    reload_overrides(current_app)
+
+    monkeypatch.setenv("ENVIRONMENT", "production")
+    monkeypatch.setenv("CELERY_BROKER_URL", "redis://queue.example:6379/0")
+    monkeypatch.setattr(app_module, "get_distance_miles", lambda *_: 22.0)
+
+    send_calls: list[tuple] = []
+    monkeypatch.setattr(
+        app_module, "send_email", lambda *args, **kwargs: send_calls.append(args)
+    )
+
+    class _FailingTask:
+        def delay(self, *args, **kwargs):
+            raise RuntimeError("queue unavailable")
+
+    fake_worker = types.ModuleType("worker")
+    fake_email_tasks = types.ModuleType("worker.email_tasks")
+    fake_email_tasks.send_email_task = _FailingTask()
+    monkeypatch.setitem(sys.modules, "worker", fake_worker)
+    monkeypatch.setitem(sys.modules, "worker.email_tasks", fake_email_tasks)
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.post(
+        "/send",
+        data={
+            "origin_zip": "64101",
+            "destination_zip": "90210",
+            "email": "customer@example.com",
+        },
+    )
+
+    assert response.status_code == 302
+    assert response.headers["Location"].endswith("/")
+    assert send_calls == []
+
+    with client.session_transaction() as session:
+        flashes = session.get("_flashes", [])
+
+    assert (
+        "warning",
+        "Unable to queue quote email right now. Please retry in a few minutes.",
+    ) in flashes
