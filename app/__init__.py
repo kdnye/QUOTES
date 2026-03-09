@@ -354,10 +354,10 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     External dependencies:
         * Initializes Flask extensions (SQLAlchemy, CSRF, sessions) via
           ``app.models.db`` and :class:`flask_wtf.CSRFProtect`.
-        * Calls :func:`app.database.ensure_database_schema` to provision tables
-          when migrations are enabled and startup checks are not disabled. Any
-          migration failures are captured so the app can start in maintenance
-          mode.
+        * Calls :meth:`flask_sqlalchemy.SQLAlchemy.create_all` to provision
+          missing tables at startup in a concurrency-safe manner.
+        * Calls :func:`flask_migrate.stamp` best-effort to mark the live
+          database schema at ``head`` so Alembic version checks remain aligned.
         * Computes ``SETUP_REQUIRED`` based on :func:`_is_setup_required` so the
           setup flow can redirect until an administrator account exists. When
           database validation fails, setup errors are recorded so the app starts
@@ -419,33 +419,24 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     init_fsi_theme(app)
     init_oidc_oauth(app)
 
-    # Ensure database tables exist before handling requests.
-    from app.database import (
-        ensure_database_schema,
-    )  # Local import avoids circular imports.
-
     with app.app_context():
-        # Run migrations/schema creation when explicitly enabled.
-        migrate_enabled = os.getenv("MIGRATE_ON_STARTUP", "false").strip().lower() in (
-            "1",
-            "true",
-            "t",
-            "yes",
-            "y",
-            "on",
-        )
         run_db_checks = _should_run_startup_db_checks(app, config_errors)
         setup_errors: List[str] = []
         non_config_errors: List[str] = []
+
+        try:
+            db.create_all()
+        except Exception as exc:  # pragma: no cover - depends on database runtime
+            app.logger.warning("Startup database table creation failed: %s", exc)
+
+        try:
+            from flask_migrate import stamp
+
+            stamp(revision="head")
+        except Exception as exc:  # pragma: no cover - optional startup action
+            app.logger.info("Skipping startup Alembic stamp: %s", exc)
+
         if run_db_checks:
-            if migrate_enabled:
-                try:
-                    ensure_database_schema(db.engine)
-                except Exception as exc:  # pragma: no cover - depends on database
-                    app.logger.warning("Startup database migration failed: %s", exc)
-                    non_config_errors.append(
-                        "Database unavailable; skipping migrations."
-                    )
             non_config_errors.extend(_verify_app_setup(app))
         else:
             if config_errors:

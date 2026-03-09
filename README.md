@@ -162,11 +162,13 @@ CLOUD_SQL_CONNECTION_NAME=quote-tool-483716:us-central1:quotetool-postgres-insta
 Use a Cloud SQL **PostgreSQL** instance; MySQL is not supported by the
 application's SQLAlchemy configuration.
 
-If Cloud Run start-ups are timing out while waiting on database connectivity,
-set `STARTUP_DB_CHECKS=false` to skip migrations and table inspection during
-boot. This speeds container readiness but requires you to run migrations (for
-example, `alembic upgrade head`) separately and validate connectivity via the
-`/healthz` endpoint once the database is online.
+At startup, the app now runs `db.create_all()` to create any missing tables and
+then performs a best-effort Alembic `stamp head` so version checks stay aligned
+without forcing a migration lock during Cloud Run scale-out. This startup path
+is concurrency-safe for table creation, but it does not alter existing columns,
+so schema changes to existing tables should still be applied manually (for
+example with `ALTER TABLE ... ADD COLUMN IF NOT EXISTS ...`) or through a
+separate migration workflow.
 
 When configuration validation fails, operators can opt into diagnostics by
 setting `SHOW_CONFIG_ERRORS=true`. In non-production environments the app
