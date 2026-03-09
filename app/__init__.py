@@ -854,4 +854,23 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         return redirect(url_for("index"))
 
+    @app.teardown_appcontext
+    def shutdown_session(exception: Optional[BaseException] = None) -> None:
+        """Dispose thread-local SQLAlchemy sessions after each app context.
+
+        Inputs:
+            exception: Optional exception raised during context teardown.
+
+        Outputs:
+            None. Removes the current thread-local scoped session.
+
+        External dependencies:
+            * Imports and calls :data:`app.database.Session` to execute
+              ``Session.remove()`` and clear scoped state.
+        """
+
+        from app.database import Session
+
+        Session.remove()
+
     return app
