@@ -16,6 +16,27 @@ from app.services import quote as quote_service
 api_bp = Blueprint("api", __name__)
 
 
+def _api_error_response(
+    *, error: str, remediation: str, status_code: int
+) -> ResponseReturnValue:
+    """Return a standardized JSON API error with actionable remediation.
+
+    Args:
+        error: Human-readable error summary for API consumers.
+        remediation: Concrete next step the caller can take to resolve the error.
+        status_code: HTTP status code to return with the error payload.
+
+    Returns:
+        ResponseReturnValue: A ``(json_response, status_code)`` tuple suitable
+        for Flask view returns.
+
+    External dependencies:
+        Calls :func:`flask.jsonify` to build a response object.
+    """
+
+    return jsonify({"error": error, "remediation": remediation}), status_code
+
+
 def _extract_api_token(authorization_header: str | None) -> str | None:
     """Return the API token provided in an Authorization header.
 
@@ -83,22 +104,51 @@ def _authorize_api_request() -> ResponseReturnValue | None:
         * Reads :data:`flask.current_app.config` for ``API_AUTH_TOKEN``.
         * Reads :data:`flask.request.headers` for the ``Authorization`` header.
         * Calls :func:`secrets.compare_digest` for constant-time comparison.
+        * Calls :func:`_api_error_response` to build standardized errors.
     """
 
     expected_token = current_app.config.get("API_AUTH_TOKEN")
     if not expected_token:
-        return jsonify({"error": "API authentication is not configured."}), 500
+        return _api_error_response(
+            error="API authentication is not configured.",
+            remediation=(
+                "Set API_AUTH_TOKEN in your environment or app settings, then "
+                "restart the service."
+            ),
+            status_code=500,
+        )
 
     authorization_header = request.headers.get("Authorization")
     if not authorization_header:
-        return jsonify({"error": "Missing Authorization header."}), 401
+        return _api_error_response(
+            error="Missing Authorization header.",
+            remediation=(
+                "Provide an Authorization header using 'Bearer <API_AUTH_TOKEN>' "
+                "and retry the request."
+            ),
+            status_code=401,
+        )
 
     provided_token = _extract_api_token(authorization_header)
     if not provided_token:
-        return jsonify({"error": "Invalid Authorization header."}), 401
+        return _api_error_response(
+            error="Invalid Authorization header.",
+            remediation=(
+                "Use a single token value in the format 'Bearer <API_AUTH_TOKEN>' "
+                "without extra words."
+            ),
+            status_code=401,
+        )
 
     if not secrets.compare_digest(provided_token, expected_token):
-        return jsonify({"error": "Invalid API token."}), 403
+        return _api_error_response(
+            error="Invalid API token.",
+            remediation=(
+                "Verify API_AUTH_TOKEN matches the server configuration and rotate "
+                "the token if you suspect it leaked."
+            ),
+            status_code=403,
+        )
 
     return None
 
@@ -168,7 +218,11 @@ def api_create_quote() -> ResponseReturnValue:
 
     quote_type = data.get("quote_type", "Hotshot")
     if quote_type not in {"Hotshot", "Air"}:
-        return jsonify({"error": "Invalid quote_type"}), 400
+        return _api_error_response(
+            error="Invalid quote_type",
+            remediation="Set quote_type to either 'Hotshot' or 'Air' and retry.",
+            status_code=400,
+        )
 
     result = quote_service.create_quote(
         data.get("user_id"),
@@ -211,7 +265,14 @@ def api_get_quote(quote_id: str) -> ResponseReturnValue:
 
     quote_obj = quote_service.get_quote(quote_id)
     if quote_obj is None:
-        return jsonify({"error": "Quote not found"}), 404
+        return _api_error_response(
+            error="Quote not found",
+            remediation=(
+                "Confirm the quote_id exists and belongs to this environment, "
+                "then retry the lookup."
+            ),
+            status_code=404,
+        )
 
     metadata: Dict[str, Any] = {}
     try:

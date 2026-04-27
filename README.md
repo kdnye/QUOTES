@@ -377,7 +377,8 @@ ingress settings.
 
 The JSON API requires an API token in the `Authorization` header for every
 request. Configure the token with `API_AUTH_TOKEN` and provide it as a bearer
-token:
+token. API error responses include both `error` and `remediation` fields so
+clients can display actionable next steps:
 
 ```bash
 curl -H "Authorization: Bearer ${API_AUTH_TOKEN}" \
