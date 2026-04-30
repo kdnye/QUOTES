@@ -1,8 +1,9 @@
 """Hotshot (expedited truck) quote calculations."""
 
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Optional
 
 from app.quote.distance import get_distance_miles
+from app.quote.logic_air import get_zip_zone
 from app.services.hotshot_rates import (
     get_current_hotshot_rate,
     get_hotshot_zone_by_miles,
@@ -14,8 +15,47 @@ ZONE_X_PER_MILE_RATE = 5.2
 BASE_SURCHARGE_PCT = 0.0
 
 
+def _resolve_destination_zone(
+    destination: str,
+    *,
+    rate_set: str,
+    zip_lookup: Callable[[str, str], Optional[Any]],
+) -> tuple[str, list[Dict[str, str]]]:
+    """Resolve destination ZIP to a destination zone string for VSC inputs.
+
+    Args:
+        destination: Destination ZIP code string.
+        rate_set: Named rate set context for ZIP lookup.
+        zip_lookup: Function that calls ``app.quote.logic_air.get_zip_zone`` style
+            lookups to return a ZIP-zone row object with ``dest_zone``.
+
+    Returns:
+        A tuple of ``(dest_zone, warning_metadata)``. ``dest_zone`` is the
+        resolved zone string or ``"NATIONAL"`` when lookup fails.
+
+    External dependencies:
+        Calls ``app.quote.logic_air.get_zip_zone`` (via ``zip_lookup``) to
+        read persisted ZIP-to-zone data.
+    """
+
+    zip_row = _call_with_rate_set(zip_lookup, rate_set, str(destination))
+    if zip_row is not None and getattr(zip_row, "dest_zone", None) is not None:
+        return str(zip_row.dest_zone), []
+
+    return "NATIONAL", [
+        {
+            "code": "HOTSHOT_DEST_ZONE_FALLBACK",
+            "message": (
+                "Destination zone lookup failed for hotshot quote; "
+                "used NATIONAL fallback for VSC context."
+            ),
+            "destination_zip": str(destination),
+        }
+    ]
+
+
 def get_dynamic_vsc_pct(
-    *, base: float, miles: float, zone: str, rate_set: str
+    *, base: float, miles: float, zone: str, dest_zone: str, rate_set: str
 ) -> float:
     """Return dynamic variable surcharge percentage for hotshot quotes.
 
@@ -33,7 +73,7 @@ def get_dynamic_vsc_pct(
         integrated without changing ``calculate_hotshot_quote``.
     """
 
-    _ = (base, miles, zone, rate_set)
+    _ = (base, miles, zone, dest_zone, rate_set)
     return 0.0
 
 
@@ -44,6 +84,7 @@ def calculate_hotshot_quote(
     accessorial_total: float,
     zone_lookup: Callable[[float, str], str] = get_hotshot_zone_by_miles,
     rate_lookup: Callable[[str, str], Any] = get_current_hotshot_rate,
+    zip_lookup: Callable[[str, str], Optional[Any]] = get_zip_zone,
     *,
     rate_set: str = DEFAULT_RATE_SET,
 ) -> Dict[str, Any]:
@@ -59,6 +100,8 @@ def calculate_hotshot_quote(
         rate_lookup: Callback to fetch a :class:`HotshotRate` for a zone. Defaults
             to :func:`services.hotshot_rates.get_current_hotshot_rate`.
         rate_set: Named rate table to evaluate.
+        zip_lookup: Callback to resolve ZIP rows from the existing ZIP zone
+            table flow in :func:`app.quote.logic_air.get_zip_zone`.
 
     Returns:
         A dictionary with keys ``zone``, ``miles``, ``quote_total``,
@@ -92,10 +135,17 @@ def calculate_hotshot_quote(
         min_charge = float(rate.min_charge)
         base = max(min_charge, weight * per_lb)
 
+    dest_zone, warning_metadata = _resolve_destination_zone(
+        destination,
+        rate_set=rate_set,
+        zip_lookup=zip_lookup,
+    )
+
     dynamic_vsc_pct = get_dynamic_vsc_pct(
         base=base,
         miles=miles,
         zone=zone,
+        dest_zone=dest_zone,
         rate_set=rate_set,
     )
     base_surcharge_amount = base * BASE_SURCHARGE_PCT
@@ -115,4 +165,6 @@ def calculate_hotshot_quote(
         "per_lb": per_lb,
         "per_mile": per_mile,
         "min_charge": min_charge,
+        "dest_zone": dest_zone,
+        "warning_metadata": warning_metadata,
     }
