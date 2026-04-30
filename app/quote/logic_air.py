@@ -13,6 +13,26 @@ from app.services.rate_sets import (
     normalize_rate_set,
 )
 
+BASE_SURCHARGE_PCT = 0.315
+
+
+def get_dynamic_vsc_pct(*, base: float, rate_set: str) -> float:
+    """Return dynamic variable surcharge percentage for air quotes.
+
+    Args:
+        base: Pre-surcharge base freight amount.
+        rate_set: Active named rate table context.
+
+    Returns:
+        Percentage expressed as a decimal fraction.
+
+    External dependencies:
+        Currently none. This helper isolates dynamic-VSC integration for future
+        data-source updates.
+    """
+    _ = (base, rate_set)
+    return 0.0
+
 
 def get_zip_zone(
     zipcode: str, *, rate_set: str = DEFAULT_RATE_SET
@@ -128,6 +148,7 @@ def calculate_air_quote(
     cost_zone_lookup: Callable[[str, str], Optional[CostZone]] = get_cost_zone,
     air_cost_lookup: Callable[[str, str], Optional[AirCostZone]] = get_air_cost_zone,
     beyond_rate_lookup: Callable[[Optional[str], str], float] = get_beyond_rate,
+    dynamic_vsc_lookup: Callable[..., float] = get_dynamic_vsc_pct,
     *,
     rate_set: str = DEFAULT_RATE_SET,
 ) -> Dict[str, Any]:
@@ -136,6 +157,11 @@ def calculate_air_quote(
     If a cost zone mapping is missing for the origin/destination pair, the
     lookup is retried with the zones reversed. This allows tables that only
     define one direction of a route to still resolve correctly.
+
+    Fuel surcharge policy:
+        Air quotes apply surcharge logic to base freight only using
+        ``BASE_SURCHARGE_PCT`` plus dynamic VSC. Surcharge is not applied to
+        beyond charges or accessorials.
 
     Parameters
     ----------
@@ -163,6 +189,10 @@ def calculate_air_quote(
     """
 
     normalized_rate_set = normalize_rate_set(rate_set)
+    surcharge_policy = "base_plus_dynamic_vsc"
+    surcharge_reason = (
+        "Air quotes apply base freight surcharge (31.5%) plus dynamic VSC."
+    )
 
     def _error_result(msg: str) -> Dict[str, Any]:
         return {
@@ -176,6 +206,15 @@ def calculate_air_quote(
             "origin_charge": 0,
             "dest_charge": 0,
             "beyond_total": 0,
+            "base_rate": 0,
+            "fuel_surcharge_base_pct": 0.0,
+            "fuel_surcharge_base_amount": 0.0,
+            "vsc_pct": 0.0,
+            "vsc_amount": 0.0,
+            "total_fsc_applied": 0.0,
+            "surcharge_applies": True,
+            "surcharge_policy": surcharge_policy,
+            "surcharge_reason": surcharge_reason,
             "error": msg,
         }
 
@@ -243,7 +282,19 @@ def calculate_air_quote(
     )
     beyond_total = origin_charge + dest_charge
 
-    quote_total = base + accessorial_total + beyond_total
+    dynamic_vsc_pct = _call_with_rate_set(
+        dynamic_vsc_lookup, normalized_rate_set, base=base
+    )
+    base_surcharge_amount = base * BASE_SURCHARGE_PCT
+    vsc_amount = base * dynamic_vsc_pct
+    total_fsc_applied = BASE_SURCHARGE_PCT + dynamic_vsc_pct
+    quote_total = (
+        base
+        + base_surcharge_amount
+        + vsc_amount
+        + accessorial_total
+        + beyond_total
+    )
 
     return {
         "zone": concat,
@@ -256,5 +307,14 @@ def calculate_air_quote(
         "origin_charge": origin_charge,
         "dest_charge": dest_charge,
         "beyond_total": beyond_total,
+        "base_rate": base,
+        "fuel_surcharge_base_pct": BASE_SURCHARGE_PCT,
+        "fuel_surcharge_base_amount": base_surcharge_amount,
+        "vsc_pct": dynamic_vsc_pct,
+        "vsc_amount": vsc_amount,
+        "total_fsc_applied": total_fsc_applied,
+        "surcharge_applies": True,
+        "surcharge_policy": surcharge_policy,
+        "surcharge_reason": surcharge_reason,
         "error": None,
     }
