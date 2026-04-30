@@ -1,0 +1,89 @@
+import pytest
+
+"""Unit tests for hotshot quote surcharge composition."""
+
+from types import SimpleNamespace
+
+from app.quote import logic_hotshot
+
+
+def test_calculate_hotshot_quote_uses_surcharge_pipeline_for_standard_zone(monkeypatch):
+    """Ensure hotshot totals use base + base surcharge + VSC + accessorial.
+
+    Inputs:
+        monkeypatch: pytest fixture used to replace distance and dynamic VSC helpers.
+
+    Outputs:
+        None. Asserts quote structure and computed totals.
+
+    External dependencies:
+        Calls ``app.quote.logic_hotshot.calculate_hotshot_quote`` and patches
+        ``app.quote.logic_hotshot.get_distance_miles`` and
+        ``app.quote.logic_hotshot.get_dynamic_vsc_pct``.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 100.0)
+    monkeypatch.setattr(logic_hotshot, "BASE_SURCHARGE_PCT", 0.1)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.05)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="22222",
+        weight=20.0,
+        accessorial_total=10.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=5.0,
+            fuel_pct=0.99,
+            weight_break=100.0,
+            min_charge=50.0,
+        ),
+    )
+
+    assert result["base_rate"] == 100.0
+    assert result["fuel_surcharge_base_amount"] == 10.0
+    assert result["vsc_amount"] == 5.0
+    assert result["total_fsc_applied"] == pytest.approx(0.15)
+    assert result["quote_total"] == 125.0
+
+
+def test_calculate_hotshot_quote_zone_x_uses_override_rates_and_surcharges(monkeypatch):
+    """Ensure zone X still uses hardcoded rates before surcharge pipeline.
+
+    Inputs:
+        monkeypatch: pytest fixture used to replace distance and dynamic VSC helpers.
+
+    Outputs:
+        None. Asserts zone-X pricing and surcharge details.
+
+    External dependencies:
+        Calls ``app.quote.logic_hotshot.calculate_hotshot_quote`` and patches
+        ``app.quote.logic_hotshot.get_distance_miles`` and
+        ``app.quote.logic_hotshot.get_dynamic_vsc_pct``.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 10.0)
+    monkeypatch.setattr(logic_hotshot, "BASE_SURCHARGE_PCT", 0.2)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.0)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="22222",
+        weight=1.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "X",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=1.0,
+            fuel_pct=0.25,
+            weight_break=None,
+            min_charge=1.0,
+        ),
+    )
+
+    assert result["per_lb"] == logic_hotshot.ZONE_X_PER_LB_RATE
+    assert result["per_mile"] == logic_hotshot.ZONE_X_PER_MILE_RATE
+    assert result["min_charge"] == 52.0
+    assert result["base_rate"] == 52.0
+    assert result["fuel_surcharge_base_amount"] == 10.4
+    assert result["vsc_amount"] == 0.0
+    assert result["quote_total"] == 62.4
