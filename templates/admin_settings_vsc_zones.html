@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}VSC Zones{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">VSC Zones</h1>
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_settings') }}">Back to Settings</a>
+  </div>
+
+  <p class="text-muted">
+    This page displays the currently configured VSC destination zones and the most recent update timestamp.
+  </p>
+
+  <div class="card mb-3">
+    <div class="card-header">Last Update</div>
+    <div class="card-body">
+      {% if last_update %}
+      <code>{{ last_update }}</code>
+      {% else %}
+      <span class="text-muted">No VSC last update is configured (expected key: <code>vsc_last_update</code>).</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">VSC Zones (<code>vsc_zones</code>)</div>
+    <div class="card-body">
+      {% if zones is not none %}
+      <pre class="mb-0"><code>{{ zones | tojson(indent=2) }}</code></pre>
+      {% else %}
+      <span class="text-muted">No VSC zones data is configured or the JSON is invalid.</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

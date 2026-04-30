@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% block title %}VSC Matrix{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">VSC Matrix</h1>
+    <a class="btn btn-secondary" href="{{ url_for('admin.list_settings') }}">Back to Settings</a>
+  </div>
+
+  <p class="text-muted">
+    This page displays the currently configured VSC matrix and related context used by runtime settings.
+  </p>
+
+  <div class="card mb-3">
+    <div class="card-header">Last Update</div>
+    <div class="card-body">
+      {% if last_update %}
+      <code>{{ last_update }}</code>
+      {% else %}
+      <span class="text-muted">No VSC last update is configured (expected key: <code>vsc_last_update</code>).</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-header">VSC Matrix (<code>vsc_matrix</code>)</div>
+    <div class="card-body">
+      {% if matrix is not none %}
+      <pre class="mb-0"><code>{{ matrix | tojson(indent=2) }}</code></pre>
+      {% else %}
+      <span class="text-muted">No VSC matrix data is configured or the JSON is invalid.</span>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Resolved Zones Snapshot</div>
+    <div class="card-body">
+      {% if zones is not none %}
+      <pre class="mb-0"><code>{{ zones | tojson(indent=2) }}</code></pre>
+      {% else %}
+      <span class="text-muted">No VSC zones data is configured or the JSON is invalid.</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

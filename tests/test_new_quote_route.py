@@ -8,6 +8,7 @@ from flask.testing import FlaskClient
 
 from app import create_app
 from app.models import User, ZipZone, db
+from app.services.settings import set_setting
 
 
 class TestNewQuoteConfig:
@@ -151,3 +152,46 @@ def test_new_quote_post_includes_shipment_notes_on_initial_render(
     context = captured["context"]
     assert context["origin_notes"] == "Origin test note"
     assert context["dest_notes"] == "Destination test note"
+
+
+def test_admin_settings_links_include_vsc_pages(app: Flask) -> None:
+    """Render links to dedicated VSC settings views on admin settings index."""
+
+    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    db.session.commit()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.get("/admin/settings")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'href="/admin/settings/vsc-zones"' in html
+    assert 'href="/admin/settings/vsc-matrix"' in html
+
+
+def test_admin_vsc_settings_pages_render_payloads(app: Flask) -> None:
+    """Render configured VSC zones, matrix, and last-update values."""
+
+    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    set_setting("vsc_zones", '{"NATIONAL":[1,2],"WEST":[3,4]}')
+    set_setting("vsc_matrix", '{"A":{"NATIONAL":0.11,"WEST":0.09}}')
+    set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
+    db.session.commit()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    zones_response = client.get("/admin/settings/vsc-zones")
+    matrix_response = client.get("/admin/settings/vsc-matrix")
+    assert zones_response.status_code == 200
+    assert matrix_response.status_code == 200
+    zones_html = zones_response.get_data(as_text=True)
+    matrix_html = matrix_response.get_data(as_text=True)
+    assert "2026-04-30T12:00:00Z" in zones_html
+    assert "2026-04-30T12:00:00Z" in matrix_html
+    assert "NATIONAL" in zones_html
+    assert "WEST" in zones_html
+    assert "A" in matrix_html
