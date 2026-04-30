@@ -9,7 +9,11 @@
   </p>
   <div class="d-flex flex-wrap justify-content-between align-items-center mb-3 gap-2">
     <span class="badge bg-secondary">Active overrides: {{ settings|length }}</span>
-    <a class="btn btn-primary" href="{{ url_for('admin.create_setting') }}">Add setting</a>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-primary" href="{{ url_for('admin.view_vsc_zones') }}">VSC Zones</a>
+      <a class="btn btn-outline-primary" href="{{ url_for('admin.view_vsc_matrix') }}">VSC Matrix</a>
+      <a class="btn btn-primary" href="{{ url_for('admin.create_setting') }}">Add setting</a>
+    </div>
   </div>
   <div class="table-responsive">
     <table class="table table-striped align-middle">

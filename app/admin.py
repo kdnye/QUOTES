@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Union
@@ -736,6 +737,73 @@ def list_settings() -> str:
     cache = get_settings_cache()
     settings = sorted(cache.values(), key=lambda record: record.key)
     return render_template("admin_settings_index.html", settings=settings)
+
+
+def _parse_vsc_json_setting(value: str | None) -> Any:
+    """Safely parse JSON from VSC settings.
+
+    Args:
+        value: Raw string from ``app_settings.value``.
+
+    Returns:
+        The deserialized JSON value when parsing succeeds, otherwise ``None``.
+
+    External dependencies:
+        Uses :func:`json.loads` from Python's standard library.
+    """
+
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError):
+        return None
+
+
+@admin_bp.route("/settings/vsc-zones")
+@super_admin_required
+def view_vsc_zones() -> str:
+    """Render VSC zones details from runtime settings overrides."""
+
+    cache = get_settings_cache()
+    zones_setting = cache.get("vsc_zones")
+    matrix_setting = cache.get("vsc_matrix")
+    last_update_setting = cache.get("vsc_last_update")
+    zones = _parse_vsc_json_setting(
+        zones_setting.raw_value if zones_setting else None
+    )
+    matrix = _parse_vsc_json_setting(
+        matrix_setting.raw_value if matrix_setting else None
+    )
+    return render_template(
+        "admin_settings_vsc_zones.html",
+        zones=zones,
+        matrix=matrix,
+        last_update=(last_update_setting.raw_value if last_update_setting else None),
+    )
+
+
+@admin_bp.route("/settings/vsc-matrix")
+@super_admin_required
+def view_vsc_matrix() -> str:
+    """Render VSC matrix details from runtime settings overrides."""
+
+    cache = get_settings_cache()
+    zones_setting = cache.get("vsc_zones")
+    matrix_setting = cache.get("vsc_matrix")
+    last_update_setting = cache.get("vsc_last_update")
+    zones = _parse_vsc_json_setting(
+        zones_setting.raw_value if zones_setting else None
+    )
+    matrix = _parse_vsc_json_setting(
+        matrix_setting.raw_value if matrix_setting else None
+    )
+    return render_template(
+        "admin_settings_vsc_matrix.html",
+        zones=zones,
+        matrix=matrix,
+        last_update=(last_update_setting.raw_value if last_update_setting else None),
+    )
 
 
 @admin_bp.route("/settings/new", methods=["GET", "POST"])
