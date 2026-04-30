@@ -34,6 +34,7 @@ ZIP_ZONES_TABLE = "zip_zones"
 COST_ZONES_TABLE = "cost_zones"
 RATE_UPLOADS_TABLE = "rate_uploads"
 RATE_SET_LOGOS_TABLE = "rate_set_logos"
+FUEL_SURCHARGES_TABLE = "fuel_surcharges"
 
 RATE_SET_DEFAULT = "default"
 
@@ -385,6 +386,36 @@ class CostZone(db.Model):
     cost_zone = db.Column(db.String(5), nullable=False)  # resulting cost zone code
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class FuelSurcharge(db.Model):
+    """Fuel surcharge percentage tracked by PADD region.
+
+    Inputs:
+        padd_region: Petroleum Administration for Defense District (PADD)
+            region label used by internal pricing workflows.
+        current_rate: Current surcharge percentage applied for the region.
+
+    Outputs:
+        Persisted row used by quoting services to resolve the active fuel
+        surcharge for a specific PADD region.
+
+    External dependencies:
+        * Read by downstream pricing workflows that query
+          :class:`FuelSurcharge` directly through SQLAlchemy.
+    """
+
+    __tablename__ = FUEL_SURCHARGES_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    padd_region = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    current_rate = db.Column(db.Float, nullable=False)
+    last_updated = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
     )
 
 
