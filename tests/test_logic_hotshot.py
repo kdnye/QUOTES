@@ -38,6 +38,7 @@ def test_calculate_hotshot_quote_uses_surcharge_pipeline_for_standard_zone(monke
             weight_break=100.0,
             min_charge=50.0,
         ),
+        zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=3),
     )
 
     assert result["base_rate"] == 100.0
@@ -45,6 +46,8 @@ def test_calculate_hotshot_quote_uses_surcharge_pipeline_for_standard_zone(monke
     assert result["vsc_amount"] == 5.0
     assert result["total_fsc_applied"] == pytest.approx(0.15)
     assert result["quote_total"] == 125.0
+    assert result["dest_zone"] == "3"
+    assert result["warning_metadata"] == []
 
 
 def test_calculate_hotshot_quote_zone_x_uses_override_rates_and_surcharges(monkeypatch):
@@ -78,6 +81,7 @@ def test_calculate_hotshot_quote_zone_x_uses_override_rates_and_surcharges(monke
             weight_break=None,
             min_charge=1.0,
         ),
+        zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=7),
     )
 
     assert result["per_lb"] == logic_hotshot.ZONE_X_PER_LB_RATE
@@ -87,3 +91,50 @@ def test_calculate_hotshot_quote_zone_x_uses_override_rates_and_surcharges(monke
     assert result["fuel_surcharge_base_amount"] == 10.4
     assert result["vsc_amount"] == 0.0
     assert result["quote_total"] == 62.4
+
+
+def test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing(
+    monkeypatch,
+):
+    """Ensure hotshot emits warning metadata when destination zone fallback is used.
+
+    Inputs:
+        monkeypatch: pytest fixture used to replace distance and dynamic VSC helpers.
+
+    Outputs:
+        None. Asserts fallback destination zone and warning metadata fields.
+
+    External dependencies:
+        Calls ``app.quote.logic_hotshot.calculate_hotshot_quote`` and patches
+        ``app.quote.logic_hotshot.get_distance_miles`` and
+        ``app.quote.logic_hotshot.get_dynamic_vsc_pct``.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 25.0)
+
+    captured = {}
+
+    def _dynamic_vsc(**kwargs):
+        captured.update(kwargs)
+        return 0.0
+
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", _dynamic_vsc)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="99999",
+        weight=5.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=2.0,
+            fuel_pct=0.0,
+            weight_break=0.0,
+            min_charge=20.0,
+        ),
+        zip_lookup=lambda _zip, rate_set=None: None,
+    )
+
+    assert captured["dest_zone"] == "NATIONAL"
+    assert result["dest_zone"] == "NATIONAL"
+    assert result["warning_metadata"][0]["code"] == "HOTSHOT_DEST_ZONE_FALLBACK"
