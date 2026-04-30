@@ -1,9 +1,8 @@
 """Hotshot (expedited truck) quote calculations."""
 
-from app.quote.distance import get_distance_miles
-
 from typing import Any, Callable, Dict
 
+from app.quote.distance import get_distance_miles
 from app.services.hotshot_rates import (
     get_current_hotshot_rate,
     get_hotshot_zone_by_miles,
@@ -12,6 +11,30 @@ from app.services.rate_sets import DEFAULT_RATE_SET, _call_with_rate_set
 
 ZONE_X_PER_LB_RATE = 5.1
 ZONE_X_PER_MILE_RATE = 5.2
+BASE_SURCHARGE_PCT = 0.0
+
+
+def get_dynamic_vsc_pct(
+    *, base: float, miles: float, zone: str, rate_set: str
+) -> float:
+    """Return dynamic variable surcharge percentage for hotshot quotes.
+
+    Args:
+        base: The computed pre-surcharge linehaul amount.
+        miles: Route mileage used for the quote.
+        zone: Hotshot zone code resolved from mileage.
+        rate_set: Active named rate table context.
+
+    Returns:
+        Percentage expressed as a decimal fraction (for example ``0.12`` for 12%).
+
+    External dependencies:
+        Currently none. This helper exists so dynamic surcharge inputs can be
+        integrated without changing ``calculate_hotshot_quote``.
+    """
+
+    _ = (base, miles, zone, rate_set)
+    return 0.0
 
 
 def calculate_hotshot_quote(
@@ -43,8 +66,13 @@ def calculate_hotshot_quote(
         ``weight_break`` may be ``None`` when not defined. Zones ``A`` through
         ``J`` charge solely by weight with a minimum charge. Zone ``X``
         overrides the database values and charges ``5.1`` USD per pound with a
-        mileage-based minimum of ``(miles * 5.2)`` before fuel and accessorial
-        charges.
+        mileage-based minimum of ``(miles * 5.2)`` before surcharge and
+        accessorial charges.
+
+    Compatibility note:
+        ``HotshotRate.fuel_pct`` is temporarily ignored for hotshot totals when
+        dynamic surcharge mode is enabled; surcharge is computed from
+        ``BASE_SURCHARGE_PCT`` plus dynamic VSC.
     """
     miles = get_distance_miles(origin, destination) or 0
 
@@ -52,7 +80,6 @@ def calculate_hotshot_quote(
     rate = _call_with_rate_set(rate_lookup, rate_set, zone)
 
     per_lb = float(rate.per_lb)
-    fuel_pct = float(rate.fuel_pct)
     weight_break = float(rate.weight_break) if rate.weight_break is not None else None
 
     if zone.upper() == "X":
@@ -64,12 +91,26 @@ def calculate_hotshot_quote(
         per_mile = None
         min_charge = float(rate.min_charge)
         base = max(min_charge, weight * per_lb)
-    subtotal = base * (1 + fuel_pct) + accessorial_total
+
+    dynamic_vsc_pct = get_dynamic_vsc_pct(
+        base=base,
+        miles=miles,
+        zone=zone,
+        rate_set=rate_set,
+    )
+    base_surcharge_amount = base * BASE_SURCHARGE_PCT
+    vsc_amount = base * dynamic_vsc_pct
+    total_fsc_applied = BASE_SURCHARGE_PCT + dynamic_vsc_pct
+    quote_total = base + base_surcharge_amount + vsc_amount + accessorial_total
 
     return {
         "zone": zone,
         "miles": miles,
-        "quote_total": subtotal,
+        "quote_total": quote_total,
+        "base_rate": base,
+        "fuel_surcharge_base_amount": base_surcharge_amount,
+        "vsc_amount": vsc_amount,
+        "total_fsc_applied": total_fsc_applied,
         "weight_break": weight_break,
         "per_lb": per_lb,
         "per_mile": per_mile,
