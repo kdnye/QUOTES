@@ -52,7 +52,8 @@ DEFAULT_TIMEOUT_SECONDS = 15
 # correct diesel price for each destination zone.
 # Ten regions mirror the VSC zone map in setup_vsc_config.py.
 DEFAULT_EIA_SERIES_MAP: Dict[str, str] = {
-    "PADD1":    "PET.EMD_EPD2D_PTE_R10_DPG.W",    # East Coast           (zones 1)
+    "NATIONAL": "PET.EMD_EPD2D_PTE_NUS_DPG.W",    # U.S. weekly average  (fallback)
+    "PADD1":    "PET.EMD_EPD2D_PTE_R10_DPG.W",    # East Coast           (zone 1)
     "PADD1A":   "PET.EMD_EPD2D_PTE_R1X_DPG.W",    # New England          (zone 2)
     "PADD1B":   "PET.EMD_EPD2D_PTE_R1Y_DPG.W",    # Central Atlantic     (zone 3)
     "PADD1C":   "PET.EMD_EPD2D_PTE_R1Z_DPG.W",    # Lower Atlantic       (zone 4)

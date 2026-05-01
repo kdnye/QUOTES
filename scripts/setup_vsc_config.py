@@ -57,8 +57,7 @@ LOGGER = logging.getLogger(__name__)
 # Matches the XLOOKUP(FLOOR(price, 0.25), ...) formula in the VSC scales sheet.
 # ---------------------------------------------------------------------------
 VSC_MATRIX = [
-    {"min": 0.00,  "max": 4.00,  "pct": 0.160},  # below $4.00 — floor at 16 %
-    {"min": 4.00,  "max": 4.25,  "pct": 0.160},
+    {"min": 0.00,  "max": 4.25,  "pct": 0.160},  # below $4.25 — floor at 16 %
     {"min": 4.25,  "max": 4.50,  "pct": 0.165},
     {"min": 4.50,  "max": 4.75,  "pct": 0.170},
     {"min": 4.75,  "max": 5.00,  "pct": 0.175},
