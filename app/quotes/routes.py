@@ -567,6 +567,9 @@ def _quote_template_context(
         ),
         "quote_email_smtp_enabled": quote_email_smtp_enabled,
         "user_can_send_quote_email": user_can_send_quote_email,
+        "show_cost_breakdown": bool(
+            getattr(current_user, "show_cost_breakdown", False)
+        ),
     }
 
 

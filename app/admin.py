@@ -1040,6 +1040,7 @@ def create_user() -> Union[str, Response]:
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
+            "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
             "rate_set": request.form.get("rate_set") or DEFAULT_RATE_SET,
         }
         display_name = (
@@ -1123,6 +1124,7 @@ def create_user() -> Union[str, Response]:
             role=form_data["role"],
             employee_approved=employee_approved,
             can_send_mail=form_data["can_send_mail"],
+            show_cost_breakdown=form_data["show_cost_breakdown"],
             rate_set=rate_set,
         )
         user.set_password(form_data["password"])
@@ -1186,6 +1188,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
+            "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
             "rate_set": request.form.get("rate_set") or user.rate_set,
         }
         display_name = (
@@ -1280,6 +1283,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
         user.company_phone = form_data["company_phone"] or None
         user.rate_set = parsed_rate_set
         user.can_send_mail = form_data["can_send_mail"]
+        user.show_cost_breakdown = form_data["show_cost_breakdown"]
 
         if is_super_admin:
             user.is_admin = True

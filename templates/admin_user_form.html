@@ -155,6 +155,21 @@
       Enables email sending regardless of their domain when checked.
     </div>
   </div>
+  <div class="form-check mb-3">
+    <input
+      class="form-check-input"
+      type="checkbox"
+      id="show_cost_breakdown"
+      name="show_cost_breakdown"
+      {% if data.get('show_cost_breakdown', user.show_cost_breakdown if user else False) %}checked{% endif %}
+    >
+    <label class="form-check-label" for="show_cost_breakdown">
+      Show detailed cost breakdown on quotes
+    </label>
+    <div class="form-text">
+      When checked, the quote result page displays an itemized breakdown of base rate, fuel surcharge, VSC, and accessorials.
+    </div>
+  </div>
   <button class="btn btn-primary" type="submit">Save</button>
   <a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Cancel</a>
 </form>
