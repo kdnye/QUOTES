@@ -15,7 +15,7 @@ import sys
 import sqlalchemy as sa
 
 REVISION = "f7b3c9d2e1a4"
-EXPECTED_DOWN_REVISION = "84eccfd5f119"
+EXPECTED_DOWN_REVISION = "e5a1d2c3f4b6"
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 FORCE = "--force" in sys.argv[1:]
 
