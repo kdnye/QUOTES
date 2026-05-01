@@ -43,34 +43,34 @@
       <tbody>
         <tr>
           <td class="text-muted">Base Rate</td>
-          <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.base_rate if metadata.base_rate is defined else base_total) }}</td>
+          <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else base_total) }}</td>
         </tr>
-        {% if metadata.fuel_surcharge_base_amount is defined and metadata.fuel_surcharge_base_amount %}
+        {% if metadata.details and metadata.details.fuel_surcharge_base_amount %}
         <tr>
           <td class="text-muted">
             Fuel Surcharge
-            {% if metadata.fuel_surcharge_base_pct is defined %}
-            <small class="text-muted">({{ '%.1f'|format(metadata.fuel_surcharge_base_pct * 100) }}%)</small>
+            {% if metadata.details.fuel_surcharge_base_pct is defined %}
+            <small class="text-muted">({{ '%.1f'|format(metadata.details.fuel_surcharge_base_pct * 100) }}%)</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.fuel_surcharge_base_amount) }}</td>
+          <td class="text-end">${{ '%.2f'|format(metadata.details.fuel_surcharge_base_amount) }}</td>
         </tr>
         {% endif %}
-        {% if metadata.vsc_amount is defined and metadata.vsc_amount %}
+        {% if metadata.details and metadata.details.vsc_amount %}
         <tr>
           <td class="text-muted">
             Variable Surcharge (VSC)
-            {% if metadata.vsc_pct is defined and metadata.vsc_pct %}
-            <small class="text-muted">({{ '%.1f'|format(metadata.vsc_pct * 100) }}%)</small>
+            {% if metadata.details.vsc_pct is defined and metadata.details.vsc_pct %}
+            <small class="text-muted">({{ '%.1f'|format(metadata.details.vsc_pct * 100) }}%)</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.vsc_amount) }}</td>
+          <td class="text-end">${{ '%.2f'|format(metadata.details.vsc_amount) }}</td>
         </tr>
         {% endif %}
-        {% if metadata.total_fsc_applied is defined and metadata.total_fsc_applied %}
+        {% if metadata.details and metadata.details.total_fsc_applied %}
         <tr>
           <td class="text-muted ps-3"><em>Total FSC Applied</em></td>
-          <td class="text-end text-muted"><em>{{ '%.1f'|format(metadata.total_fsc_applied * 100) }}%</em></td>
+          <td class="text-end text-muted"><em>{{ '%.1f'|format(metadata.details.total_fsc_applied * 100) }}%</em></td>
         </tr>
         {% endif %}
         {% if metadata.accessorial_total is defined and metadata.accessorial_total %}
