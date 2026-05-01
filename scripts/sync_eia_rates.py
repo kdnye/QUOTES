@@ -47,15 +47,22 @@ EIA_BASE_URL = "https://api.eia.gov/v2/seriesid"
 DEFAULT_TIMEOUT_SECONDS = 15
 
 # Default mapping can be overridden with EIA_SERIES_MAP_JSON.
-# Region labels must match the PADD region keys used in the vsc_zones
-# AppSetting and in FuelSurcharge.padd_region rows so that the pricing
-# service can resolve the correct diesel price for each destination zone.
+# Region labels must match the keys used in the vsc_zones AppSetting and
+# in FuelSurcharge.padd_region rows so the pricing service resolves the
+# correct diesel price for each destination zone.
+# Ten regions mirror the VSC zone map in setup_vsc_config.py.
 DEFAULT_EIA_SERIES_MAP: Dict[str, str] = {
-    "NATIONAL": "PET.EMD_EPD2D_PTE_NUS_DPG.W",   # U.S. weekly average
-    "PADD1": "PET.EMD_EPD2D_PTE_R10_DPG.W",       # East Coast
-    "PADD2": "PET.EMD_EPD2D_PTE_R20_DPG.W",       # Midwest
-    "PADD3": "PET.EMD_EPD2D_PTE_R30_DPG.W",       # Gulf Coast
-    "PADD4": "PET.EMD_EPD2D_PTE_R40_DPG.W",       # Rocky Mountain
+    "NATIONAL": "PET.EMD_EPD2D_PTE_NUS_DPG.W",    # U.S. weekly average  (fallback)
+    "PADD1":    "PET.EMD_EPD2D_PTE_R10_DPG.W",    # East Coast           (zone 1)
+    "PADD1A":   "PET.EMD_EPD2D_PTE_R1X_DPG.W",    # New England          (zone 2)
+    "PADD1B":   "PET.EMD_EPD2D_PTE_R1Y_DPG.W",    # Central Atlantic     (zone 3)
+    "PADD1C":   "PET.EMD_EPD2D_PTE_R1Z_DPG.W",    # Lower Atlantic       (zone 4)
+    "PADD2":    "PET.EMD_EPD2D_PTE_R20_DPG.W",    # Midwest              (zone 5)
+    "PADD3":    "PET.EMD_EPD2D_PTE_R30_DPG.W",    # Gulf Coast           (zone 6)
+    "PADD4":    "PET.EMD_EPD2D_PTE_R40_DPG.W",    # Rocky Mountain       (zone 7)
+    "PADD5":    "PET.EMD_EPD2D_PTE_R50_DPG.W",    # West Coast           (zone 8)
+    "CA":       "PET.EMD_EPD2D_PTE_SCA_DPG.W",    # California           (zone 9)
+    "PADD5XCA": "PET.EMD_EPD2D_PTE_R5XCA_DPG.W",  # West Coast excl. CA  (zone 10)
 }
 
 
