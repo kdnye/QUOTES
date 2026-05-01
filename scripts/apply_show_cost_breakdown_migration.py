@@ -25,9 +25,11 @@ with engine.begin() as conn:
     ))
     print("Column added (or already existed).")
 
-    conn.execute(sa.text(
-        "UPDATE alembic_version SET version_num = :rev"
-    ), {"rev": REVISION})
+    conn.execute(sa.text("DELETE FROM alembic_version"))
+    conn.execute(
+        sa.text("INSERT INTO alembic_version (version_num) VALUES (:rev)"),
+        {"rev": REVISION},
+    )
     rows = conn.execute(sa.text("SELECT version_num FROM alembic_version")).fetchall()
     print(f"Alembic version is now: {rows}")
 

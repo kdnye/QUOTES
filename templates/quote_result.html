@@ -43,7 +43,7 @@
       <tbody>
         <tr>
           <td class="text-muted">Base Rate</td>
-          <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else base_total) }}</td>
+          <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else (quote.total - (metadata.accessorial_total|default(0)))) }}</td>
         </tr>
         {% if metadata.details and metadata.details.fuel_surcharge_base_amount %}
         <tr>
