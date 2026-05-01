@@ -103,6 +103,7 @@ class User(UserMixin, db.Model):
     )
     employee_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     can_send_mail: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    show_cost_breakdown: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     theme_preference: Mapped[str] = db.Column(
         db.String(10), nullable=False, default="auto"
     )
