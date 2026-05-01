@@ -63,18 +63,24 @@ def get_dynamic_vsc_pct(
         base: The computed pre-surcharge linehaul amount.
         miles: Route mileage used for the quote.
         zone: Hotshot zone code resolved from mileage.
+        dest_zone: Destination zone code used to select a PADD diesel region.
         rate_set: Active named rate table context.
 
     Returns:
-        Percentage expressed as a decimal fraction (for example ``0.12`` for 12%).
+        Percentage expressed as a decimal fraction (for example ``0.35`` for
+        35%).  Reads the current EIA diesel price from the ``FuelSurcharge``
+        table and maps it to a surcharge via the ``vsc_matrix`` AppSetting.
+        Returns ``0.0`` when the DB or config is unavailable.
 
     External dependencies:
-        Currently none. This helper exists so dynamic surcharge inputs can be
-        integrated without changing ``calculate_hotshot_quote``.
+        * ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` — queries the
+          ``FuelSurcharge`` table and ``vsc_zones``/``vsc_matrix`` AppSettings.
     """
 
-    _ = (base, miles, zone, dest_zone, rate_set)
-    return 0.0
+    from app.services.fuel_surcharge import get_vsc_pct_for_zone
+
+    _ = (base, miles, zone, rate_set)
+    return get_vsc_pct_for_zone(dest_zone)
 
 
 def calculate_hotshot_quote(

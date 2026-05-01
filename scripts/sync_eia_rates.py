@@ -47,12 +47,15 @@ EIA_BASE_URL = "https://api.eia.gov/v2/seriesid"
 DEFAULT_TIMEOUT_SECONDS = 15
 
 # Default mapping can be overridden with EIA_SERIES_MAP_JSON.
+# Region labels must match the PADD region keys used in the vsc_zones
+# AppSetting and in FuelSurcharge.padd_region rows so that the pricing
+# service can resolve the correct diesel price for each destination zone.
 DEFAULT_EIA_SERIES_MAP: Dict[str, str] = {
-    "USGC": "PET.EMD_EPD2D_PTE_NUS_DPG.W",
-    "EMEC": "PET.EMD_EPD2D_PTE_R10_DPG.W",
-    "ENEC": "PET.EMD_EPD2D_PTE_R20_DPG.W",
-    "WCGC": "PET.EMD_EPD2D_PTE_R30_DPG.W",
-    "WCMC": "PET.EMD_EPD2D_PTE_R40_DPG.W",
+    "NATIONAL": "PET.EMD_EPD2D_PTE_NUS_DPG.W",   # U.S. weekly average
+    "PADD1": "PET.EMD_EPD2D_PTE_R10_DPG.W",       # East Coast
+    "PADD2": "PET.EMD_EPD2D_PTE_R20_DPG.W",       # Midwest
+    "PADD3": "PET.EMD_EPD2D_PTE_R30_DPG.W",       # Gulf Coast
+    "PADD4": "PET.EMD_EPD2D_PTE_R40_DPG.W",       # Rocky Mountain
 }
 
 
