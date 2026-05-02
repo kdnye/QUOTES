@@ -196,8 +196,6 @@ pyinstaller --noconfirm --onefile --name windows_setup `
   --add-data "Zipcode_Zones.csv;rates" `
   --add-data "cost_zone_table.csv;rates" `
   --add-data "air_cost_zone.csv;rates" `
-  --add-data "rates/vsc zones.csv;rates" `
-  --add-data "rates/vsc scales.csv;rates" `
   windows_setup.py
 ```
 
@@ -218,8 +216,7 @@ value.
 On first launch the executable seeds the database by invoking the setup
 bootstrap process. The bundled rate data includes
 `Hotshot_Rates.csv`, `beyond_price.csv`, `accessorial_cost.csv`,
-`Zipcode_Zones.csv`, `cost_zone_table.csv`, `air_cost_zone.csv`,
-`vsc zones.csv`, and `vsc scales.csv`. Replace the
+`Zipcode_Zones.csv`, `cost_zone_table.csv`, and `air_cost_zone.csv`. Replace the
 CSV files in the `rates` directory next to the executable (or its
 `resources\rates` extraction folder when frozen) to load custom pricing the next
 time you run the launcher.

@@ -113,7 +113,7 @@ The pricing modules implement the following core functions:
   - If `z` = "X": `m × mc × (1 + f) + a`
   - Else: `max(mc, w × r_lb) × (1 + f) + a`
 
-> **Note:** `f` is not a hardcoded constant. In the current implementation it is resolved at runtime by `get_vsc_pct_for_zone(dest_zone)` in `logic_hotshot.py`, which combines any base surcharge with a dynamic VSC percentage derived from the EIA regional diesel price for the destination zone. Reimplementations must replicate this dynamic lookup rather than hardcoding a fuel surcharge rate.
+> **Note:** `f` is not a hardcoded constant. In the current implementation it is resolved at runtime by `get_vsc_pct_for_zone(dest_zone)` (defined in `app/services/fuel_surcharge.py`), which is called during hotshot calculation via `get_dynamic_vsc_pct` in `logic_hotshot.py`. It returns a dynamic VSC percentage derived from the EIA regional diesel price for the destination zone. Reimplementations must replicate this dynamic lookup rather than hardcoding a fuel surcharge rate.
 
 **`air_quote(w, a, wb, r_lb, mc, oc, dc)`**
 
@@ -123,7 +123,7 @@ The pricing modules implement the following core functions:
   - Base charge: `mc` if `w ≤ wb` else `(w - wb) × r_lb + mc`
   - Quote total: `base + a + oc + dc`
 
-> **Note:** Air quotes also apply a dynamic VSC surcharge via `get_vsc_pct_for_zone(dest_zone)` in `logic_air.py`. The VSC amount is computed from the same EIA-backed pipeline described above and added to the quote total. Reimplementations must include this lookup.
+> **Note:** Air quotes apply a 31.5% base surcharge (`BASE_SURCHARGE_PCT`) to the base freight amount. The dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is currently a stub that returns `0.0` — the EIA-backed pipeline is not yet wired for Air quotes. When this stub is replaced with a real implementation, it should follow the same zone-lookup pattern as the Hotshot implementation.
 
 **`guarantee_cost(base, g)`**
 
