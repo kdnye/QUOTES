@@ -154,7 +154,7 @@ The pricing modules implement the following core functions:
 | Volume-pricing email workflow | 🔒 Staff-only | Enabled only when a quote exceeds thresholds; shares the same privilege checks. |
 | Admin quote history | ✅ Stable | Available at `/admin/quotes` with CSV export at `/admin/quotes.csv`. |
 | Redis caching profile | ⚙️ Optional | Disabled unless Redis is provisioned and the `cache` profile is active. |
-| Variable Fuel Surcharge (VSC) | ✅ Stable | Dynamic per-zone surcharge applied to all Hotshot and Air quotes. Requires `setup_vsc_config.py` (one-time seed) and weekly `sync_eia_rates.py` runs. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is a stub returning `0.0`. Requires `setup_vsc_config.py` (one-time seed) and weekly `sync_eia_rates.py` runs. |
 
 ## External Configuration
 
