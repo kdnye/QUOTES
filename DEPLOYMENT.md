@@ -198,6 +198,10 @@ required to read secrets and reach dependencies:
 | `HEALTHCHECK_REQUIRE_DB` | No | Set to a truthy value to require database connectivity for the `/healthz` probe endpoint. |
 | `HEALTHCHECK_DB_TIMEOUT_SECONDS` | No | Timeout (in seconds) for the optional database probe performed by `/healthz`. Defaults to `2.0`. |
 | `FSI_LOGO_PATH` | No | Filesystem path served at `/fsi-logo`. Defaults to `/logos/fsi-logo.png`, which expects a Cloud Run Cloud Storage volume mount at `/logos`. |
+| `EIA_API_KEY` | No | API key for the U.S. Energy Information Administration v2 API, used by `sync_eia_rates.py`. Omit for unauthenticated access (lower rate limits). Store in Secret Manager in production. |
+| `EIA_SERIES_MAP_JSON` | No | JSON object overriding the built-in 11-region EIA series ID map. Keys must exactly match `FuelSurcharge.padd_region` values (e.g. `PADD1`, `PADD2`, `NATIONAL`). Defaults to the hardcoded map in `sync_eia_rates.py`. |
+| `EIA_TIMEOUT_SECONDS` | No | HTTP request timeout in seconds for each EIA API call made by `sync_eia_rates.py`. Default: `15`. |
+| `EIA_COMMIT_STRATEGY` | No | Transaction strategy for `sync_eia_rates.py`: `all_or_nothing` (default) commits all regions in one transaction and rolls back on any failure; `per_region` commits each region independently so partial updates succeed even when some regions fail. |
 
 Never commit the `.env` file to version control. Restrict filesystem
 permissions (`chmod 600 .env`) so only the deployment user can read it.
@@ -393,6 +397,17 @@ Otherwise it falls back to the CSVs checked into the repository root. Provide
 `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (or export them temporarily) to
 bootstrap the first admin account.
 
+After `init_db.py` completes, seed the Variable Fuel Surcharge configuration once:
+
+```bash
+python scripts/setup_vsc_config.py
+```
+
+This writes the `vsc_matrix` (pricing tier table), `vsc_zones` (zone-to-PADD
+mapping), and `vsc_last_update` entries into the `AppSetting` table. Without
+this step all quotes will use 0% VSC in production, which produces incorrect
+pricing.
+
 ## 6. Maintenance
 
 ### Backups
@@ -448,6 +463,28 @@ request a quote.
   infrastructure-as-code) alongside any migration runbooks.
 - **Monitoring** – Stream Cloud Run logs to Cloud Logging or your preferred
   SIEM. Probe the `/healthz` endpoint for liveness/readiness checks.
+- **Weekly EIA fuel price sync** – Run `python scripts/sync_eia_rates.py` once
+  per week (EIA publishes Monday afternoons). On Cloud Run, schedule this as a
+  Cloud Run Job triggered by Cloud Scheduler. A cron expression of
+  `0 18 * * 1` (Mondays at 18:00 UTC) gives EIA time to publish before the
+  sync runs. Set `EIA_COMMIT_STRATEGY=per_region` if partial updates are
+  acceptable when some EIA series are temporarily unavailable.
+
+### Scheduling `sync_eia_rates.py` on Cloud Scheduler
+
+To automate the weekly EIA sync on Cloud Run:
+
+1. **Create a Cloud Run Job** from the same container image used by the main
+   service. Set the job's command to `python scripts/sync_eia_rates.py`.
+2. **Inject environment variables** – provide the same `POSTGRES_*` /
+   `DATABASE_URL` connection settings as the main service, plus `EIA_API_KEY`
+   and `EIA_COMMIT_STRATEGY`.
+3. **Create a Cloud Scheduler job** targeting the Cloud Run Jobs API with cron
+   expression `0 18 * * 1`. Grant `roles/run.invoker` on the Cloud Run Job to
+   the Scheduler service account.
+4. **Verify** the first run by confirming that `FuelSurcharge` rows in the
+   database have a recent `last_updated` timestamp (check via Cloud SQL Studio
+   or `psql`).
 
 ## 10. Troubleshooting
 
