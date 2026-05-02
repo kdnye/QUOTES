@@ -20,6 +20,7 @@ Services portal.
 - Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
 - Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
 - Theme now supports dark mode and automatically follows each user's system color-scheme preference
+- Dynamic fuel surcharges (VSC) are calculated per destination zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to Hotshot quotes (Air quotes apply a fixed 31.5% base surcharge; dynamic EIA-based VSC for Air is not yet implemented)
 
 ## Feature status
 
@@ -30,6 +31,7 @@ Services portal.
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component is a stub (`get_dynamic_vsc_pct` returns `0.0`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
 
 Operator note: Air quotes enforce per-piece limits using billable weight (the greater of actual or dimensional weight).
 
@@ -65,9 +67,13 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
 4. Create tables: `alembic upgrade head`.
 5. Import ZIP and air rate data before starting the app:
    `python scripts/import_air_rates.py path/to/rates_dir`.
-6. Complete first-time setup at `/setup` to initialize the schema and create
+6. Seed the VSC configuration: `python scripts/setup_vsc_config.py`.
+   This writes the `vsc_matrix`, `vsc_zones`, and `vsc_last_update` rows to
+   the `AppSetting` table. Only needs to run once per environment; without it
+   all quotes use 0% VSC.
+7. Complete first-time setup at `/setup` to initialize the schema and create
    the first super admin account.
-7. Run the app locally: `python flask_app.py`.
+8. Run the app locally: `python flask_app.py`.
    - For production use
      `hypercorn --bind 0.0.0.0:${PORT:-8080} --workers 1 --access-logfile - "app.app:create_app()"`
      (HTTP/2-capable when `h2` is installed) or the convenience launcher at
@@ -82,7 +88,7 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
      debugging. Set ``FLASK_DEBUG=true`` while developing locally and leave it
      unset or ``false`` in production so the hardened configuration stays in
      effect.
-8. On first run, visit `/setup` to confirm environment variables, optionally
+9. On first run, visit `/setup` to confirm environment variables, optionally
    save missing values (including database connection settings) into the app's
    settings table, initialize the database schema, and create the initial super
    admin account. When required environment variables are missing, requests
@@ -261,6 +267,24 @@ combination. Override the defaults with environment variables as needed:
 Set `RATELIMIT_HEADERS_ENABLED=true` to expose standard rate-limit headers if
 your proxy or monitoring stack expects them.
 
+### EIA fuel price sync
+
+`scripts/sync_eia_rates.py` fetches current diesel prices from the U.S. Energy
+Information Administration (EIA) API and upserts one `FuelSurcharge` row per
+region. EIA publishes updated prices every Monday; schedule this script to run
+weekly so quotes always reflect current fuel costs:
+
+```bash
+python scripts/sync_eia_rates.py
+```
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `EIA_API_KEY` | EIA API key for higher request rate limits. Omit for unauthenticated public access. | _(empty)_ |
+| `EIA_SERIES_MAP_JSON` | JSON object overriding the built-in region→series mapping. Keys must match `FuelSurcharge.padd_region` values. | Built-in 11-region map |
+| `EIA_TIMEOUT_SECONDS` | HTTP request timeout in seconds per EIA API call. | `15` |
+| `EIA_COMMIT_STRATEGY` | `all_or_nothing` commits all regions in one transaction; `per_region` commits each independently so partial updates succeed. | `all_or_nothing` |
+
 ### Rate CSV formats
 
 The `Zipcode_Zones.csv` file must include a header row with these columns in
@@ -371,7 +395,7 @@ ingress settings.
 
 - Run only the JSON API: `python standalone_flask_app.py`.
 - Import rate data any time with the same script as above.
-- Admin pages let you manage rate tables and fuel surcharges.
+- Admin pages let you manage rate tables and review the active Variable Fuel Surcharge (VSC) configuration at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. To refresh diesel prices, run `python scripts/sync_eia_rates.py` (or schedule it weekly). To reset VSC defaults, run `python scripts/setup_vsc_config.py`.
 
 ### JSON API authentication
 

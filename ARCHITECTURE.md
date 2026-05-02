@@ -12,7 +12,7 @@ The application exposes both HTML pages and JSON APIs and persists data in a SQL
 
 - **Language:** Python 3.8+
 - **Web Framework:** Flask with Blueprints
-- **Database:** postgress cloud sql
+- **Database:** PostgreSQL (Cloud SQL)
 - **Auth:** flask-login sessions and CSRF protection via Flask-WTF
 - **Front End:** Jinja2 templates and Bootstrap-based theme
 - **External Services:** Google Maps Directions API for mileage lookups
@@ -46,6 +46,8 @@ Key tables:
 - `Quote` – stored quotes including origin, destination, weight, pricing metadata, and generated UUID.
 - `EmailQuoteRequest` – supplemental shipping details collected when emailing a quote.
 - `Accessorial`, `HotshotRate`, `BeyondRate`, `AirCostZone`, `ZipZone`, `CostZone` – rate tables that drive pricing.
+- `AppSetting` – key/value store for database-persisted runtime configuration. The VSC feature uses three keys: `vsc_matrix` (JSON tier table mapping diesel $/gal ranges to surcharge percentages), `vsc_zones` (JSON object mapping destination zone numbers 1–10 to PADD region labels), and `vsc_last_update` (ISO timestamp of the last VSC config seed).
+- `FuelSurcharge` – one row per EIA PADD region storing the current diesel price (`current_rate`, $/gal) and `last_updated` timestamp. Populated by `scripts/sync_eia_rates.py`; queried by `app/services/fuel_surcharge.py` to resolve per-zone surcharge percentages at quote time.
 
 ### Authentication (`app/auth.py`)
 - Routes for login, registration, logout, password reset request, and token-based reset.
@@ -64,6 +66,30 @@ Key tables:
 - `logic_air.py` – computes air quotes using zone lookups and beyond charges.
 - `thresholds.py` – enforces quote safeguards via `check_thresholds` for warning-level limits and `check_air_piece_limit` for Air per-piece billable-weight validation.
 - `theme.py` and `admin_view.py` – presentation helpers and admin pages.
+
+#### Variable Fuel Surcharge pipeline
+
+All quotes (Hotshot and Air) apply a dynamic VSC percentage sourced from weekly EIA diesel prices. The four-step pipeline is:
+
+1. **Sync** – `scripts/sync_eia_rates.py` fetches the latest weekly diesel price for each PADD region from the EIA v2 API and upserts one `FuelSurcharge` row per region (11 regions including NATIONAL as fallback). Run weekly; EIA publishes on Mondays.
+2. **Zone lookup** – `logic_hotshot.py` / `logic_air.py` call `get_vsc_pct_for_zone(dest_zone)` with the numeric destination zone from the `ZipZone` table.
+3. **Region resolution** – `fuel_surcharge.py::resolve_padd_region` maps the zone number to a PADD region label using the `vsc_zones` AppSetting (falls back to `NATIONAL` if the zone is absent).
+4. **Matrix lookup** – `fuel_surcharge.py::lookup_matrix_pct` scans the `vsc_matrix` AppSetting tiers to find the tier where `min ≤ diesel_price < max` and returns that tier's `pct` (decimal fraction). Returns `0.0` on any failure so quotes are never blocked.
+
+Zone-to-PADD-region reference:
+
+| Zone | States | PADD Label | EIA Region |
+|------|--------|------------|------------|
+| 1 | IL KY IN OH TN | PADD1 | East Coast |
+| 2 | CT ME MA NH RI VT | PADD1A | New England |
+| 3 | NY NJ DE PA MD VA WV DC | PADD1B | Central Atlantic |
+| 4 | NC SC GA | PADD1C | Lower Atlantic |
+| 5 | MI WI MN IA MO ND SD KS NE | PADD2 | Midwest |
+| 6 | TX LA OK AR FL AL MS | PADD3 | Gulf Coast |
+| 7 | ID CO MT WY UT NM | PADD4 | Rocky Mountain |
+| 8 | NV AZ | PADD5 | West Coast |
+| 9 | CA HI AK | CA | California |
+| 10 | WA OR | PADD5XCA | West Coast excl. CA |
 
 #### Quote Calculation Formulas
 
@@ -87,6 +113,8 @@ The pricing modules implement the following core functions:
   - If `z` = "X": `m × mc × (1 + f) + a`
   - Else: `max(mc, w × r_lb) × (1 + f) + a`
 
+> **Note:** `f` is not a hardcoded constant. In the current implementation it is resolved at runtime by `get_vsc_pct_for_zone(dest_zone)` (defined in `app/services/fuel_surcharge.py`), which is called during hotshot calculation via `get_dynamic_vsc_pct` in `logic_hotshot.py`. It returns a dynamic VSC percentage derived from the EIA regional diesel price for the destination zone. Reimplementations must replicate this dynamic lookup rather than hardcoding a fuel surcharge rate.
+
 **`air_quote(w, a, wb, r_lb, mc, oc, dc)`**
 
 - Variables: `w` = billable weight (lb), `a` = accessorial total, `wb` = weight break (lb), `r_lb` = rate per pound, `mc` = minimum charge, `oc` = origin beyond charge, `dc` = destination beyond charge.
@@ -94,6 +122,8 @@ The pricing modules implement the following core functions:
 
   - Base charge: `mc` if `w ≤ wb` else `(w - wb) × r_lb + mc`
   - Quote total: `base + a + oc + dc`
+
+> **Note:** Air quotes apply a 31.5% base surcharge (`BASE_SURCHARGE_PCT`) to the base freight amount. The dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is currently a stub that returns `0.0` — the EIA-backed pipeline is not yet wired for Air quotes. When this stub is replaced with a real implementation, it should follow the same zone-lookup pattern as the Hotshot implementation.
 
 **`guarantee_cost(base, g)`**
 
@@ -113,6 +143,7 @@ The pricing modules implement the following core functions:
 - `quote.py` – orchestrates quote creation, accessorial cost calculations, and database persistence.
 - `mail.py` – validates sender formatting, enforces mail privileges, applies rate limits, and logs outbound email usage.
 - `settings.py` – exposes runtime overrides so super admins can adjust mail and limiter configuration from the dashboard.
+- `fuel_surcharge.py` – Variable Fuel Surcharge computation. `get_vsc_pct_for_zone(dest_zone)` is the public entry point: reads `vsc_zones` and `vsc_matrix` from `AppSetting`, queries `FuelSurcharge` for the matching PADD region (fallback: NATIONAL), scans the matrix tiers, and returns a decimal surcharge percentage. Returns `0.0` on any configuration or database error so quotes are never blocked.
 
 ### Feature status at release
 
@@ -123,14 +154,19 @@ The pricing modules implement the following core functions:
 | Volume-pricing email workflow | 🔒 Staff-only | Enabled only when a quote exceeds thresholds; shares the same privilege checks. |
 | Admin quote history | ✅ Stable | Available at `/admin/quotes` with CSV export at `/admin/quotes.csv`. |
 | Redis caching profile | ⚙️ Optional | Disabled unless Redis is provisioned and the `cache` profile is active. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is a stub returning `0.0`. Requires `setup_vsc_config.py` (one-time seed) and weekly `sync_eia_rates.py` runs. |
 
 ## External Configuration
 
 The application relies on several environment variables (see `.env.example`):
-- `DATABASE_URL` or google clouod sql
+- `DATABASE_URL` or Google Cloud SQL
 - `SECRET_KEY` for session signing
 - `GOOGLE_MAPS_API_KEY` for distance lookups
 - Admin bootstrap credentials (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+- `EIA_API_KEY` – authenticates calls to the EIA v2 API from `sync_eia_rates.py`; optional (omit for unauthenticated public access)
+- `EIA_SERIES_MAP_JSON` – overrides the built-in region→EIA-series mapping; keys must match `FuelSurcharge.padd_region` values
+- `EIA_TIMEOUT_SECONDS` – HTTP timeout per EIA request (default `15` seconds)
+- `EIA_COMMIT_STRATEGY` – transaction strategy for `sync_eia_rates.py`: `all_or_nothing` (default) or `per_region`
 
 ## Reimplementation Notes
 
@@ -139,9 +175,10 @@ To rebuild the app in another language or framework:
 2. **Auth Flow** – implement registration, login, logout, and password reset using secure password hashing and token-based resets.
 3. **Quote Engine** – port the algorithms from `quote/logic_hotshot.py` and `quote/logic_air.py`, including dimensional weight logic and accessorial handling found in `services/quote.py`.
 4. **Distance Lookups** – provide a service wrapper around the Google Maps Directions API similar to `quote/distance.py`.
-5. **Admin Functions** – include interfaces for managing users and rate tables as in `app/admin.py` and `quote/admin_view.py`.
-6. **Email** – expose a way to email quote summaries using configurable SMTP settings (`app/__init__.py::send_email`).
-7. **APIs and Templates** – replicate the routes in `flask_app.py` and the blueprints, adapting templates or JSON endpoints as desired.
+5. **Variable Fuel Surcharge** – replicate the three-layer VSC pipeline: a weekly data-fetch job equivalent to `sync_eia_rates.py` that writes current diesel $/gal to per-region rows; a configuration store equivalent to `AppSetting` holding the zone-to-region map (`vsc_zones`) and the tier matrix (`vsc_matrix`); and a lookup service equivalent to `fuel_surcharge.py` that resolves zone → region → diesel price → tier percentage at quote time, returning `0.0` gracefully on any missing data.
+6. **Admin Functions** – include interfaces for managing users and rate tables as in `app/admin.py` and `quote/admin_view.py`. Also include read-only admin views for the VSC zone map (`/admin/settings/vsc-zones`) and tier matrix (`/admin/settings/vsc-matrix`), equivalent to `view_vsc_zones` and `view_vsc_matrix` in `app/admin.py`.
+7. **Email** – expose a way to email quote summaries using configurable SMTP settings (`app/__init__.py::send_email`).
+8. **APIs and Templates** – replicate the routes in `flask_app.py` and the blueprints, adapting templates or JSON endpoints as desired.
 
 With these components in place, any stack can reproduce the behavior of the Quote Tool while tailoring presentation or infrastructure to new requirements.
 
