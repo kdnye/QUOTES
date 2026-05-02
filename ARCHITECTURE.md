@@ -72,7 +72,7 @@ Key tables:
 All quotes (Hotshot and Air) apply a dynamic VSC percentage sourced from weekly EIA diesel prices. The four-step pipeline is:
 
 1. **Sync** – `scripts/sync_eia_rates.py` fetches the latest weekly diesel price for each PADD region from the EIA v2 API and upserts one `FuelSurcharge` row per region (11 regions including NATIONAL as fallback). Run weekly; EIA publishes on Mondays.
-2. **Zone lookup** – `logic_hotshot.py` / `logic_air.py` call `get_vsc_pct_for_zone(dest_zone)` with the numeric destination zone from the `ZipZone` table.
+2. **Zone lookup** – `logic_hotshot.py` calls `get_vsc_pct_for_zone(dest_zone)` using the destination zone. `logic_air.py` calls it for both origin and destination zones and returns the average, reflecting the full air route across two fuel-pricing regions.
 3. **Region resolution** – `fuel_surcharge.py::resolve_padd_region` maps the zone number to a PADD region label using the `vsc_zones` AppSetting (falls back to `NATIONAL` if the zone is absent).
 4. **Matrix lookup** – `fuel_surcharge.py::lookup_matrix_pct` scans the `vsc_matrix` AppSetting tiers to find the tier where `min ≤ diesel_price < max` and returns that tier's `pct` (decimal fraction). Returns `0.0` on any failure so quotes are never blocked.
 
@@ -123,7 +123,7 @@ The pricing modules implement the following core functions:
   - Base charge: `mc` if `w ≤ wb` else `(w - wb) × r_lb + mc`
   - Quote total: `base + a + oc + dc`
 
-> **Note:** Air quotes apply a 31.5% base surcharge (`BASE_SURCHARGE_PCT`) to the base freight amount. The dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is currently a stub that returns `0.0` — the EIA-backed pipeline is not yet wired for Air quotes. When this stub is replaced with a real implementation, it should follow the same zone-lookup pattern as the Hotshot implementation.
+> **Note:** Air quotes apply a 31.5% base surcharge (`BASE_SURCHARGE_PCT`) plus a dynamic VSC component. `get_dynamic_vsc_pct` in `logic_air.py` looks up the EIA-backed rate for both the origin and destination zones (via `get_vsc_pct_for_zone` in `app/services/fuel_surcharge.py`) and returns their average, reflecting the full route rather than a single region.
 
 **`guarantee_cost(base, g)`**
 
@@ -154,7 +154,7 @@ The pricing modules implement the following core functions:
 | Volume-pricing email workflow | 🔒 Staff-only | Enabled only when a quote exceeds thresholds; shares the same privilege checks. |
 | Admin quote history | ✅ Stable | Available at `/admin/quotes` with CSV export at `/admin/quotes.csv`. |
 | Redis caching profile | ⚙️ Optional | Disabled unless Redis is provisioned and the `cache` profile is active. |
-| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component (`get_dynamic_vsc_pct` in `logic_air.py`) is a stub returning `0.0`. Requires `setup_vsc_config.py` (one-time seed) and weekly `sync_eia_rates.py` runs. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable | Dynamic EIA-backed VSC applied to all quotes. Hotshot uses the destination zone rate; Air averages origin and destination zone rates. Requires `setup_vsc_config.py` (one-time seed) and weekly `sync_eia_rates.py` runs. |
 
 ## External Configuration
 

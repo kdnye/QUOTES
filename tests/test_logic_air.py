@@ -1,8 +1,9 @@
 """Unit tests for air quote surcharge policy and payload fields."""
 
 from types import SimpleNamespace
+from unittest.mock import patch
 
-from app.quote.logic_air import BASE_SURCHARGE_PCT, calculate_air_quote
+from app.quote.logic_air import BASE_SURCHARGE_PCT, calculate_air_quote, get_dynamic_vsc_pct
 
 
 def test_calculate_air_quote_applies_base_and_dynamic_vsc() -> None:
@@ -41,7 +42,7 @@ def test_calculate_air_quote_applies_base_and_dynamic_vsc() -> None:
         cost_zone_lookup=cost_zone_lookup,
         air_cost_lookup=air_cost_lookup,
         beyond_rate_lookup=beyond_rate_lookup,
-        dynamic_vsc_lookup=lambda base, rate_set=None: 0.1,
+        dynamic_vsc_lookup=lambda base, rate_set=None, orig_zone=None, dest_zone=None: 0.1,
     )
 
     assert result["base_rate"] == 120.0
@@ -84,3 +85,68 @@ def test_calculate_air_quote_error_payload_includes_surcharge_metadata() -> None
     assert result["surcharge_applies"] is True
     assert result["surcharge_policy"] == "base_plus_dynamic_vsc"
     assert result["total_fsc_applied"] == 0.0
+
+
+def test_get_dynamic_vsc_pct_averages_zone_percentages() -> None:
+    """Validate that get_dynamic_vsc_pct averages origin and destination zone rates.
+
+    Inputs:
+        None.
+
+    Outputs:
+        None. Asserts that the returned percentage is the mean of the two
+        zone lookups so neither leg's regional diesel price dominates.
+
+    External dependencies:
+        Patches ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` to avoid
+        database access.
+    """
+
+    def _zone_pct(zone: str) -> float:
+        return 0.20 if zone == "1" else 0.24
+
+    with patch(
+        "app.services.fuel_surcharge.get_vsc_pct_for_zone",
+        side_effect=_zone_pct,
+    ):
+        result = get_dynamic_vsc_pct(
+            base=100.0,
+            orig_zone="1",
+            dest_zone="2",
+            rate_set="default",
+        )
+
+    assert result == 0.22
+
+
+def test_get_dynamic_vsc_pct_falls_back_when_one_zone_fails() -> None:
+    """Validate that a partial lookup failure returns 0.0 rather than a halved rate.
+
+    Inputs:
+        None.
+
+    Outputs:
+        None. Asserts that when one zone lookup returns the 0.0 failure
+        sentinel, the function falls back to 0.0 rather than averaging a
+        valid rate with 0.0 and silently halving the surcharge.
+
+    External dependencies:
+        Patches ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` to avoid
+        database access.
+    """
+
+    def _zone_pct(zone: str) -> float:
+        return 0.20 if zone == "1" else 0.0  # zone "2" lookup failed
+
+    with patch(
+        "app.services.fuel_surcharge.get_vsc_pct_for_zone",
+        side_effect=_zone_pct,
+    ):
+        result = get_dynamic_vsc_pct(
+            base=100.0,
+            orig_zone="1",
+            dest_zone="2",
+            rate_set="default",
+        )
+
+    assert result == 0.0

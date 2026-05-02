@@ -16,22 +16,37 @@ from app.services.rate_sets import (
 BASE_SURCHARGE_PCT = 0.315
 
 
-def get_dynamic_vsc_pct(*, base: float, rate_set: str) -> float:
-    """Return dynamic variable surcharge percentage for air quotes.
+def get_dynamic_vsc_pct(*, base: float, orig_zone: str, dest_zone: str, rate_set: str) -> float:
+    """Return zone-averaged VSC percentage for air quotes.
+
+    Looks up the EIA regional diesel surcharge for both the origin and destination
+    zones and returns their average, so the applied rate reflects the full route
+    rather than a single region.
 
     Args:
-        base: Pre-surcharge base freight amount.
-        rate_set: Active named rate table context.
+        base: Pre-surcharge base freight amount (reserved for future tier logic).
+        orig_zone: Origin zone string from ``ZipZone.dest_zone``.
+        dest_zone: Destination zone string from ``ZipZone.dest_zone``.
+        rate_set: Active named rate table context (reserved for future use).
 
     Returns:
-        Percentage expressed as a decimal fraction.
+        Average of origin and destination VSC percentages as a decimal fraction.
+        Returns ``0.0`` when either lookup fails. ``get_vsc_pct_for_zone``
+        returns ``0.0`` as its universal failure sentinel and no legitimate
+        matrix tier produces ``0.0`` (floor is 16%), so a partial result would
+        silently halve the surcharge — failing safe is preferable.
 
     External dependencies:
-        Currently none. This helper isolates dynamic-VSC integration for future
-        data-source updates.
+        Calls ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` for each zone.
     """
+    from app.services.fuel_surcharge import get_vsc_pct_for_zone
+
     _ = (base, rate_set)
-    return 0.0
+    origin_pct = get_vsc_pct_for_zone(orig_zone)
+    dest_pct = get_vsc_pct_for_zone(dest_zone)
+    if origin_pct == 0.0 or dest_pct == 0.0:
+        return 0.0
+    return (origin_pct + dest_pct) / 2
 
 
 def get_zip_zone(
@@ -283,7 +298,11 @@ def calculate_air_quote(
     beyond_total = origin_charge + dest_charge
 
     dynamic_vsc_pct = _call_with_rate_set(
-        dynamic_vsc_lookup, normalized_rate_set, base=base
+        dynamic_vsc_lookup,
+        normalized_rate_set,
+        base=base,
+        orig_zone=str(orig_zone),
+        dest_zone=str(dest_zone),
     )
     base_surcharge_amount = base * BASE_SURCHARGE_PCT
     vsc_amount = base * dynamic_vsc_pct

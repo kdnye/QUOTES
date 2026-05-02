@@ -20,7 +20,7 @@ Services portal.
 - Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
 - Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
 - Theme now supports dark mode and automatically follows each user's system color-scheme preference
-- Dynamic fuel surcharges (VSC) are calculated per destination zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to Hotshot quotes (Air quotes apply a fixed 31.5% base surcharge; dynamic EIA-based VSC for Air is not yet implemented)
+- Dynamic fuel surcharges (VSC) are calculated per zone using weekly EIA regional diesel prices and applied automatically to all quotes; Hotshot quotes use the destination zone rate, Air quotes average the origin and destination zone rates
 
 ## Feature status
 
@@ -31,7 +31,7 @@ Services portal.
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
-| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component is a stub (`get_dynamic_vsc_pct` returns `0.0`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable | Dynamic EIA-backed VSC applied to all quotes. Hotshot uses the destination zone rate; Air averages origin and destination zone rates. Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
 
 Operator note: Air quotes enforce per-piece limits using billable weight (the greater of actual or dimensional weight).
 
