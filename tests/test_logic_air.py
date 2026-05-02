@@ -117,3 +117,36 @@ def test_get_dynamic_vsc_pct_averages_zone_percentages() -> None:
         )
 
     assert result == 0.22
+
+
+def test_get_dynamic_vsc_pct_falls_back_when_one_zone_fails() -> None:
+    """Validate that a partial lookup failure returns 0.0 rather than a halved rate.
+
+    Inputs:
+        None.
+
+    Outputs:
+        None. Asserts that when one zone lookup returns the 0.0 failure
+        sentinel, the function falls back to 0.0 rather than averaging a
+        valid rate with 0.0 and silently halving the surcharge.
+
+    External dependencies:
+        Patches ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` to avoid
+        database access.
+    """
+
+    def _zone_pct(zone: str) -> float:
+        return 0.20 if zone == "1" else 0.0  # zone "2" lookup failed
+
+    with patch(
+        "app.services.fuel_surcharge.get_vsc_pct_for_zone",
+        side_effect=_zone_pct,
+    ):
+        result = get_dynamic_vsc_pct(
+            base=100.0,
+            orig_zone="1",
+            dest_zone="2",
+            rate_set="default",
+        )
+
+    assert result == 0.0

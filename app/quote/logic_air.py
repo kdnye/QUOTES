@@ -31,7 +31,10 @@ def get_dynamic_vsc_pct(*, base: float, orig_zone: str, dest_zone: str, rate_set
 
     Returns:
         Average of origin and destination VSC percentages as a decimal fraction.
-        Returns ``0.0`` when either lookup fails (fail-safe via fuel_surcharge).
+        Returns ``0.0`` when either lookup fails. ``get_vsc_pct_for_zone``
+        returns ``0.0`` as its universal failure sentinel and no legitimate
+        matrix tier produces ``0.0`` (floor is 16%), so a partial result would
+        silently halve the surcharge — failing safe is preferable.
 
     External dependencies:
         Calls ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` for each zone.
@@ -41,6 +44,8 @@ def get_dynamic_vsc_pct(*, base: float, orig_zone: str, dest_zone: str, rate_set
     _ = (base, rate_set)
     origin_pct = get_vsc_pct_for_zone(orig_zone)
     dest_pct = get_vsc_pct_for_zone(dest_zone)
+    if origin_pct == 0.0 or dest_pct == 0.0:
+        return 0.0
     return (origin_pct + dest_pct) / 2
 
 
