@@ -2,6 +2,8 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.quote.logic_air import BASE_SURCHARGE_PCT, calculate_air_quote
 
 
@@ -52,7 +54,7 @@ def test_calculate_air_quote_applies_granular_dynamic_vsc() -> None:
     assert result["origin_vsc_pct"] == 0.05
     assert result["dest_vsc_pct"] == 0.1
     assert result["vsc_amount"] == 12.65
-    assert result["total_fsc_applied"] == BASE_SURCHARGE_PCT + 0.1
+    assert result["total_fsc_applied"] == pytest.approx((40.32 + 12.65) / 128.0)
     assert result["quote_total"] == 187.97
     assert result["surcharge_applies"] is True
     assert result["surcharge_policy"] == "base_plus_dynamic_vsc"

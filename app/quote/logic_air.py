@@ -294,13 +294,11 @@ def calculate_air_quote(
     total_base_freight = base + beyond_total
     base_surcharge_amount = total_base_freight * BASE_SURCHARGE_PCT
 
-    vsc_amount = (
-        (base * dest_vsc_pct)
-        + (origin_charge * origin_vsc_pct)
-        + (dest_charge * dest_vsc_pct)
+    vsc_amount = ((base + dest_charge) * dest_vsc_pct) + (
+        origin_charge * origin_vsc_pct
     )
 
-    total_fsc_applied = BASE_SURCHARGE_PCT + dest_vsc_pct
+    total_fsc_applied = (base_surcharge_amount + vsc_amount) / total_base_freight
     quote_total = (
         base
         + beyond_total
