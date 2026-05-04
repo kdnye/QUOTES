@@ -388,3 +388,18 @@ def test_help_emailing_requires_employee_authentication() -> None:
 
     assert response.status_code == 302
     assert "/auth/login" in response.headers["Location"]
+
+
+def test_help_quickstart_interactive_route_renders_simulator() -> None:
+    """Serve the interactive quick-start page with simulator content."""
+
+    app = _build_help_test_app()
+    client = app.test_client()
+
+    response = client.get("/help/quickstart-interactive")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Interactive Quick Start" in html
+    assert "Quote Feasibility Simulator" in html
+    assert "Admin Pre-Flight Checklist" in html
