@@ -2,18 +2,20 @@
 
 from types import SimpleNamespace
 
+import pytest
+
 from app.quote.logic_air import BASE_SURCHARGE_PCT, calculate_air_quote
 
 
-def test_calculate_air_quote_applies_base_and_dynamic_vsc() -> None:
+def test_calculate_air_quote_applies_granular_dynamic_vsc() -> None:
     """Validate air quote totals and metadata when surcharge applies.
 
     Inputs:
         None.
 
     Outputs:
-        None. Asserts that surcharge applies to base freight only and totals
-        include base + surcharge + beyond + accessorial charges.
+        None. Asserts that base FSC applies to linehaul + beyond, and VSC
+        applies per-zone across linehaul and beyond components.
 
     External dependencies:
         Calls ``app.quote.logic_air.calculate_air_quote`` with in-memory
@@ -41,17 +43,19 @@ def test_calculate_air_quote_applies_base_and_dynamic_vsc() -> None:
         cost_zone_lookup=cost_zone_lookup,
         air_cost_lookup=air_cost_lookup,
         beyond_rate_lookup=beyond_rate_lookup,
-        dynamic_vsc_lookup=lambda base, rate_set=None: 0.1,
+        dynamic_vsc_lookup=lambda zone, rate_set=None: 0.05 if zone == "1" else 0.1,
     )
 
     assert result["base_rate"] == 120.0
     assert result["beyond_total"] == 8.0
     assert result["fuel_surcharge_base_pct"] == BASE_SURCHARGE_PCT
-    assert result["fuel_surcharge_base_amount"] == 37.8
+    assert result["fuel_surcharge_base_amount"] == 40.32
     assert result["vsc_pct"] == 0.1
-    assert result["vsc_amount"] == 12.0
-    assert result["total_fsc_applied"] == BASE_SURCHARGE_PCT + 0.1
-    assert result["quote_total"] == 184.8
+    assert result["origin_vsc_pct"] == 0.05
+    assert result["dest_vsc_pct"] == 0.1
+    assert result["vsc_amount"] == 12.65
+    assert result["total_fsc_applied"] == pytest.approx((40.32 + 12.65) / 128.0)
+    assert result["quote_total"] == 187.97
     assert result["surcharge_applies"] is True
     assert result["surcharge_policy"] == "base_plus_dynamic_vsc"
     assert "31.5%" in result["surcharge_reason"]
