@@ -30,7 +30,20 @@ import redis as redispy
 
 from app.quote.distance import get_distance_miles
 from app.quote.theme import init_fsi_theme
-from .models import db, HotshotRate, Quote, RateSetLogo, User
+from .models import (
+    db,
+    Accessorial,
+    AirCostZone,
+    BeyondRate,
+    CostZone,
+    FuelSurcharge,
+    HotshotRate,
+    Quote,
+    RateSetLogo,
+    RateUpload,
+    User,
+    ZipZone,
+)
 from app.services.mail import (
     MailRateLimitError,
     enforce_mail_rate_limit,
@@ -297,6 +310,14 @@ def _verify_app_setup(app: Flask) -> List[str]:
             User.__tablename__,
             Quote.__tablename__,
             HotshotRate.__tablename__,
+            Accessorial.__tablename__,
+            AirCostZone.__tablename__,
+            BeyondRate.__tablename__,
+            CostZone.__tablename__,
+            FuelSurcharge.__tablename__,
+            RateSetLogo.__tablename__,
+            RateUpload.__tablename__,
+            ZipZone.__tablename__,
         }
         for table in required_tables:
             if table not in existing_tables:
@@ -409,15 +430,33 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         setup_errors: List[str] = []
         non_config_errors: List[str] = []
         if run_db_checks:
+            migration_exc: Optional[Exception] = None
             if migrate_enabled:
                 try:
                     ensure_database_schema(db.engine)
                 except Exception as exc:  # pragma: no cover - depends on database
-                    app.logger.warning("Startup database migration failed: %s", exc)
-                    non_config_errors.append(
-                        "Database unavailable; skipping migrations."
+                    migration_exc = exc
+            db_setup_errors = _verify_app_setup(app)
+            if migration_exc is not None:
+                if db_setup_errors:
+                    # Migration failed AND DB is broken — enter maintenance mode.
+                    app.logger.error(
+                        "Startup database migration failed and DB is unhealthy: %s",
+                        migration_exc,
                     )
-            non_config_errors.extend(_verify_app_setup(app))
+                    non_config_errors.append(
+                        "Database unavailable; migrations and setup checks failed."
+                    )
+                else:
+                    # Migration failed but DB tables/templates are healthy — the
+                    # column was likely already present from a prior run or a
+                    # manual migration script.  Log the problem and continue so
+                    # the app can serve requests rather than locking everyone out.
+                    app.logger.warning(
+                        "Migration failed but DB is healthy; starting anyway: %s",
+                        migration_exc,
+                    )
+            non_config_errors.extend(db_setup_errors)
         else:
             if config_errors:
                 app.logger.warning(
