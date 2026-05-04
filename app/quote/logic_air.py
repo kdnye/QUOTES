@@ -16,22 +16,24 @@ from app.services.rate_sets import (
 BASE_SURCHARGE_PCT = 0.315
 
 
-def get_dynamic_vsc_pct(*, base: float, rate_set: str) -> float:
+def get_dynamic_vsc_pct(*, zone: str, rate_set: str) -> float:
     """Return dynamic variable surcharge percentage for air quotes.
 
     Args:
-        base: Pre-surcharge base freight amount.
+        zone: Zone code used to select a PADD diesel region.
         rate_set: Active named rate table context.
 
     Returns:
         Percentage expressed as a decimal fraction.
 
     External dependencies:
-        Currently none. This helper isolates dynamic-VSC integration for future
-        data-source updates.
+        Calls ``app.services.fuel_surcharge.get_vsc_pct_for_zone`` to read the
+        active variable surcharge for the provided zone.
     """
-    _ = (base, rate_set)
-    return 0.0
+    from app.services.fuel_surcharge import get_vsc_pct_for_zone
+
+    _ = rate_set
+    return get_vsc_pct_for_zone(str(zone))
 
 
 def get_zip_zone(
@@ -282,18 +284,29 @@ def calculate_air_quote(
     )
     beyond_total = origin_charge + dest_charge
 
-    dynamic_vsc_pct = _call_with_rate_set(
-        dynamic_vsc_lookup, normalized_rate_set, base=base
+    origin_vsc_pct = _call_with_rate_set(
+        dynamic_vsc_lookup, normalized_rate_set, zone=str(orig_zone)
     )
-    base_surcharge_amount = base * BASE_SURCHARGE_PCT
-    vsc_amount = base * dynamic_vsc_pct
-    total_fsc_applied = BASE_SURCHARGE_PCT + dynamic_vsc_pct
+    dest_vsc_pct = _call_with_rate_set(
+        dynamic_vsc_lookup, normalized_rate_set, zone=str(dest_zone)
+    )
+
+    total_base_freight = base + beyond_total
+    base_surcharge_amount = total_base_freight * BASE_SURCHARGE_PCT
+
+    vsc_amount = (
+        (base * dest_vsc_pct)
+        + (origin_charge * origin_vsc_pct)
+        + (dest_charge * dest_vsc_pct)
+    )
+
+    total_fsc_applied = BASE_SURCHARGE_PCT + dest_vsc_pct
     quote_total = (
         base
+        + beyond_total
         + base_surcharge_amount
         + vsc_amount
         + accessorial_total
-        + beyond_total
     )
 
     return {
@@ -310,7 +323,9 @@ def calculate_air_quote(
         "base_rate": base,
         "fuel_surcharge_base_pct": BASE_SURCHARGE_PCT,
         "fuel_surcharge_base_amount": base_surcharge_amount,
-        "vsc_pct": dynamic_vsc_pct,
+        "vsc_pct": dest_vsc_pct,
+        "origin_vsc_pct": origin_vsc_pct,
+        "dest_vsc_pct": dest_vsc_pct,
         "vsc_amount": vsc_amount,
         "total_fsc_applied": total_fsc_applied,
         "surcharge_applies": True,
