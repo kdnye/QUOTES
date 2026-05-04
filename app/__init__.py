@@ -19,6 +19,7 @@ from markupsafe import Markup
 from datetime import datetime
 import json
 import os
+import sys
 from pathlib import Path
 from jinja2 import TemplateNotFound
 from sqlalchemy import inspect, text
@@ -409,15 +410,39 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         setup_errors: List[str] = []
         non_config_errors: List[str] = []
         if run_db_checks:
+            migration_exc: Optional[Exception] = None
             if migrate_enabled:
                 try:
                     ensure_database_schema(db.engine)
                 except Exception as exc:  # pragma: no cover - depends on database
-                    app.logger.warning("Startup database migration failed: %s", exc)
-                    non_config_errors.append(
-                        "Database unavailable; skipping migrations."
+                    migration_exc = exc
+                    print(
+                        f"Startup database migration failed: {exc}",
+                        file=sys.stderr,
+                        flush=True,
                     )
-            non_config_errors.extend(_verify_app_setup(app))
+                    app.logger.warning("Startup database migration failed: %s", exc)
+            db_setup_errors = _verify_app_setup(app)
+            if migration_exc is not None and db_setup_errors:
+                # Migration failed AND DB is broken — enter maintenance mode.
+                non_config_errors.append(
+                    "Database unavailable; migrations and setup checks failed."
+                )
+            elif migration_exc is not None:
+                # Migration failed but DB tables/templates are healthy — the
+                # column was likely already present from a prior run or a
+                # manual migration script.  Log the problem and continue so
+                # the app can serve requests rather than locking everyone out.
+                print(
+                    f"Migration failed but DB is healthy; starting anyway: {migration_exc}",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                app.logger.warning(
+                    "Migration failed but DB is healthy; starting anyway: %s",
+                    migration_exc,
+                )
+            non_config_errors.extend(db_setup_errors)
         else:
             if config_errors:
                 app.logger.warning(

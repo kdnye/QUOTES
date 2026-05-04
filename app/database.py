@@ -128,9 +128,15 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
 
     if not has_version_table and existing_tables:
         script = ScriptDirectory.from_config(config)
-        base_revision = script.get_base()
-        if isinstance(base_revision, tuple):  # pragma: no cover - multi-base fallback
-            base_revision = base_revision[0]
+        # get_bases() is the modern Alembic API; fall back to get_base() for
+        # older versions that don't have it.
+        if hasattr(script, "get_bases"):
+            bases = script.get_bases()
+            base_revision = bases[0] if bases else None
+        else:  # pragma: no cover - legacy Alembic fallback
+            base_revision = script.get_base()  # type: ignore[attr-defined]
+            if isinstance(base_revision, tuple):
+                base_revision = base_revision[0]
         stamp_revision = base_revision or "base"
         command.stamp(config, stamp_revision)
 
