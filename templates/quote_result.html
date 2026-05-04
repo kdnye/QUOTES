@@ -45,6 +45,28 @@
           <td class="text-muted">Base Rate</td>
           <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else (quote.total - (metadata.accessorial_total|default(0)))) }}</td>
         </tr>
+        {% if metadata.details and metadata.details.origin_charge is defined and metadata.details.origin_charge %}
+        <tr>
+          <td class="text-muted">
+            Origin Beyond
+            {% if metadata.details.origin_beyond %}
+            <small class="text-muted">(zone {{ metadata.details.origin_beyond }})</small>
+            {% endif %}
+          </td>
+          <td class="text-end">${{ '%.2f'|format(metadata.details.origin_charge) }}</td>
+        </tr>
+        {% endif %}
+        {% if metadata.details and metadata.details.dest_charge is defined and metadata.details.dest_charge %}
+        <tr>
+          <td class="text-muted">
+            Destination Beyond
+            {% if metadata.details.dest_beyond %}
+            <small class="text-muted">(zone {{ metadata.details.dest_beyond }})</small>
+            {% endif %}
+          </td>
+          <td class="text-end">${{ '%.2f'|format(metadata.details.dest_charge) }}</td>
+        </tr>
+        {% endif %}
         {% if metadata.details and metadata.details.fuel_surcharge_base_amount %}
         <tr>
           <td class="text-muted">
@@ -73,11 +95,13 @@
           <td class="text-end text-muted"><em>{{ '%.1f'|format(metadata.details.total_fsc_applied * 100) }}%</em></td>
         </tr>
         {% endif %}
-        {% if metadata.accessorial_total is defined and metadata.accessorial_total %}
+        {% if metadata.accessorials %}
+        {% for acc_name, acc_cost in metadata.accessorials.items() %}
         <tr>
-          <td class="text-muted">Accessorials</td>
-          <td class="text-end">${{ '%.2f'|format(metadata.accessorial_total) }}</td>
+          <td class="text-muted">{{ acc_name }}</td>
+          <td class="text-end">${{ '%.2f'|format(acc_cost) }}</td>
         </tr>
+        {% endfor %}
         {% endif %}
         <tr class="border-top">
           <td class="fw-bold">Quote Total</td>
@@ -108,7 +132,7 @@
   <p class="fsi-body">Total Miles: {{ metadata.miles }}</p>
   {% endif %}
 
-  {% if metadata.accessorials %}
+  {% if metadata.accessorials and not show_cost_breakdown %}
   <h2 class="fsi-section-title h3">Accessorials</h2>
   <ul>
   {% for name, cost in metadata.accessorials.items() %}
