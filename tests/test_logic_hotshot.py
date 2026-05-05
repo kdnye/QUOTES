@@ -32,7 +32,9 @@ def test_miles_are_ceiling_rounded(monkeypatch):
 
     assert result["miles"] == 24
     assert result["zone"] == "X"
-    assert result["min_charge"] == pytest.approx(24 * logic_hotshot.ZONE_X_PER_MILE_RATE)
+    assert result["min_charge"] == pytest.approx(
+        24 * logic_hotshot.ZONE_X_PER_MILE_RATE
+    )
 
 
 def test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc(monkeypatch):
@@ -139,6 +141,18 @@ def test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing(
 
     assert result["dest_zone"] == "NATIONAL"
     assert result["warning_metadata"][0]["code"] == "HOTSHOT_DEST_ZONE_FALLBACK"
+
+
+def test_get_vsc_zone_for_zip_can_raise_typed_error_when_missing() -> None:
+    """Missing ZIP can raise deterministic typed lookup error when configured."""
+
+    with pytest.raises(logic_hotshot.VscDestinationZoneLookupError):
+        logic_hotshot.get_vsc_zone_for_zip(
+            "99999",
+            rate_set="default",
+            zip_lookup=lambda _zip, rate_set=None: None,
+            raise_on_missing=True,
+        )
 
 
 def test_calculate_hotshot_quote_rate_fuel_pct_affects_vsc_base(monkeypatch):
