@@ -12,7 +12,6 @@ from app.services.rate_sets import DEFAULT_RATE_SET, _call_with_rate_set
 
 ZONE_X_PER_LB_RATE = 5.1
 ZONE_X_PER_MILE_RATE = 6.0192
-BASE_SURCHARGE_PCT = 0.315  # Updated to align with Air Quote baseline
 
 
 def _resolve_destination_zone(
@@ -118,10 +117,11 @@ def calculate_hotshot_quote(
         mileage-based minimum of ``(miles * 5.2)`` before surcharge and
         accessorial charges.
 
-    Compatibility note:
-        ``HotshotRate.fuel_pct`` is temporarily ignored for hotshot totals when
-        dynamic surcharge mode is enabled; surcharge is computed from
-        ``BASE_SURCHARGE_PCT`` plus dynamic VSC.
+    Surcharge policy:
+        The rate table ``fuel_pct`` is applied to the base to produce a
+        post-fuel subtotal (equivalent to "Quote A-J" in the spreadsheet).
+        The dynamic EIA-based VSC is then applied to that post-fuel subtotal,
+        not to the raw base.
     """
     miles = get_distance_miles(origin, destination) or 0
 
@@ -154,17 +154,19 @@ def calculate_hotshot_quote(
         dest_zone=dest_zone,
         rate_set=rate_set,
     )
-    base_surcharge_amount = base * BASE_SURCHARGE_PCT
-    vsc_amount = base * dynamic_vsc_pct
-    total_fsc_applied = BASE_SURCHARGE_PCT + dynamic_vsc_pct
-    quote_total = base + base_surcharge_amount + vsc_amount + accessorial_total
+    fuel_pct = float(rate.fuel_pct)
+    base_surcharge_amount = base * fuel_pct
+    base_with_fuel = base + base_surcharge_amount
+    vsc_amount = base_with_fuel * dynamic_vsc_pct
+    total_fsc_applied = (base_surcharge_amount + vsc_amount) / base if base else 0.0
+    quote_total = base_with_fuel + vsc_amount + accessorial_total
 
     return {
         "zone": zone,
         "miles": miles,
         "quote_total": quote_total,
         "base_rate": base,
-        "fuel_surcharge_base_pct": BASE_SURCHARGE_PCT,
+        "fuel_surcharge_base_pct": fuel_pct,
         "fuel_surcharge_base_amount": base_surcharge_amount,
         "vsc_pct": dynamic_vsc_pct,
         "vsc_amount": vsc_amount,
