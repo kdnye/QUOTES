@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.quote.logic_air import calculate_air_quote
+from app.quote.logic_air import _normalize_zip_lookup_key, calculate_air_quote
 
 
 def test_calculate_air_quote_applies_origin_zone_fsc() -> None:
@@ -149,3 +149,15 @@ def test_calculate_air_quote_errors_when_destination_vsc_zone_missing() -> None:
 
     assert result["error"] == "Destination ZIP code 90808 missing valid vsc_zone"
     assert result["surcharge_policy"] == "origin_zone_fsc"
+
+
+def test_normalize_zip_lookup_key_accepts_zip_plus_four() -> None:
+    """Normalize ZIP+4 values to the first 5 digits for DB lookups."""
+
+    assert _normalize_zip_lookup_key("90808-1234") == "90808"
+
+
+def test_normalize_zip_lookup_key_rejects_non_numeric_zip() -> None:
+    """Reject malformed ZIP inputs that are not numeric after normalization."""
+
+    assert _normalize_zip_lookup_key("9080A") is None
