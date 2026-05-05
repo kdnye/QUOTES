@@ -13,7 +13,6 @@ from app.services.rate_sets import (
     normalize_rate_set,
 )
 
-BASE_SURCHARGE_PCT = 0.315
 
 
 def get_dynamic_vsc_pct(*, zone: str, rate_set: str) -> float:
@@ -161,9 +160,9 @@ def calculate_air_quote(
     define one direction of a route to still resolve correctly.
 
     Fuel surcharge policy:
-        Air quotes apply surcharge logic to base freight only using
-        ``BASE_SURCHARGE_PCT`` plus dynamic VSC. Surcharge is not applied to
-        beyond charges or accessorials.
+        Air quotes apply a single FSC derived from the origin zone's current
+        EIA diesel price. The FSC is applied to total base freight (linehaul
+        plus any beyond charges). Accessorials are not surcharged.
 
     Parameters
     ----------
@@ -191,9 +190,9 @@ def calculate_air_quote(
     """
 
     normalized_rate_set = normalize_rate_set(rate_set)
-    surcharge_policy = "base_plus_dynamic_vsc"
+    surcharge_policy = "origin_zone_fsc"
     surcharge_reason = (
-        "Air quotes apply base freight surcharge (31.5%) plus dynamic VSC."
+        "Air quotes apply a single fuel surcharge from the origin zone's EIA diesel price."
     )
 
     def _error_result(msg: str) -> Dict[str, Any]:
@@ -292,20 +291,10 @@ def calculate_air_quote(
     )
 
     total_base_freight = base + beyond_total
-    base_surcharge_amount = total_base_freight * BASE_SURCHARGE_PCT
-
-    vsc_amount = ((base + dest_charge) * dest_vsc_pct) + (
-        origin_charge * origin_vsc_pct
-    )
-
-    total_fsc_applied = (base_surcharge_amount + vsc_amount) / total_base_freight
-    quote_total = (
-        base
-        + beyond_total
-        + base_surcharge_amount
-        + vsc_amount
-        + accessorial_total
-    )
+    fsc_pct = origin_vsc_pct
+    fsc_amount = total_base_freight * fsc_pct
+    total_fsc_applied = fsc_pct
+    quote_total = total_base_freight + fsc_amount + accessorial_total
 
     return {
         "zone": concat,
@@ -319,12 +308,12 @@ def calculate_air_quote(
         "dest_charge": dest_charge,
         "beyond_total": beyond_total,
         "base_rate": base,
-        "fuel_surcharge_base_pct": BASE_SURCHARGE_PCT,
-        "fuel_surcharge_base_amount": base_surcharge_amount,
-        "vsc_pct": dest_vsc_pct,
+        "fuel_surcharge_base_pct": 0.0,
+        "fuel_surcharge_base_amount": 0.0,
+        "vsc_pct": fsc_pct,
         "origin_vsc_pct": origin_vsc_pct,
         "dest_vsc_pct": dest_vsc_pct,
-        "vsc_amount": vsc_amount,
+        "vsc_amount": fsc_amount,
         "total_fsc_applied": total_fsc_applied,
         "surcharge_applies": True,
         "surcharge_policy": surcharge_policy,
