@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}RIA Rates Snapshot{% endblock %}
+{% block content %}
+<div class="container py-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="mb-0">RIA Rates Snapshot</h1>
+    <a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Back to Dashboard</a>
+  </div>
+
+  <p class="text-muted">
+    Displays the most recent RIA pull time in Phoenix local time plus the current zone-level FSC percentages.
+  </p>
+
+  <div class="card mb-3">
+    <div class="card-header">Most Recent RIA Pull Time</div>
+    <div class="card-body">
+      {% if last_update_phoenix %}
+      <div><strong>Phoenix (America/Phoenix):</strong> <code>{{ last_update_phoenix }}</code></div>
+      {% else %}
+      <span class="text-muted">No valid timestamp found in <code>vsc_last_update</code>.</span>
+      {% endif %}
+      {% if last_update_raw %}
+      <div class="mt-2"><small class="text-muted">Raw setting: <code>{{ last_update_raw }}</code></small></div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">Current Detailed Variable FSC by Zone</div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-striped mb-0">
+          <thead>
+            <tr>
+              <th>Zone</th>
+              <th>Region</th>
+              <th>FSC%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in zone_fsc_rows %}
+            <tr>
+              <td>{{ row.zone }}</td>
+              <td>{{ row.region }}</td>
+              <td>{{ row.fsc_pct }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
