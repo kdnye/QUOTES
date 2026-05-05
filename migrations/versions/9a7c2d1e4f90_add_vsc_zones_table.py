@@ -24,7 +24,7 @@ def upgrade() -> None:
         sa.Column("vsc_zone", sa.Integer(), nullable=False),
         sa.Column("rate_set", sa.String(length=50), nullable=False),
         sa.CheckConstraint("length(zipcode) = 5", name="ck_vsc_zones_zipcode_len_5"),
-        sa.CheckConstraint("zipcode GLOB '[0-9][0-9][0-9][0-9][0-9]'", name="ck_vsc_zones_zipcode_digits"),
+        sa.CheckConstraint("zipcode ~ '^[0-9]{5}$'", name="ck_vsc_zones_zipcode_digits"),
         sa.CheckConstraint("vsc_zone >= 1 AND vsc_zone <= 10", name="ck_vsc_zones_zone_range"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("rate_set", "zipcode", name="uq_vsc_zones_rate_set_zipcode"),
