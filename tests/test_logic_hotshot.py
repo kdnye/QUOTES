@@ -185,3 +185,100 @@ def test_calculate_hotshot_quote_rate_fuel_pct_affects_vsc_base(monkeypatch):
 
     assert result["quote_total"] == pytest.approx(131.5 * 1.185)
     assert result["quote_total"] != pytest.approx(118.5)
+
+
+def test_hotshot_uses_vsc_zone_mapping_for_90808_and_applies_22pct(monkeypatch) -> None:
+    """Use ZIP fixture mapping where 90808 has air zone 10 and VSC zone 9.
+
+    Inputs:
+        origin: "30301" and destination: "90808".
+        ZIP fixture map: destination ``dest_zone`` is 10 for air path compatibility.
+        VSC fixture map: destination ``vsc_zone`` is 9, which resolves to 22%.
+
+    Outputs:
+        Ensures dynamic surcharge uses VSC zone ``9`` and applies ``0.22`` rather
+        than an air-zone-derived ``0.195`` percentage.
+
+    External dependencies:
+        Calls ``app.quote.logic_hotshot.calculate_hotshot_quote`` and stubs
+        lookup callbacks only.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 50.0)
+
+    zip_zone_fixture = {
+        "30301": SimpleNamespace(dest_zone=4),
+        "90808": SimpleNamespace(dest_zone=10),
+    }
+    captured = {"zone": None}
+
+    def zip_lookup(zipcode, rate_set=None):
+        return zip_zone_fixture.get(str(zipcode))
+
+    def dynamic_vsc_pct(*, base, miles, zone, dest_zone, rate_set):
+        _ = (base, miles, zone, rate_set)
+        captured["zone"] = str(dest_zone)
+        return 0.22 if str(dest_zone) == "9" else 0.195
+
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", dynamic_vsc_pct)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="30301",
+        destination="90808",
+        weight=20.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=5.0,
+            fuel_pct=0.315,
+            weight_break=None,
+            min_charge=50.0,
+        ),
+        zip_lookup=zip_lookup,
+        vsc_zone_lookup=lambda zipcode, rate_set=None: (
+            4 if str(zipcode) == "30301" else 9
+        ),
+    )
+
+    assert result["dest_zone"] == "9"
+    assert captured["zone"] == "9"
+    assert result["vsc_pct"] == pytest.approx(0.22)
+
+
+def test_hotshot_missing_vsc_mapping_falls_back_to_national(monkeypatch) -> None:
+    """Missing destination VSC mapping falls back to NATIONAL with warning metadata."""
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 50.0)
+
+    def zip_lookup(zipcode, rate_set=None):
+        if str(zipcode) == "30301":
+            return SimpleNamespace(dest_zone=4)
+        return None
+
+    captured = {"dest_zone": None}
+
+    def dynamic_vsc_pct(*, base, miles, zone, dest_zone, rate_set):
+        _ = (base, miles, zone, rate_set)
+        captured["dest_zone"] = dest_zone
+        return 0.0
+
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", dynamic_vsc_pct)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="30301",
+        destination="90808",
+        weight=20.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=5.0, fuel_pct=0.315, weight_break=None, min_charge=50.0
+        ),
+        zip_lookup=zip_lookup,
+        vsc_zone_lookup=lambda zipcode, rate_set=None: (
+            4 if str(zipcode) == "30301" else None
+        ),
+    )
+
+    assert result["dest_zone"] == "NATIONAL"
+    assert captured["dest_zone"] == "NATIONAL"
+    assert result["warning_metadata"][0]["code"] == "HOTSHOT_DEST_ZONE_FALLBACK"
