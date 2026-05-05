@@ -42,11 +42,30 @@ def resolve_padd_region(dest_zone: str, zones_config: Any) -> str:
 
     Falls back to ``NATIONAL`` when the zone is absent from the mapping or
     *zones_config* is not a dict.
+
+    Inputs:
+        dest_zone: Destination zone value from ZIP lookup. May be zero-padded
+            (for example ``"09"``) depending on source data formatting.
+        zones_config: Parsed ``vsc_zones`` mapping of zone codes to PADD names.
+
+    Outputs:
+        Region name string such as ``"PADD4"`` when found, else
+        :data:`NATIONAL_REGION`.
+
+    External dependencies:
+        None.
     """
     if isinstance(zones_config, dict):
-        region = zones_config.get(str(dest_zone))
-        if region and isinstance(region, str):
-            return region.strip()
+        raw_zone = str(dest_zone).strip()
+        lookup_candidates = [raw_zone]
+        if raw_zone.isdigit():
+            lookup_candidates.append(str(int(raw_zone)))
+
+        for candidate in lookup_candidates:
+            region = zones_config.get(candidate)
+            if region and isinstance(region, str):
+                return region.strip()
+
     return NATIONAL_REGION
 
 
