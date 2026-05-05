@@ -85,3 +85,67 @@ def test_calculate_air_quote_error_payload_includes_surcharge_metadata() -> None
     assert result["surcharge_applies"] is True
     assert result["surcharge_policy"] == "origin_zone_fsc"
     assert result["total_fsc_applied"] == 0.0
+
+
+def test_calculate_air_quote_uses_vsc_zone_not_air_zone_for_90808() -> None:
+    """Ensure air surcharge lookup uses VSC zone mapping (90808 -> 9) not air zone 10."""
+
+    zip_lookup = lambda zipcode, rate_set=None: SimpleNamespace(
+        dest_zone=4 if zipcode == "30301" else 10,
+        beyond="ZONE A" if zipcode == "30301" else "ZONE B",
+    )
+    vsc_zone_lookup = lambda zipcode, rate_set=None: 4 if zipcode == "30301" else 9
+
+    seen = {"zones": []}
+
+    def dynamic_vsc_lookup(zone, rate_set=None):
+        seen["zones"].append(str(zone))
+        return 0.05 if str(zone) == "4" else 0.22 if str(zone) == "9" else 0.195
+
+    result = calculate_air_quote(
+        origin="30301",
+        destination="90808",
+        weight=20.0,
+        accessorial_total=0.0,
+        zip_lookup=zip_lookup,
+        cost_zone_lookup=lambda concat, rate_set=None: SimpleNamespace(cost_zone="X1"),
+        air_cost_lookup=lambda zone, rate_set=None: SimpleNamespace(
+            min_charge=100.0, per_lb=2.0, weight_break=10.0
+        ),
+        beyond_rate_lookup=lambda zone, rate_set=None: 0.0,
+        vsc_zone_lookup=vsc_zone_lookup,
+        dynamic_vsc_lookup=dynamic_vsc_lookup,
+    )
+
+    assert seen["zones"] == ["4", "9"]
+    assert result["vsc_pct"] == pytest.approx(0.05)
+    assert result["dest_vsc_pct"] == pytest.approx(0.22)
+
+
+def test_calculate_air_quote_errors_when_destination_vsc_zone_missing() -> None:
+    """Missing destination VSC zone returns defined error payload."""
+
+    zip_lookup = lambda zipcode, rate_set=None: SimpleNamespace(
+        dest_zone=4 if zipcode == "30301" else 10,
+        beyond="ZONE A" if zipcode == "30301" else "ZONE B",
+    )
+
+    result = calculate_air_quote(
+        origin="30301",
+        destination="90808",
+        weight=20.0,
+        accessorial_total=0.0,
+        zip_lookup=zip_lookup,
+        cost_zone_lookup=lambda concat, rate_set=None: SimpleNamespace(cost_zone="X1"),
+        air_cost_lookup=lambda zone, rate_set=None: SimpleNamespace(
+            min_charge=100.0, per_lb=2.0, weight_break=10.0
+        ),
+        beyond_rate_lookup=lambda zone, rate_set=None: 0.0,
+        vsc_zone_lookup=lambda zipcode, rate_set=None: (
+            4 if zipcode == "30301" else None
+        ),
+        dynamic_vsc_lookup=lambda zone, rate_set=None: 0.05,
+    )
+
+    assert result["error"] == "Destination ZIP code 90808 missing valid vsc_zone"
+    assert result["surcharge_policy"] == "origin_zone_fsc"

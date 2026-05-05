@@ -5,6 +5,7 @@ import logging
 from typing import Any, Callable, Dict, Optional
 
 from app.quote.distance import get_distance_miles
+from app.quote.logic_air import get_vsc_zone_for_zip as get_air_vsc_zone_for_zip
 from app.quote.logic_air import get_zip_zone
 from app.services.hotshot_rates import (
     get_current_hotshot_rate,
@@ -26,17 +27,21 @@ def get_vsc_zone_for_zip(
     *,
     rate_set: str,
     zip_lookup: Callable[[str, str], Optional[Any]] = get_zip_zone,
+    vsc_zone_lookup: Callable[[str, str], Optional[int]] = get_air_vsc_zone_for_zip,
     quote_type: str = "hotshot",
     lookup_source: str = "zip_zone_table",
     raise_on_missing: bool = False,
 ) -> tuple[str, list[Dict[str, str]]]:
-    """Resolve the VSC destination zone from ZIP-zone data.
+    """Resolve the VSC destination zone from dedicated VSC or ZIP-zone data.
 
     Inputs:
         destination_zipcode: Destination ZIP code string.
         rate_set: Named rate-set context used by the ZIP lookup layer.
         zip_lookup: Callable using ``app.quote.logic_air.get_zip_zone``-style
             arguments that returns a row with ``dest_zone``.
+        vsc_zone_lookup: Callable using
+            ``app.quote.logic_air.get_vsc_zone_for_zip``-style arguments that
+            returns a numeric ``vsc_zone`` from :class:`app.models.VscZone`.
         quote_type: Quote context included in diagnostic logging.
         lookup_source: Human-readable data source for debug logs.
         raise_on_missing: When ``True``, raise
@@ -51,6 +56,12 @@ def get_vsc_zone_for_zip(
         Calls ``app.quote.logic_air.get_zip_zone`` (via ``zip_lookup``) to read
         ZIP-to-zone records that feed VSC region selection.
     """
+
+    resolved_vsc_zone = _call_with_rate_set(
+        vsc_zone_lookup, rate_set, str(destination_zipcode)
+    )
+    if resolved_vsc_zone is not None:
+        return str(resolved_vsc_zone), []
 
     zip_row = _call_with_rate_set(zip_lookup, rate_set, str(destination_zipcode))
     if zip_row is not None and getattr(zip_row, "dest_zone", None) is not None:
@@ -91,6 +102,7 @@ def _resolve_destination_zone(
     *,
     rate_set: str,
     zip_lookup: Callable[[str, str], Optional[Any]],
+    vsc_zone_lookup: Callable[[str, str], Optional[int]],
 ) -> tuple[str, list[Dict[str, str]]]:
     """Resolve destination ZIP to a VSC destination zone string.
 
@@ -99,6 +111,9 @@ def _resolve_destination_zone(
         rate_set: Named rate set context for ZIP lookup.
         zip_lookup: Function that calls ``app.quote.logic_air.get_zip_zone`` style
             lookups to return a ZIP-zone row object with ``dest_zone``.
+        vsc_zone_lookup: Function that calls
+            ``app.quote.logic_air.get_vsc_zone_for_zip`` style lookups to
+            return a dedicated VSC zone when available.
 
     Returns:
         A tuple of ``(vsc_dest_zone, warning_metadata)``. ``vsc_dest_zone`` is
@@ -113,6 +128,7 @@ def _resolve_destination_zone(
         destination,
         rate_set=rate_set,
         zip_lookup=zip_lookup,
+        vsc_zone_lookup=vsc_zone_lookup,
         quote_type="hotshot",
         lookup_source="zip_zone_table",
         raise_on_missing=False,
@@ -156,6 +172,7 @@ def calculate_hotshot_quote(
     zone_lookup: Callable[[float, str], str] = get_hotshot_zone_by_miles,
     rate_lookup: Callable[[str, str], Any] = get_current_hotshot_rate,
     zip_lookup: Callable[[str, str], Optional[Any]] = get_zip_zone,
+    vsc_zone_lookup: Callable[[str, str], Optional[int]] = get_air_vsc_zone_for_zip,
     *,
     rate_set: str = DEFAULT_RATE_SET,
 ) -> Dict[str, Any]:
@@ -211,6 +228,7 @@ def calculate_hotshot_quote(
         destination,
         rate_set=rate_set,
         zip_lookup=zip_lookup,
+        vsc_zone_lookup=vsc_zone_lookup,
     )
 
     dynamic_vsc_pct = get_dynamic_vsc_pct(
