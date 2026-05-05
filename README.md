@@ -297,6 +297,11 @@ order:
 Headers must match exactly; missing or transposed columns will cause the import
 script to raise an error.
 
+For accurate VSC behavior, include `vsc zones.csv` in the same import directory.
+The file must include `Zipcode` and `Dest Zone` columns. Import logic strips
+non-digits from ZIP input, uses the first five digits, and upserts existing ZIP
+rows so repeated runs stay idempotent.
+
 ### Local development (Docker)
 For local Docker and Docker Compose workflows, see
 [Quick Start (local development)](#quick-start-local-development) plus the
