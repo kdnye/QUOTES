@@ -10,9 +10,11 @@ from __future__ import annotations
 import csv
 import io
 import json
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Sequence, Union
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from flask import (
@@ -50,6 +52,7 @@ from .models import (
     HotshotRate,
     RateSetLogo,
     RateUpload,
+    FuelSurcharge,
     User,
     ZipZone,
     db,
@@ -61,6 +64,7 @@ from app.services.rate_sets import (
     get_available_rate_sets,
     normalize_rate_set,
 )
+from app.services.fuel_surcharge import lookup_matrix_pct, resolve_padd_region
 from app.services.settings import (
     QUOTE_EMAIL_SMTP_SETTING_KEY,
     get_settings_cache,
@@ -760,6 +764,79 @@ def _parse_vsc_json_setting(value: str | None) -> Any:
         return None
 
 
+def _format_ria_last_update_phoenix(last_update_raw: str | None) -> str | None:
+    """Convert a raw UTC timestamp string into Phoenix local time text.
+
+    Args:
+        last_update_raw: Raw ``vsc_last_update`` value from ``AppSetting``.
+
+    Returns:
+        A formatted timestamp in the ``America/Phoenix`` timezone when parsing
+        succeeds, otherwise ``None``.
+
+    External dependencies:
+        Uses :class:`zoneinfo.ZoneInfo` from Python's standard library for the
+        timezone conversion.
+    """
+
+    if not last_update_raw:
+        return None
+
+    normalized_value = last_update_raw.strip()
+    if normalized_value.endswith("Z"):
+        normalized_value = normalized_value[:-1] + "+00:00"
+
+    try:
+        timestamp = datetime.fromisoformat(normalized_value)
+    except ValueError:
+        return None
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+
+    phoenix_time = timestamp.astimezone(ZoneInfo("America/Phoenix"))
+    return phoenix_time.strftime("%Y-%m-%d %I:%M:%S %p MST")
+
+
+def _get_zone_fsc_rows(zones_config: Any, matrix_config: Any) -> list[dict[str, str]]:
+    """Return zone-by-zone FSC percentages resolved from current VSC settings.
+
+    Args:
+        zones_config: Parsed JSON mapping destination zones to PADD regions.
+        matrix_config: Parsed JSON tier matrix mapping diesel price ranges to
+            FSC percentage decimals.
+
+    Returns:
+        list[dict[str, str]]: Ordered rows with ``zone``, ``region``, and
+        ``fsc_pct`` text values for zones 1 through 10.
+
+    External dependencies:
+        * Calls :func:`app.services.fuel_surcharge.resolve_padd_region` to map
+          destination zones to PADD regions.
+        * Calls :func:`app.services.fuel_surcharge.lookup_matrix_pct` to resolve
+          FSC percentages from the configured matrix.
+        * Queries :class:`app.models.FuelSurcharge` for current regional diesel
+          prices.
+    """
+
+    fuel_rows = {
+        row.padd_region: row.current_rate for row in FuelSurcharge.query.all()
+    }
+    national_rate = fuel_rows.get("NATIONAL")
+    rows: list[dict[str, str]] = []
+    for zone_num in range(1, 11):
+        zone = str(zone_num)
+        region = resolve_padd_region(zone, zones_config)
+        diesel_rate = fuel_rows.get(region, national_rate)
+        pct_label = "N/A"
+        if diesel_rate is not None:
+            pct = lookup_matrix_pct(diesel_rate, matrix_config)
+            if pct is not None:
+                pct_label = f"{pct * 100:.1f}%"
+        rows.append({"zone": zone, "region": region, "fsc_pct": pct_label})
+    return rows
+
+
 @admin_bp.route("/settings/vsc-zones")
 @super_admin_required
 def view_vsc_zones() -> str:
@@ -803,6 +880,35 @@ def view_vsc_matrix() -> str:
         zones=zones,
         matrix=matrix,
         last_update=(last_update_setting.raw_value if last_update_setting else None),
+    )
+
+
+@admin_bp.route("/ria-rates")
+@super_admin_required
+def view_ria_rates_snapshot() -> str:
+    """Render a dashboard-friendly snapshot of current RIA/VSC rate details.
+
+    Returns:
+        str: Rendered HTML for ``admin_ria_rates_snapshot.html``.
+
+    External dependencies:
+        * Calls :func:`app.services.settings.get_settings_cache` to read the
+          ``vsc_last_update`` setting.
+    """
+
+    cache = get_settings_cache()
+    zones_setting = cache.get("vsc_zones")
+    matrix_setting = cache.get("vsc_matrix")
+    last_update_setting = cache.get("vsc_last_update")
+    raw_last_update = last_update_setting.raw_value if last_update_setting else None
+    zones = _parse_vsc_json_setting(zones_setting.raw_value if zones_setting else None)
+    matrix = _parse_vsc_json_setting(matrix_setting.raw_value if matrix_setting else None)
+
+    return render_template(
+        "admin_ria_rates_snapshot.html",
+        last_update_raw=raw_last_update,
+        last_update_phoenix=_format_ria_last_update_phoenix(raw_last_update),
+        zone_fsc_rows=_get_zone_fsc_rows(zones, matrix),
     )
 
 

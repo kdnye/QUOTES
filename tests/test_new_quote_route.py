@@ -7,7 +7,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import User, ZipZone, db
+from app.models import FuelSurcharge, User, ZipZone, db
 from app.services.settings import set_setting
 
 
@@ -180,6 +180,13 @@ def test_admin_vsc_settings_pages_render_payloads(app: Flask) -> None:
     set_setting("vsc_zones", '{"NATIONAL":[1,2],"WEST":[3,4]}')
     set_setting("vsc_matrix", '{"A":{"NATIONAL":0.11,"WEST":0.09}}')
     set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
+    set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
+    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
+    db.session.add_all([
+        FuelSurcharge(padd_region="NATIONAL", current_rate=3.6),
+        FuelSurcharge(padd_region="PADD1", current_rate=3.6),
+        FuelSurcharge(padd_region="PADD5", current_rate=4.1),
+    ])
     db.session.commit()
 
     client = app.test_client()
@@ -195,3 +202,75 @@ def test_admin_vsc_settings_pages_render_payloads(app: Flask) -> None:
     assert "NATIONAL" in zones_html
     assert "WEST" in zones_html
     assert "A" in matrix_html
+
+
+def test_admin_dashboard_links_include_ria_rates_snapshot(app: Flask) -> None:
+    """Expose the RIA snapshot page from the admin dashboard quick actions.
+
+    Inputs:
+        app: Flask application fixture with in-memory database setup.
+
+    Outputs:
+        None. Asserts the dashboard HTML includes a link to the RIA snapshot
+        route.
+
+    External dependencies:
+        * Calls :meth:`flask.testing.FlaskClient.get` to render
+          ``/admin/``.
+    """
+
+    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    db.session.commit()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.get("/admin/")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'href="/admin/ria-rates"' in html
+
+
+def test_admin_ria_rates_snapshot_renders_phoenix_time_and_zone_fsc(app: Flask) -> None:
+    """Render RIA last-update time in Phoenix format plus computed FSC rows.
+
+    Inputs:
+        app: Flask application fixture configured for route testing.
+
+    Outputs:
+        None. Confirms the page includes converted Phoenix-time text and the
+        zone/FSC table rows.
+
+    External dependencies:
+        * Calls :func:`app.services.settings.set_setting` to persist
+          ``vsc_last_update`` used by the view.
+        * Calls :meth:`flask.testing.FlaskClient.get` for
+          ``/admin/ria-rates``.
+    """
+
+    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
+    set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
+    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
+    db.session.add_all([
+        FuelSurcharge(padd_region="NATIONAL", current_rate=3.6),
+        FuelSurcharge(padd_region="PADD1", current_rate=3.6),
+        FuelSurcharge(padd_region="PADD5", current_rate=4.1),
+    ])
+    db.session.commit()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.get("/admin/ria-rates")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "2026-04-30 05:00:00 AM MST" in html
+    assert "<td>1</td>" in html
+    assert "<td>PADD1</td>" in html
+    assert "<td>18.5%</td>" in html
+    assert "<td>8</td>" in html
+    assert "<td>PADD5</td>" in html
+    assert "<td>21.0%</td>" in html
