@@ -11,7 +11,7 @@ from app.services.hotshot_rates import (
 from app.services.rate_sets import DEFAULT_RATE_SET, _call_with_rate_set
 
 ZONE_X_PER_LB_RATE = 5.1
-ZONE_X_PER_MILE_RATE = 5.2
+ZONE_X_PER_MILE_RATE = 6.0192
 BASE_SURCHARGE_PCT = 0.315  # Updated to align with Air Quote baseline
 
 
