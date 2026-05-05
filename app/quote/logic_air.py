@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, Optional
 
 from sqlalchemy.exc import OperationalError
 
-from app.database import Session, ZipZone, CostZone, AirCostZone, BeyondRate
+from app.database import Session, ZipZone, CostZone, AirCostZone, BeyondRate, VscZone
 from app.services.rate_sets import (
     DEFAULT_RATE_SET,
     _call_with_rate_set,
@@ -33,6 +33,59 @@ def get_dynamic_vsc_pct(*, zone: str, rate_set: str) -> float:
 
     _ = rate_set
     return get_vsc_pct_for_zone(str(zone))
+
+
+def _normalize_zip_lookup_key(zipcode: str) -> Optional[str]:
+    """Normalize ZIP input to a 5-digit lookup key.
+
+    Inputs:
+        zipcode: Raw ZIP/postal input from quote requests.
+
+    Outputs:
+        5-digit ZIP string when valid, otherwise ``None``.
+
+    External dependencies:
+        * None.
+    """
+
+    normalized = str(zipcode or "").strip()
+    if len(normalized) != 5 or not normalized.isdigit():
+        return None
+    return normalized
+
+
+def get_vsc_zone_for_zip(zipcode: str, *, rate_set: str = DEFAULT_RATE_SET) -> Optional[int]:
+    """Resolve a VSC zone from :class:`app.models.VscZone` for the given ZIP.
+
+    Returns ``None`` when the table is missing, the record is absent, or the
+    stored ``vsc_zone`` value is invalid.
+    """
+
+    lookup_key = _normalize_zip_lookup_key(zipcode)
+    if lookup_key is None:
+        return None
+
+    try:
+        normalized_rate_set = normalize_rate_set(rate_set)
+        with Session() as db:
+            record = (
+                db.query(VscZone)
+                .filter_by(zipcode=lookup_key, rate_set=normalized_rate_set)
+                .first()
+            )
+            if record is None and normalized_rate_set != DEFAULT_RATE_SET:
+                record = (
+                    db.query(VscZone)
+                    .filter_by(zipcode=lookup_key, rate_set=DEFAULT_RATE_SET)
+                    .first()
+                )
+            if record is None or record.vsc_zone is None:
+                return None
+            if not 1 <= int(record.vsc_zone) <= 10:
+                return None
+            return int(record.vsc_zone)
+    except (OperationalError, ValueError, TypeError):
+        return None
 
 
 def get_zip_zone(
@@ -150,6 +203,7 @@ def calculate_air_quote(
     air_cost_lookup: Callable[[str, str], Optional[AirCostZone]] = get_air_cost_zone,
     beyond_rate_lookup: Callable[[Optional[str], str], float] = get_beyond_rate,
     dynamic_vsc_lookup: Callable[..., float] = get_dynamic_vsc_pct,
+    vsc_zone_lookup: Callable[[str, str], Optional[int]] = get_vsc_zone_for_zip,
     *,
     rate_set: str = DEFAULT_RATE_SET,
 ) -> Dict[str, Any]:
@@ -283,11 +337,21 @@ def calculate_air_quote(
     )
     beyond_total = origin_charge + dest_charge
 
+    origin_vsc_zone = _call_with_rate_set(vsc_zone_lookup, normalized_rate_set, str(origin))
+    if origin_vsc_zone is None:
+        return _error_result(f"Origin ZIP code {origin} missing valid vsc_zone")
+
+    dest_vsc_zone = _call_with_rate_set(vsc_zone_lookup, normalized_rate_set, str(destination))
+    if dest_vsc_zone is None:
+        return _error_result(
+            f"Destination ZIP code {destination} missing valid vsc_zone"
+        )
+
     origin_vsc_pct = _call_with_rate_set(
-        dynamic_vsc_lookup, normalized_rate_set, zone=str(orig_zone)
+        dynamic_vsc_lookup, normalized_rate_set, zone=str(origin_vsc_zone)
     )
     dest_vsc_pct = _call_with_rate_set(
-        dynamic_vsc_lookup, normalized_rate_set, zone=str(dest_zone)
+        dynamic_vsc_lookup, normalized_rate_set, zone=str(dest_vsc_zone)
     )
 
     total_base_freight = base + beyond_total

@@ -39,6 +39,7 @@ def test_calculate_air_quote_applies_origin_zone_fsc() -> None:
         cost_zone_lookup=cost_zone_lookup,
         air_cost_lookup=air_cost_lookup,
         beyond_rate_lookup=beyond_rate_lookup,
+        vsc_zone_lookup=lambda zipcode, rate_set=None: 1 if zipcode == "11111" else 8,
         dynamic_vsc_lookup=lambda zone, rate_set=None: 0.05 if zone == "1" else 0.1,
     )
 

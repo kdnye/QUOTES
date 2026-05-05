@@ -35,6 +35,7 @@ COST_ZONES_TABLE = "cost_zones"
 RATE_UPLOADS_TABLE = "rate_uploads"
 RATE_SET_LOGOS_TABLE = "rate_set_logos"
 FUEL_SURCHARGES_TABLE = "fuel_surcharges"
+VSC_ZONES_TABLE = "vsc_zones"
 
 RATE_SET_DEFAULT = "default"
 
@@ -355,7 +356,13 @@ class AirCostZone(db.Model):
 
 
 class ZipZone(db.Model):
-    """Maps ZIP codes to destination zones."""
+    """Maps ZIP codes to Air Cost destination zones.
+
+    This table supports air linehaul routing via ``dest_zone`` and must not be
+    used for variable surcharge (VSC) lookups. VSC zone assignments are stored
+    separately in :class:`VscZone` to keep surcharge policy independent from
+    Air Cost routing definitions.
+    """
 
     __tablename__ = ZIP_ZONES_TABLE
 
@@ -385,6 +392,36 @@ class CostZone(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     concat = db.Column(db.String(5), nullable=False)  # concatenated origin/dest key
     cost_zone = db.Column(db.String(5), nullable=False)  # resulting cost zone code
+    rate_set = db.Column(
+        db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+
+
+class VscZone(db.Model):
+    """Maps ZIP codes to Variable Surcharge (VSC) zones.
+
+    Inputs:
+        zipcode: Normalized 5-digit ZIP lookup key.
+        vsc_zone: Integer VSC zone value constrained to the range 1..10.
+        rate_set: Named rate-set context used for primary/fallback lookups.
+
+    Outputs:
+        A domain-specific lookup row used by quote logic to resolve VSC
+        percentages without reading Air Cost routing fields.
+
+    External dependencies:
+        * Queried by :func:`app.quote.logic_air.get_vsc_zone_for_zip`.
+    """
+
+    __tablename__ = VSC_ZONES_TABLE
+
+    __table_args__ = (
+        UniqueConstraint("rate_set", "zipcode", name="uq_vsc_zones_rate_set_zipcode"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    zipcode = db.Column(db.String(5), nullable=False)
+    vsc_zone = db.Column(db.Integer, nullable=False)
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
     )

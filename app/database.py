@@ -24,6 +24,7 @@ from app.models import (
     BeyondRate,
     AirCostZone,
     ZipZone,
+    VscZone,
     CostZone,
     RateUpload,
 )
@@ -156,6 +157,7 @@ __all__ = [
     "BeyondRate",
     "AirCostZone",
     "ZipZone",
+    "VscZone",
     "CostZone",
     "RateUpload",
     "ensure_database_schema",
