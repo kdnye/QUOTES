@@ -8,7 +8,12 @@ from app.quote import logic_hotshot
 
 
 def test_miles_are_ceiling_rounded(monkeypatch):
-    """get_distance_miles float is ceiled before use (23.1 -> 24 not 23)."""
+    """Ceiled miles flow through to result, zone lookup, and Zone X min charge.
+
+    Raw 23.1 -> ceil -> 24. The zone_lookup returns 'X' only when it receives
+    24, so a wrong (unrounded) value would silently fall through to zone 'A'
+    and the min_charge assertion would also fail.
+    """
 
     monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_: 23.1)
     monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_: 0.0)
@@ -18,7 +23,7 @@ def test_miles_are_ceiling_rounded(monkeypatch):
         destination="22222",
         weight=1.0,
         accessorial_total=0.0,
-        zone_lookup=lambda _miles, rate_set=None: "A",
+        zone_lookup=lambda miles, rate_set=None: "X" if miles == 24 else "A",
         rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
             per_lb=1.0, fuel_pct=0.0, weight_break=None, min_charge=10.0
         ),
@@ -26,6 +31,8 @@ def test_miles_are_ceiling_rounded(monkeypatch):
     )
 
     assert result["miles"] == 24
+    assert result["zone"] == "X"
+    assert result["min_charge"] == pytest.approx(24 * logic_hotshot.ZONE_X_PER_MILE_RATE)
 
 
 def test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc(monkeypatch):
