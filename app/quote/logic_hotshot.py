@@ -1,5 +1,6 @@
 """Hotshot (expedited truck) quote calculations."""
 
+import math
 from typing import Any, Callable, Dict, Optional
 
 from app.quote.distance import get_distance_miles
@@ -123,7 +124,7 @@ def calculate_hotshot_quote(
         The dynamic EIA-based VSC is then applied to that post-fuel subtotal,
         not to the raw base.
     """
-    miles = get_distance_miles(origin, destination) or 0
+    miles = math.ceil(get_distance_miles(origin, destination) or 0)
 
     zone = _call_with_rate_set(zone_lookup, rate_set, miles)
     rate = _call_with_rate_set(rate_lookup, rate_set, zone)
