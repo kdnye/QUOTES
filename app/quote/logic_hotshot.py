@@ -154,7 +154,7 @@ def calculate_hotshot_quote(
         dest_zone=dest_zone,
         rate_set=rate_set,
     )
-    fuel_pct = float(rate.fuel_pct)
+    fuel_pct = float(rate.fuel_pct or 0.0)
     base_surcharge_amount = base * fuel_pct
     base_with_fuel = base + base_surcharge_amount
     vsc_amount = base_with_fuel * dynamic_vsc_pct
