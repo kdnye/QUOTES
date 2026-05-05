@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from argparse import ArgumentParser
-from typing import Iterable, List, Sequence, Tuple, Type, TypeVar
+from typing import Any, Iterable, List, Sequence, Tuple, Type, TypeVar
 
 import logging
 import pandas as pd
@@ -23,6 +23,29 @@ from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
+
+
+def normalize_zip_for_lookup(raw_zip: Any) -> str | None:
+    """Normalize ZIP input so imports match runtime quote lookup behavior.
+
+    Args:
+        raw_zip: CSV-provided ZIP value that may include punctuation, ZIP+4,
+            or spreadsheet float formatting.
+
+    Returns:
+        A five-digit ZIP string when at least five digits are present,
+        otherwise ``None``.
+
+    External dependencies:
+        * Mirrors the digit-stripping approach used by
+          :func:`app.quote.distance._sanitize_zip` and
+          :func:`app.quote.zip_validation._sanitize_zip`.
+    """
+
+    digits = "".join(ch for ch in str(raw_zip or "").strip() if ch.isdigit())
+    if len(digits) < 5:
+        return None
+    return digits[:5].zfill(5)
 
 
 def load_zip_zones(df: pd.DataFrame) -> List[ZipZone]:
@@ -85,12 +108,102 @@ def load_zip_zones(df: pd.DataFrame) -> List[ZipZone]:
     # Excel often stores ZIP codes as floats which become strings like
     # ``"85001.0"``. Convert to integers first so we keep the expected
     # 5-digit representation and drop rows with missing ZIPs.
-    normalized["zipcode"] = pd.to_numeric(normalized["zipcode"], errors="coerce")
+    normalized["zipcode"] = normalized["zipcode"].apply(normalize_zip_for_lookup)
     normalized = normalized.dropna(subset=["zipcode"])
-    normalized["zipcode"] = normalized["zipcode"].astype(int).astype(str).str.zfill(5)
 
     normalized = normalized.drop_duplicates(subset=["zipcode", "rate_set"])
     return [ZipZone(**row) for row in normalized.to_dict(orient="records")]
+
+
+def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[ZipZone], int]:
+    """Parse ``vsc zones.csv`` rows into normalized ZIP-to-zone mappings.
+
+    Args:
+        df: DataFrame loaded from ``vsc zones.csv``.
+
+    Returns:
+        Tuple of ``(rows, invalid_zone_count)``.
+
+    External dependencies:
+        * Produces :class:`app.models.ZipZone` model instances consumed by
+          :func:`upsert_zip_zones`.
+    """
+
+    df.columns = pd.Index([str(c).strip().upper() for c in df.columns])
+    required = {"ZIPCODE", "DEST ZONE"}
+    if not required.issubset(set(df.columns)):
+        missing = ", ".join(sorted(required.difference(set(df.columns))))
+        raise ValueError(f"vsc zones.csv missing expected columns: {missing}")
+
+    zone_rows: list[ZipZone] = []
+    invalid_zone_count = 0
+    dedupe: dict[tuple[str, str], ZipZone] = {}
+    for _, row in df.iterrows():
+        zipcode = normalize_zip_for_lookup(row.get("ZIPCODE"))
+        if not zipcode:
+            continue
+
+        zone_value = row.get("DEST ZONE")
+        try:
+            zone = int(zone_value)
+        except (TypeError, ValueError):
+            invalid_zone_count += 1
+            continue
+        if zone < 1 or zone > 10:
+            invalid_zone_count += 1
+            continue
+
+        parsed = ZipZone(
+            zipcode=zipcode,
+            dest_zone=zone,
+            rate_set=DEFAULT_RATE_SET,
+            beyond="N",
+        )
+        dedupe[(parsed.zipcode, parsed.rate_set)] = parsed
+
+    zone_rows = list(dedupe.values())
+    return zone_rows, invalid_zone_count
+
+
+def upsert_zip_zones(session: SASession, objects: Iterable[ZipZone]) -> tuple[int, int]:
+    """Insert new ZIP zones and update existing rows by ZIP/rate_set key.
+
+    Args:
+        session: Active SQLAlchemy session.
+        objects: Parsed ZIP-zone rows to upsert.
+
+    Returns:
+        Tuple ``(inserted, updated)``.
+
+    External dependencies:
+        * Queries and mutates :class:`app.models.ZipZone` through SQLAlchemy.
+    """
+
+    rows = list(objects)
+    if not rows:
+        return 0, 0
+
+    existing = {
+        (item.zipcode, item.rate_set): item
+        for item in session.query(ZipZone).filter(
+            ZipZone.rate_set.in_({row.rate_set for row in rows})
+        )
+    }
+
+    inserted = 0
+    updated = 0
+    for row in rows:
+        key = (row.zipcode, row.rate_set)
+        current = existing.get(key)
+        if current is None:
+            session.add(row)
+            inserted += 1
+            continue
+        if current.dest_zone != row.dest_zone or current.beyond != row.beyond:
+            current.dest_zone = row.dest_zone
+            current.beyond = row.beyond
+            updated += 1
+    return inserted, updated
 
 
 def load_cost_zones(df: pd.DataFrame) -> List[CostZone]:
@@ -278,6 +391,22 @@ def import_csvs(directory: Path) -> None:
             print(f"Inserted {inserted} ZipZone rows (skipped {skipped}).")
             if inserted == 0:
                 raise RuntimeError("No ZipZone rows loaded from CSV")
+
+        vsc_zip_file = directory / "vsc zones.csv"
+        if vsc_zip_file.exists():
+            vsc_df = pd.read_csv(vsc_zip_file)
+            vsc_rows, invalid_zone_count = load_vsc_zip_zones(vsc_df)
+            inserted, updated = upsert_zip_zones(session, vsc_rows)
+            print(
+                "VSC zone import summary: "
+                f"inserted={inserted}, updated={updated}, "
+                f"invalid_zone_rows={invalid_zone_count}, parsed_rows={len(vsc_rows)}"
+            )
+            if invalid_zone_count > 0:
+                logger.warning(
+                    "VSC zone import skipped %d rows with invalid DEST ZONE values.",
+                    invalid_zone_count,
+                )
 
         cost_file = directory / "cost_zone_table.csv"
         if cost_file.exists():

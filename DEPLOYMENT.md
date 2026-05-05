@@ -397,6 +397,11 @@ Otherwise it falls back to the CSVs checked into the repository root. Provide
 `ADMIN_EMAIL` and `ADMIN_PASSWORD` in `.env` (or export them temporarily) to
 bootstrap the first admin account.
 
+To keep destination-zone lookups aligned with dynamic VSC calculations, place
+`vsc zones.csv` in `RATE_DATA_DIR` (or repository root when using defaults).
+That dataset is required for accurate ZIP-to-zone mappings used by runtime VSC
+resolution.
+
 After `init_db.py` completes, seed the Variable Fuel Surcharge configuration once:
 
 ```bash
