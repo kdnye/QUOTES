@@ -15,6 +15,9 @@
 {% endif %}
 
 <p class="fsi-body">Type: {{ quote.quote_type }} | Weight: {{ '%.2f'|format(quote.weight) }} lbs ({{ quote.weight_method }})</p>
+{% if quote.client_reference %}
+<p class="fsi-body"><strong>Client Reference #:</strong> {{ quote.client_reference }}</p>
+{% endif %}
 <p class="fsi-body"><strong>Rate set used:</strong> {{ quote.rate_set }}</p>
 <p class="fsi-body"><strong>Request IP:</strong> {{ quote.request_ip or "N/A" }}</p>
 

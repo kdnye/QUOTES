@@ -444,6 +444,7 @@ def new_quote():
                     accessorial_options=accessorial_options,
                     quote_type=quote_type,
                     maps_api_key=maps_api_key,
+                    client_reference=data.get("client_reference", ""),
                 ),
                 400,
             )
