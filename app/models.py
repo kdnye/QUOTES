@@ -83,6 +83,13 @@ class User(UserMixin, db.Model):
         admin_previous_employee_approved: Cached ``employee_approved`` value
             restored alongside :attr:`admin_previous_role` when demoting an
             administrator.
+        api_approved: Boolean granting a user permission to use the JSON API.
+            Set by an admin after verifying the integration request.
+        api_enabled: Boolean toggling the user's API key on or off without
+            revoking the key itself.
+        api_key: Randomly-generated bearer token for per-user API access.
+            Stored in plain text so admins can share it with customers.
+            ``None`` until an admin generates the key.
     """
 
     __tablename__ = USERS_TABLE
@@ -118,6 +125,11 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+    api_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    api_enabled: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    api_key: Mapped[Optional[str]] = db.Column(
+        db.String(128), unique=True, nullable=True, index=True
     )
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

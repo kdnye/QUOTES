@@ -307,6 +307,31 @@ def emailing_guide() -> str:
     return render_template("help/emailing.html", **_base_help_context())
 
 
+@help_bp.get("/api")
+def api_reference() -> str:
+    """Render the API reference documentation for approved API users.
+
+    Returns:
+        Rendered HTML string for the API reference page.
+    """
+
+    from flask_login import current_user
+    from app.models import Accessorial
+
+    accessorials = Accessorial.query.order_by(Accessorial.name).all()
+    api_user = getattr(current_user, "api_approved", False) if getattr(current_user, "is_authenticated", False) else False
+    api_key = getattr(current_user, "api_key", None) if api_user else None
+    api_enabled = getattr(current_user, "api_enabled", False) if api_user else False
+
+    return render_template(
+        "help/api.html",
+        accessorials=accessorials,
+        api_key=api_key,
+        api_enabled=api_enabled,
+        **_base_help_context(),
+    )
+
+
 @help_bp.get("/terms-of-use")
 def terms_of_use() -> str:
     """Render the Freight Services website terms of use.

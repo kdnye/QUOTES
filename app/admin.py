@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import secrets
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path
@@ -1468,6 +1469,88 @@ def approve_employee(user_id: int) -> Response:
 
     redirect_target = request.form.get("next") or url_for("admin.dashboard")
     return redirect(redirect_target)
+
+
+@admin_bp.route("/users/<int:user_id>/api-key/generate", methods=["POST"])
+@super_admin_required
+def generate_api_key(user_id: int) -> Response:
+    """Generate (or regenerate) a per-user API key and approve API access.
+
+    Args:
+        user_id: Primary key of the :class:`app.models.User` being updated.
+
+    Returns:
+        Response: Redirect to the user edit page. The newly generated key is
+        delivered via a ``success`` flash message so the admin can copy it.
+    """
+
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    user.api_key = secrets.token_hex(32)
+    user.api_approved = True
+    user.api_enabled = True
+    db.session.commit()
+
+    flash(
+        f"API key generated. Copy it now — it will not be shown again in full: {user.api_key}",
+        "api_key",
+    )
+    return redirect(url_for("admin.edit_user", user_id=user_id))
+
+
+@admin_bp.route("/users/<int:user_id>/api-key/revoke", methods=["POST"])
+@super_admin_required
+def revoke_api_key(user_id: int) -> Response:
+    """Revoke a user's API key and disable API access.
+
+    Args:
+        user_id: Primary key of the :class:`app.models.User` being updated.
+
+    Returns:
+        Response: Redirect to the user edit page with a confirmation message.
+    """
+
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    user.api_key = None
+    user.api_enabled = False
+    user.api_approved = False
+    db.session.commit()
+
+    flash("API key revoked. The user can no longer authenticate via API.", "warning")
+    return redirect(url_for("admin.edit_user", user_id=user_id))
+
+
+@admin_bp.route("/users/<int:user_id>/api-access/toggle", methods=["POST"])
+@super_admin_required
+def toggle_api_access(user_id: int) -> Response:
+    """Enable or disable a user's API access without revoking the key.
+
+    Args:
+        user_id: Primary key of the :class:`app.models.User` being updated.
+
+    Returns:
+        Response: Redirect to the user edit page with a status message.
+    """
+
+    user = db.session.get(User, user_id)
+    if not user:
+        abort(404)
+
+    if not user.api_key:
+        flash("Generate an API key first before toggling access.", "warning")
+        return redirect(url_for("admin.edit_user", user_id=user_id))
+
+    user.api_enabled = not user.api_enabled
+    db.session.commit()
+
+    state = "enabled" if user.api_enabled else "disabled"
+    flash(f"API access {state} for {user.email}.", "success")
+    return redirect(url_for("admin.edit_user", user_id=user_id))
 
 
 # Rate-set logo mapping routes
