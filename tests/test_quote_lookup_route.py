@@ -130,10 +130,10 @@ def test_lookup_quote_get_renders_lookup_template(
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
 
 
-def test_lookup_quote_post_invalid_uuid_renders_lookup_with_flash(
+def test_lookup_quote_post_invalid_readable_quote_id_renders_lookup_with_flash(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Show a validation error when users submit a malformed quote ID."""
+    """Show a validation error when users submit a malformed readable quote ID (Q-XXXXXXXX)."""
 
     client = app.test_client()
     _create_user_and_login(client)
@@ -143,7 +143,7 @@ def test_lookup_quote_post_invalid_uuid_renders_lookup_with_flash(
         lambda template_name, **_: f"template={template_name}",
     )
 
-    response = client.post("/quotes/lookup", data={"quote_id": "not-a-uuid"})
+    response = client.post("/quotes/lookup", data={"quote_id": "not-a-readable-id"})
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=lookup_quote.html"

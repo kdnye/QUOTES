@@ -167,13 +167,13 @@ def test_lookup_quote_get_renders_heading_for_authenticated_user(app: Flask) -> 
     assert "Client Reference" in html
 
 
-def test_lookup_quote_post_invalid_uuid_shows_validation_flash(app: Flask) -> None:
-    """POST requests with invalid IDs should render danger flash feedback."""
+def test_lookup_quote_post_invalid_readable_quote_id_shows_validation_flash(app: Flask) -> None:
+    """POST requests with malformed readable quote IDs (Q-XXXXXXXX) should render danger flash feedback."""
 
     client = app.test_client()
     _create_user_and_login(client)
 
-    response = client.post("/quotes/lookup", data={"quote_id": "not-a-uuid"})
+    response = client.post("/quotes/lookup", data={"quote_id": "not-a-readable-id"})
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
