@@ -18,7 +18,7 @@ from typing import Mapping
 from flask import current_app, flash, jsonify, render_template, request, url_for
 from flask_login import login_required, current_user
 from sqlalchemy import inspect
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from . import quotes_bp
 from ..models import (
@@ -101,7 +101,7 @@ def _normalize_client_reference(raw_reference: object) -> tuple[str | None, str 
     if not isinstance(raw_reference, str):
         return None, "Client reference must be a string."
 
-    normalized = raw_reference.strip()
+    normalized = " ".join(raw_reference.strip().upper().split())
     if not normalized:
         return None, None
 
@@ -566,7 +566,24 @@ def new_quote():
             user_email=current_user.email,
         )
         db.session.add(q)
-        db.session.commit()
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            err = "That client reference number is already in use for another quote. Please use a unique reference."
+            if request.is_json:
+                return jsonify({"errors": [err]}), 409
+            return (
+                render_template(
+                    "new_quote.html",
+                    errors=[err],
+                    accessorial_options=accessorial_options,
+                    quote_type=quote_type,
+                    maps_api_key=maps_api_key,
+                    client_reference=client_reference or "",
+                ),
+                409,
+            )
 
         if request.is_json:
             return jsonify(
@@ -654,7 +671,7 @@ def _build_quote_history_summary(quote: Quote) -> dict[str, str]:
     if not isinstance(metadata, dict):
         return fallback
 
-    client_reference = str(metadata.get("client_reference") or "—")
+    client_reference = quote.client_reference or "—"
     status = str(metadata.get("status") or "Saved")
     return {"client_reference": client_reference, "status": status}
 
@@ -699,12 +716,9 @@ def lookup_quote():
             flash("We could not find a matching quote for that lookup.", "danger")
             return render_template("lookup_quote.html")
 
-        compact_json_match = f'%"client_reference":"{normalized_client_reference}"%'
-        spaced_json_match = f'%"client_reference": "{normalized_client_reference}"%'
         matching_quotes = (
             scoped_query.filter(
-                Quote.quote_metadata.ilike(compact_json_match)
-                | Quote.quote_metadata.ilike(spaced_json_match)
+                Quote.client_reference == normalized_client_reference
             )
             .order_by(Quote.created_at.desc(), Quote.id.desc())
             .all()
