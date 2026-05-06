@@ -78,15 +78,18 @@
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin.dashboard') }}">Admin Dashboard</a>
             </li>
-            <li class="nav-item">
-              <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">All Quotes</a>
-            </li>
           {% elif current_user.role == 'employee' and current_user.employee_approved %}
             <li class="nav-item">
               <a class="nav-link fsi-nav-link" href="{{ url_for('admin.dashboard') }}">Team Dashboard</a>
             </li>
+          {% endif %}
+
+          {% if current_user.role == 'super_admin'
+                or current_user.is_admin
+                or (current_user.role == 'employee' and current_user.employee_approved)
+                or (current_user.email and '@freightservices.net' in current_user.email) %}
             <li class="nav-item">
-              <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">Quotes</a>
+              <a class="nav-link fsi-nav-link" href="{{ url_for('admin_quotes.quotes_html') }}">All Quotes</a>
             </li>
           {% endif %}
 
