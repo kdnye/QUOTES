@@ -308,8 +308,6 @@ def _normalize_and_validate_client_reference(
     )
     if not normalized_reference:
         return None
-    if not CLIENT_REFERENCE_PATTERN.fullmatch(normalized_reference):
-        return None
     return normalized_reference
 
 
