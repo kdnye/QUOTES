@@ -40,6 +40,7 @@ from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 logger = logging.getLogger(__name__)
 
 READABLE_QUOTE_ID_PATTERN = re.compile(r"^Q-[A-HJ-NP-Z2-9]{8}$")
+CLIENT_REFERENCE_PATTERN = re.compile(r"^[A-Z0-9][A-Z0-9 _./#-]{0,63}$")
 SELF_QUOTE_EMAIL_INTRO = (
     "Here's the copy of your quote you requested be sent to yourself."
 )
@@ -237,6 +238,32 @@ def _normalize_and_validate_quote_id(quote_id_input: str | None) -> str | None:
     if not READABLE_QUOTE_ID_PATTERN.fullmatch(normalized_quote_id):
         return None
     return normalized_quote_id
+
+
+def _normalize_and_validate_client_reference(
+    client_reference_input: str | None,
+) -> str | None:
+    """Normalize and validate a client-provided quote reference token.
+
+    Args:
+        client_reference_input: Raw ``client_reference`` value from
+            ``request.form``.
+
+    Returns:
+        Uppercase, compacted client reference when it matches
+        :data:`CLIENT_REFERENCE_PATTERN`; otherwise ``None``.
+
+    External dependencies:
+        Uses module-level :data:`CLIENT_REFERENCE_PATTERN` for allow-list
+        validation and is consumed by :func:`lookup_quote`.
+    """
+
+    normalized_reference = " ".join((client_reference_input or "").strip().upper().split())
+    if not normalized_reference:
+        return None
+    if not CLIENT_REFERENCE_PATTERN.fullmatch(normalized_reference):
+        return None
+    return normalized_reference
 
 
 @quotes_bp.route("/new", methods=["GET", "POST"])
@@ -536,19 +563,50 @@ def lookup_quote():
     if request.method == "GET":
         return render_template("lookup_quote.html")
 
-    normalized_quote_id = _normalize_and_validate_quote_id(request.form.get("quote_id"))
-    if normalized_quote_id is None:
-        flash("Please enter a valid Quote ID.", "danger")
-        return render_template("lookup_quote.html")
+    lookup_mode = (request.form.get("lookup_mode") or "quote_id").strip().lower()
+    scoped_query = _quote_lookup_query_for_user(current_user)
 
-    quote = (
-        _quote_lookup_query_for_user(current_user)
-        .filter_by(quote_id=normalized_quote_id)
-        .first()
-    )
-    if quote is None:
-        flash("Quote not found. Please verify the Quote ID and try again.", "danger")
-        return render_template("lookup_quote.html")
+    quote = None
+    if lookup_mode == "client_reference":
+        normalized_client_reference = _normalize_and_validate_client_reference(
+            request.form.get("client_reference")
+        )
+        if normalized_client_reference is None:
+            flash("We could not find a matching quote for that lookup.", "danger")
+            return render_template("lookup_quote.html")
+
+        compact_json_match = f'%"client_reference":"{normalized_client_reference}"%'
+        spaced_json_match = f'%"client_reference": "{normalized_client_reference}"%'
+        matching_quotes = (
+            scoped_query.filter(
+                Quote.quote_metadata.ilike(compact_json_match)
+                | Quote.quote_metadata.ilike(spaced_json_match)
+            )
+            .order_by(Quote.created_at.desc(), Quote.id.desc())
+            .all()
+        )
+        if not matching_quotes:
+            flash("We could not find a matching quote for that lookup.", "danger")
+            return render_template("lookup_quote.html")
+        if len(matching_quotes) > 1:
+            return render_template(
+                "lookup_quote.html",
+                matching_quotes=matching_quotes[:10],
+                resolved_lookup_mode="client_reference",
+            )
+        quote = matching_quotes[0]
+    else:
+        normalized_quote_id = _normalize_and_validate_quote_id(
+            request.form.get("quote_id")
+        )
+        if normalized_quote_id is None:
+            flash("We could not find a matching quote for that lookup.", "danger")
+            return render_template("lookup_quote.html")
+
+        quote = scoped_query.filter_by(quote_id=normalized_quote_id).first()
+        if quote is None:
+            flash("We could not find a matching quote for that lookup.", "danger")
+            return render_template("lookup_quote.html")
 
     try:
         metadata = json.loads(quote.quote_metadata or "{}")
