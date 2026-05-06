@@ -354,13 +354,13 @@ def build_postgres_database_uri_from_env(
         safely encode credentials and query options for SQLAlchemy.
     """
 
-    password = os.getenv("POSTGRES_PASSWORD")
+    password = (os.getenv("POSTGRES_PASSWORD") or "").strip()
     if not password:
         return None
 
-    user = os.getenv("POSTGRES_USER", "quote_tool")
-    db_name = os.getenv("POSTGRES_DB", "quote_tool")
-    host = os.getenv("POSTGRES_HOST", "postgres")
+    user = (os.getenv("POSTGRES_USER") or "quote_tool").strip()
+    db_name = (os.getenv("POSTGRES_DB") or "quote_tool").strip()
+    host = (os.getenv("POSTGRES_HOST") or "postgres").strip()
     port = os.getenv("POSTGRES_PORT", "5432")
     options = os.getenv("POSTGRES_OPTIONS", "")
     query_pairs: Iterable[Tuple[str, str]] = []
@@ -413,12 +413,12 @@ def build_cloud_sql_unix_socket_uri_from_env(
     if not connection_name:
         return None
 
-    password = os.getenv("POSTGRES_PASSWORD")
+    password = (os.getenv("POSTGRES_PASSWORD") or "").strip()
     if not password:
         return None
 
-    user = os.getenv("POSTGRES_USER", "quote_tool")
-    db_name = os.getenv("POSTGRES_DB", "quote_tool")
+    user = (os.getenv("POSTGRES_USER") or "quote_tool").strip()
+    db_name = (os.getenv("POSTGRES_DB") or "quote_tool").strip()
     options = os.getenv("POSTGRES_OPTIONS", "")
     query_pairs: List[Tuple[str, str]] = []
 
