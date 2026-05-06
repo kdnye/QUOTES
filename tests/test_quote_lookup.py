@@ -68,6 +68,31 @@ def _login_client(client: FlaskClient, user_id: int) -> None:
         session["_fresh"] = True
 
 
+def _create_user(*, role: str = "customer", employee_approved: bool = False) -> User:
+    """Create and persist a user record for lookup authorization tests.
+
+    Args:
+        role: Application role assigned to the created user.
+        employee_approved: Employee approval flag used for staff access tests.
+
+    Returns:
+        Persisted :class:`app.models.User` instance.
+
+    External dependencies:
+        * Uses :data:`app.models.db.session` for persistence.
+    """
+
+    user = User(
+        email=f"lookup-{uuid.uuid4()}@example.com",
+        role=role,
+        employee_approved=employee_approved,
+    )
+    user.set_password("password123")
+    db.session.add(user)
+    db.session.commit()
+    return user
+
+
 def _create_user_and_login(client: FlaskClient) -> User:
     """Create a customer user and authenticate the supplied client.
 
@@ -82,10 +107,7 @@ def _create_user_and_login(client: FlaskClient) -> User:
         * Calls :func:`_login_client` to establish authenticated session state.
     """
 
-    user = User(email=f"lookup-{uuid.uuid4()}@example.com", role="customer")
-    user.set_password("password123")
-    db.session.add(user)
-    db.session.commit()
+    user = _create_user(role="customer")
     _login_client(client, user.id)
     return user
 
@@ -235,3 +257,19 @@ def test_lookup_quote_post_malformed_metadata_renders_without_server_error(
     assert "Origin: 30301 | Destination: 60601" in html
     assert "Quote Total" in html
     assert "$199.99" in html
+
+
+def test_lookup_quote_post_customer_cannot_access_other_users_quote(app: Flask) -> None:
+    """Customers should not be able to retrieve quotes owned by other users."""
+
+    client = app.test_client()
+    _create_user_and_login(client)
+    other_user = _create_user(role="customer")
+    quote = _create_quote(other_user, "Q-RTYUPLK2", quote_metadata="{}", total=88.0)
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote not found. Please verify the Quote ID and try again." in html
+    assert "Quote Result" not in html

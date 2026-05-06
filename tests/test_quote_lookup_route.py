@@ -67,6 +67,31 @@ def _login_client(client: FlaskClient, user_id: int) -> None:
         session["_fresh"] = True
 
 
+def _create_user(*, role: str = "customer", employee_approved: bool = False) -> User:
+    """Create and persist a user record for lookup authorization tests.
+
+    Args:
+        role: Application role assigned to the created user.
+        employee_approved: Employee approval flag used for staff access tests.
+
+    Returns:
+        Persisted :class:`app.models.User` instance.
+
+    External dependencies:
+        * Uses :data:`app.models.db.session` for persistence.
+    """
+
+    user = User(
+        email=f"lookup-{uuid.uuid4()}@example.com",
+        role=role,
+        employee_approved=employee_approved,
+    )
+    user.set_password("password123")
+    db.session.add(user)
+    db.session.commit()
+    return user
+
+
 def _create_user_and_login(client: FlaskClient) -> User:
     """Create a customer user and sign them in for lookup route requests.
 
@@ -81,10 +106,7 @@ def _create_user_and_login(client: FlaskClient) -> User:
         * Calls :func:`_login_client` to establish authenticated session state.
     """
 
-    user = User(email=f"lookup-{uuid.uuid4()}@example.com", role="customer")
-    user.set_password("password123")
-    db.session.add(user)
-    db.session.commit()
+    user = _create_user(role="customer")
     _login_client(client, user.id)
     return user
 
@@ -232,6 +254,83 @@ def test_lookup_quote_post_lowercase_quote_id_normalizes_to_match(
     monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
 
     response = client.post("/quotes/lookup", data={"quote_id": " q-plmnbv23 "})
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
+def test_lookup_quote_post_customer_cannot_access_other_users_quote(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Customers should receive not-found feedback for another user's quote."""
+
+    client = app.test_client()
+    current_user_record = _create_user_and_login(client)
+    other_user = _create_user(role="customer")
+
+    quote = Quote(
+        quote_id="Q-MNBVCXZ2",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=150.0,
+        total=325.0,
+        quote_metadata="{}",
+        user_id=other_user.id,
+        user_email=other_user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
+
+    assert current_user_record.id != other_user.id
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=lookup_quote.html"
+    with client.session_transaction() as session:
+        assert (
+            "danger",
+            "Quote not found. Please verify the Quote ID and try again.",
+        ) in session["_flashes"]
+
+
+def test_lookup_quote_post_approved_employee_can_access_other_users_quote(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Approved employees should have global quote visibility."""
+
+    client = app.test_client()
+    employee = _create_user(role="employee", employee_approved=True)
+    _login_client(client, employee.id)
+    customer = _create_user(role="customer")
+
+    quote = Quote(
+        quote_id="Q-QWERTY23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=150.0,
+        total=325.0,
+        quote_metadata="{}",
+        user_id=customer.id,
+        user_email=customer.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=quote_result.html"
