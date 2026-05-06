@@ -258,7 +258,9 @@ def _normalize_and_validate_client_reference(
         validation and is consumed by :func:`lookup_quote`.
     """
 
-    normalized_reference = " ".join((client_reference_input or "").strip().upper().split())
+    normalized_reference = " ".join(
+        (client_reference_input or "").strip().upper().split()
+    )
     if not normalized_reference:
         return None
     if not CLIENT_REFERENCE_PATTERN.fullmatch(normalized_reference):
@@ -533,6 +535,76 @@ def new_quote():
         quote_type="Air",
         maps_api_key=maps_api_key,
     )
+
+
+@quotes_bp.route("/my-quotes", methods=["GET"])
+@login_required
+def my_quotes():
+    """Render the authenticated user's quote history with pagination.
+
+    Inputs:
+        Reads ``page`` and ``per_page`` query parameters from
+        :attr:`flask.Request.args`.
+
+    Outputs:
+        Returns ``my_quotes.html`` with a paginated ``Quote`` result set.
+
+    External dependencies:
+        Uses :func:`_quote_lookup_query_for_user` to enforce the same visibility
+        policy used by quote lookup, then executes SQL via :class:`app.models.Quote`.
+    """
+
+    page = request.args.get("page", default=1, type=int) or 1
+    per_page = request.args.get("per_page", default=20, type=int) or 20
+
+    page = max(page, 1)
+    per_page = min(max(per_page, 1), 100)
+
+    pagination = (
+        _quote_lookup_query_for_user(current_user)
+        .order_by(Quote.created_at.desc(), Quote.id.desc())
+        .paginate(page=page, per_page=per_page, error_out=False)
+    )
+
+    quote_summaries: dict[int, dict[str, str]] = {}
+    for quote in pagination.items:
+        quote_summaries[quote.id] = _build_quote_history_summary(quote)
+
+    return render_template(
+        "my_quotes.html",
+        pagination=pagination,
+        quotes=pagination.items,
+        quote_summaries=quote_summaries,
+    )
+
+
+def _build_quote_history_summary(quote: Quote) -> dict[str, str]:
+    """Return display-friendly client reference and status for history rows.
+
+    Inputs:
+        quote: Persisted :class:`app.models.Quote` whose ``quote_metadata``
+            may contain ``client_reference`` and ``status`` keys.
+
+    Outputs:
+        Dictionary with ``client_reference`` and ``status`` string values used
+        by ``templates/my_quotes.html``.
+
+    External dependencies:
+        Calls :func:`json.loads` to parse ``quote.quote_metadata``.
+    """
+
+    fallback = {"client_reference": "—", "status": "Saved"}
+    try:
+        metadata = json.loads(quote.quote_metadata or "{}")
+    except json.JSONDecodeError:
+        return fallback
+
+    if not isinstance(metadata, dict):
+        return fallback
+
+    client_reference = str(metadata.get("client_reference") or "—")
+    status = str(metadata.get("status") or "Saved")
+    return {"client_reference": client_reference, "status": status}
 
 
 @quotes_bp.route("/lookup", methods=["GET", "POST"])
