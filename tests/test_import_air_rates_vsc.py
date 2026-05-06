@@ -11,16 +11,15 @@ sys.path.append(str(PROJECT_ROOT))
 from scripts import import_air_rates
 
 
-class _FakeZipZone:
-    def __init__(self, zipcode: str, dest_zone: int, rate_set: str, beyond: str = "N"):
+class _FakeVscZone:
+    def __init__(self, zipcode: str, vsc_zone: int, rate_set: str):
         self.zipcode = zipcode
-        self.dest_zone = dest_zone
+        self.vsc_zone = vsc_zone
         self.rate_set = rate_set
-        self.beyond = beyond
 
 
-class _FakeZipZoneQuery:
-    def __init__(self, rows: list[_FakeZipZone]):
+class _FakeVscZoneQuery:
+    def __init__(self, rows: list[_FakeVscZone]):
         self._rows = rows
 
     def filter(self, *_args, **_kwargs):
@@ -31,12 +30,12 @@ class _FakeZipZoneQuery:
 
 
 class _FakeSession:
-    def __init__(self, existing: list[_FakeZipZone] | None = None):
+    def __init__(self, existing: list[_FakeVscZone] | None = None):
         self.existing = existing or []
-        self.added: list[_FakeZipZone] = []
+        self.added: list[_FakeVscZone] = []
 
     def query(self, _model):
-        return _FakeZipZoneQuery(self.existing)
+        return _FakeVscZoneQuery(self.existing)
 
     def add(self, row):
         self.added.append(row)
@@ -53,10 +52,30 @@ def test_load_vsc_zip_zones_happy_path() -> None:
     rows, invalid_count = import_air_rates.load_vsc_zip_zones(df)
 
     assert invalid_count == 0
-    assert {(r.zipcode, r.dest_zone) for r in rows} == {
+    assert {(r.zipcode, r.vsc_zone) for r in rows} == {
         ("85001", 1),
         ("00901", 2),
         ("94105", 10),
+    }
+
+
+def test_load_vsc_zip_zones_accepts_zone_column() -> None:
+    """The actual vsc zones.csv uses 'Zone' not 'Dest Zone'."""
+    df = pd.DataFrame(
+        {
+            "Zipcode": ["90808", "90045"],
+            "City": ["LONG BEACH", "LOS ANGELES"],
+            "State": ["CA", "CA"],
+            "Zone": [9, 9],
+        }
+    )
+
+    rows, invalid_count = import_air_rates.load_vsc_zip_zones(df)
+
+    assert invalid_count == 0
+    assert {(r.zipcode, r.vsc_zone) for r in rows} == {
+        ("90808", 9),
+        ("90045", 9),
     }
 
 
@@ -74,23 +93,20 @@ def test_load_vsc_zip_zones_reports_malformed_zone_rows() -> None:
     assert invalid_count == 2
 
 
-def test_upsert_zip_zones_updates_duplicate_zip_rows() -> None:
-    existing = _FakeZipZone(
-        zipcode="90210", dest_zone=2, rate_set="default", beyond="Y"
-    )
+def test_upsert_vsc_zones_inserts_and_updates() -> None:
+    existing = _FakeVscZone(zipcode="90210", vsc_zone=8, rate_set="default")
     session = _FakeSession(existing=[existing])
 
-    inserted, updated = import_air_rates.upsert_zip_zones(
+    inserted, updated = import_air_rates.upsert_vsc_zones(
         session,
         [
-            _FakeZipZone(zipcode="90210", dest_zone=8, rate_set="default", beyond="N"),
-            _FakeZipZone(zipcode="10001", dest_zone=1, rate_set="default", beyond="N"),
+            _FakeVscZone(zipcode="90210", vsc_zone=9, rate_set="default"),
+            _FakeVscZone(zipcode="10001", vsc_zone=1, rate_set="default"),
         ],
     )
 
     assert inserted == 1
     assert updated == 1
-    assert existing.dest_zone == 8
-    assert existing.beyond == "N"
+    assert existing.vsc_zone == 9
     assert len(session.added) == 1
     assert session.added[0].zipcode == "10001"

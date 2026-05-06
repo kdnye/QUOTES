@@ -16,7 +16,7 @@ import pandas as pd
 from sqlalchemy.orm import Session as SASession
 
 from app import create_app
-from app.models import db, AirCostZone, ZipZone, CostZone, BeyondRate
+from app.models import db, AirCostZone, ZipZone, CostZone, BeyondRate, VscZone
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 
@@ -115,8 +115,12 @@ def load_zip_zones(df: pd.DataFrame) -> List[ZipZone]:
     return [ZipZone(**row) for row in normalized.to_dict(orient="records")]
 
 
-def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[ZipZone], int]:
-    """Parse ``vsc zones.csv`` rows into normalized ZIP-to-zone mappings.
+def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[VscZone], int]:
+    """Parse ``vsc zones.csv`` rows into normalized VSC zone mappings.
+
+    Accepts either ``Dest Zone`` or ``Zone`` as the zone column name so the
+    function works with both the dedicated VSC export format (``Zone``) and
+    any legacy format that used ``Dest Zone``.
 
     Args:
         df: DataFrame loaded from ``vsc zones.csv``.
@@ -125,25 +129,38 @@ def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[ZipZone], int]:
         Tuple of ``(rows, invalid_zone_count)``.
 
     External dependencies:
-        * Produces :class:`app.models.ZipZone` model instances consumed by
-          :func:`upsert_zip_zones`.
+        * Produces :class:`app.models.VscZone` model instances consumed by
+          :func:`upsert_vsc_zones`.
     """
 
     df.columns = pd.Index([str(c).strip().upper() for c in df.columns])
-    required = {"ZIPCODE", "DEST ZONE"}
-    if not required.issubset(set(df.columns)):
-        missing = ", ".join(sorted(required.difference(set(df.columns))))
-        raise ValueError(f"vsc zones.csv missing expected columns: {missing}")
 
-    zone_rows: list[ZipZone] = []
+    # Accept either "DEST ZONE" (legacy) or "ZONE" (current CSV format)
+    zone_col: str | None = None
+    for candidate in ("DEST ZONE", "ZONE"):
+        if candidate in df.columns:
+            zone_col = candidate
+            break
+
+    if zone_col is None or "ZIPCODE" not in df.columns:
+        missing = []
+        if "ZIPCODE" not in df.columns:
+            missing.append("ZIPCODE")
+        if zone_col is None:
+            missing.append("DEST ZONE or ZONE")
+        raise ValueError(
+            f"vsc zones.csv missing expected columns: {', '.join(sorted(missing))}"
+        )
+
+    zone_rows: list[VscZone] = []
     invalid_zone_count = 0
-    dedupe: dict[tuple[str, str], ZipZone] = {}
+    dedupe: dict[tuple[str, str], VscZone] = {}
     for _, row in df.iterrows():
         zipcode = normalize_zip_for_lookup(row.get("ZIPCODE"))
         if not zipcode:
             continue
 
-        zone_value = row.get("DEST ZONE")
+        zone_value = row.get(zone_col)
         try:
             zone = int(zone_value)
         except (TypeError, ValueError):
@@ -153,11 +170,10 @@ def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[ZipZone], int]:
             invalid_zone_count += 1
             continue
 
-        parsed = ZipZone(
+        parsed = VscZone(
             zipcode=zipcode,
-            dest_zone=zone,
+            vsc_zone=zone,
             rate_set=DEFAULT_RATE_SET,
-            beyond="N",
         )
         dedupe[(parsed.zipcode, parsed.rate_set)] = parsed
 
@@ -202,6 +218,45 @@ def upsert_zip_zones(session: SASession, objects: Iterable[ZipZone]) -> tuple[in
         if current.dest_zone != row.dest_zone or current.beyond != row.beyond:
             current.dest_zone = row.dest_zone
             current.beyond = row.beyond
+            updated += 1
+    return inserted, updated
+
+
+def upsert_vsc_zones(
+    session: SASession, objects: Iterable[VscZone]
+) -> tuple[int, int]:
+    """Insert new VSC zones and update existing rows by ZIP/rate_set key.
+
+    Args:
+        session: Active SQLAlchemy session.
+        objects: Parsed VSC zone rows to upsert.
+
+    Returns:
+        Tuple ``(inserted, updated)``.
+    """
+
+    rows = list(objects)
+    if not rows:
+        return 0, 0
+
+    existing = {
+        (item.zipcode, item.rate_set): item
+        for item in session.query(VscZone).filter(
+            VscZone.rate_set.in_({row.rate_set for row in rows})
+        )
+    }
+
+    inserted = 0
+    updated = 0
+    for row in rows:
+        key = (row.zipcode, row.rate_set)
+        current = existing.get(key)
+        if current is None:
+            session.add(row)
+            inserted += 1
+            continue
+        if current.vsc_zone != row.vsc_zone:
+            current.vsc_zone = row.vsc_zone
             updated += 1
     return inserted, updated
 
@@ -396,7 +451,7 @@ def import_csvs(directory: Path) -> None:
         if vsc_zip_file.exists():
             vsc_df = pd.read_csv(vsc_zip_file)
             vsc_rows, invalid_zone_count = load_vsc_zip_zones(vsc_df)
-            inserted, updated = upsert_zip_zones(session, vsc_rows)
+            inserted, updated = upsert_vsc_zones(session, vsc_rows)
             print(
                 "VSC zone import summary: "
                 f"inserted={inserted}, updated={updated}, "
