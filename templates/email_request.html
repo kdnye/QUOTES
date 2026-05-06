@@ -1,6 +1,16 @@
 {% extends 'base.html' %}
 {% block content %}
 <h2>{{ page_heading }}</h2>
+{% if origin_notes or dest_notes %}
+<div class="fsi-notice fsi-notice--warning shadow-sm mb-3" role="alert">
+  {% if origin_notes %}
+  <p class="mb-2"><strong>Shipment Note for {{ quote.origin }}:</strong> {{ origin_notes }}</p>
+  {% endif %}
+  {% if dest_notes %}
+  <p class="mb-0"><strong>Shipment Note for {{ quote.destination }}:</strong> {{ dest_notes }}</p>
+  {% endif %}
+</div>
+{% endif %}
 <div class="alert alert-info" role="note">
   <p class="mb-2">
     Need a refresher on this email workflow? Read the
@@ -278,7 +288,9 @@ const data = {{ {
   "base_total": base_total,
   "email_intro_line": email_intro_line,
   "subject_prefix": subject_prefix,
-  "admin_fee": admin_fee
+  "admin_fee": admin_fee,
+  "origin_note": origin_notes or "",
+  "dest_note": dest_notes or ""
 }|tojson }};
 
 function updateAddressFeedback(feedbackElement, message) {
@@ -425,8 +437,8 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   // 2. Route & Shipment Specs
   body += `SHIPMENT SPECIFICATIONS\n`;
   body += `------------------------------------------\n`;
-  body += `Origin:        ${data.origin}\n`;
-  body += `Destination:   ${data.destination}\n`;
+  body += `Origin:        ${data.origin}${data.origin_note ? ' — NOTE: ' + data.origin_note : ''}\n`;
+  body += `Destination:   ${data.destination}${data.dest_note ? ' — NOTE: ' + data.dest_note : ''}\n`;
   body += `Pieces:        ${data.pieces}\n`;
   body += `Weight:        ${data.weight} lbs (${data.weight_type})\n`;
   body += `Accessorials:  ${data.accessorial_names || 'None'}\n\n`;

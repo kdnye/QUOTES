@@ -1038,6 +1038,9 @@ def _render_email_request(
     )
     return_accessorial_options, _ = _get_accessorial_choices()
 
+    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
+    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+
     return render_template(
         "email_request.html",
         quote=quote,
@@ -1052,6 +1055,8 @@ def _render_email_request(
         admin_fee=float(admin_fee),
         maps_api_key=maps_api_key,
         return_accessorial_options=return_accessorial_options,
+        origin_notes=origin_notes,
+        dest_notes=dest_notes,
     )
 
 
