@@ -157,6 +157,13 @@ class Quote(db.Model):
     """
 
     __tablename__ = QUOTES_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "user_id",
+            "client_reference",
+            name="uq_quotes_user_id_client_reference",
+        ),
+    )
 
     id = db.Column(db.Integer, primary_key=True)
     quote_id = db.Column(
@@ -181,6 +188,8 @@ class Quote(db.Model):
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
     )
+    # Optional customer-provided reference, unique per user when present.
+    client_reference = db.Column(db.String(64), nullable=True, index=True)
     # IP address of the client that requested this quote (optional)
     request_ip = db.Column(db.String(45), nullable=True, index=True)
     warnings = db.Column(db.Text)  # calculation warnings shown to the user

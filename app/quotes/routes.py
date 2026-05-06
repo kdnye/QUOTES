@@ -47,6 +47,8 @@ EXTERNAL_QUOTE_EMAIL_INTRO = (
     "A message from Freight Services, Here is the quote information "
     "you were inquiring about."
 )
+CLIENT_REFERENCE_MAX_LENGTH = 64
+CLIENT_REFERENCE_ALLOWED_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9\-_/ ]*$")
 
 
 def _get_client_ip() -> str | None:
@@ -72,6 +74,49 @@ def _get_client_ip() -> str | None:
         if first:
             return first
     return request.remote_addr
+
+
+def _normalize_client_reference(raw_reference: object) -> tuple[str | None, str | None]:
+    """Normalize and validate an optional client reference string.
+
+    Inputs:
+        raw_reference: Value from request data, usually
+            ``request.form.get("client_reference")`` or
+            ``request.json.get("client_reference")``.
+
+    Outputs:
+        A tuple of ``(normalized_reference, error_message)`` where
+        ``normalized_reference`` is ``None`` for empty values and
+        ``error_message`` is ``None`` when validation succeeds.
+
+    External dependencies:
+        Uses module constants :data:`CLIENT_REFERENCE_MAX_LENGTH` and
+        :data:`CLIENT_REFERENCE_ALLOWED_PATTERN` for policy enforcement.
+    """
+
+    if raw_reference is None:
+        return None, None
+
+    if not isinstance(raw_reference, str):
+        return None, "Client reference must be a string."
+
+    normalized = raw_reference.strip()
+    if not normalized:
+        return None, None
+
+    if len(normalized) > CLIENT_REFERENCE_MAX_LENGTH:
+        return (
+            None,
+            f"Client reference must be {CLIENT_REFERENCE_MAX_LENGTH} characters or fewer.",
+        )
+
+    if not CLIENT_REFERENCE_ALLOWED_PATTERN.fullmatch(normalized):
+        return (
+            None,
+            "Client reference may contain letters, numbers, spaces, dashes, underscores, or forward slashes.",
+        )
+
+    return normalized, None
 
 
 @dataclass(frozen=True)
@@ -261,6 +306,9 @@ def new_quote():
         quote_type = data.get("quote_type", "Air")
         origin = data.get("origin_zip") or data.get("origin", "")
         destination = data.get("dest_zip") or data.get("destination", "")
+        client_reference, client_reference_error = _normalize_client_reference(
+            data.get("client_reference")
+        )
 
         errors: list[str] = []
         origin_valid, origin_reason = validate_us_zip(origin, api_key=maps_api_key)
@@ -279,6 +327,8 @@ def new_quote():
                 errors.append(
                     "Destination ZIP could not be validated with Google Places."
                 )
+        if client_reference_error:
+            errors.append(client_reference_error)
 
         weight_actual_raw = data.get("weight_actual")
         if weight_actual_raw in (None, ""):
@@ -477,6 +527,7 @@ def new_quote():
             width=width,
             height=height,
             rate_set=active_rate_set,
+            client_reference=client_reference,
             request_ip=client_ip,
             total=price,
             quote_metadata=json.dumps(metadata),
