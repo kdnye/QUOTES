@@ -887,6 +887,10 @@ def _format_quote_copy_email_body(
         "==========================================",
         f"Quote Total: $ {float(quote.total or 0.0):.2f}",
         f"Quote ID: {quote.quote_id}",
+    ]
+    if quote.client_reference:
+        lines.append(f"Client Reference #: {quote.client_reference}")
+    lines.extend([
         "",
         "SHIPMENT SPECIFICATIONS",
         "------------------------------------------",
@@ -894,7 +898,7 @@ def _format_quote_copy_email_body(
         + (f" (Note: {origin_notes})" if origin_notes else ""),
         f"Destination ZIP: {quote.destination}"
         + (f" (Note: {dest_notes})" if dest_notes else ""),
-    ]
+    ])
 
     if (quote.quote_type or "").strip().lower() == "hotshot":
         lines.append(f"Mileage: {mileage_text}")
