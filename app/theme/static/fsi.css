@@ -398,3 +398,30 @@ body {
 .fsi-admin-zip-zones__notes {
     white-space: pre-wrap;
 }
+
+/* --- Form Input Visibility Overrides --- */
+
+/* Default (Light Mode) */
+.form-control,
+.form-select,
+.form-check-input {
+    background-color: var(--fsi-color-surface-alt); /* Applies the light gray background */
+    border: 1px solid rgba(66, 73, 91, 0.45); /* Darkens the border for contrast */
+}
+
+/* Dark Mode handling */
+[data-bs-theme="dark"] .form-control,
+[data-bs-theme="dark"] .form-select,
+[data-bs-theme="dark"] .form-check-input {
+    background-color: var(--fsi-color-surface-alt);
+    border-color: rgb(231 237 248 / 30%);
+}
+
+/* Maintain a clean focus state when users click into the fields */
+.form-control:focus,
+.form-select:focus,
+.form-check-input:focus {
+    background-color: var(--fsi-color-white);
+    border-color: var(--fsi-color-primary);
+    box-shadow: 0 0 0 0.25rem var(--fsi-color-primary-soft);
+}
