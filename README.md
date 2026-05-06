@@ -41,6 +41,7 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
   notes for porting the app to another stack.
 - [Deployment](DEPLOYMENT.md) – Production roll-out, TLS, and maintenance
   checklists.
+- [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) – External-integration quick start for authentication, endpoints, and examples.
 - In-app Help Center (`/help`) – Task-oriented user guides rendered from
   `templates/help/`.
 - Local setup references in this README:
