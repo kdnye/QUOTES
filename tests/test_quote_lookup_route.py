@@ -148,7 +148,10 @@ def test_lookup_quote_post_invalid_uuid_renders_lookup_with_flash(
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
     with client.session_transaction() as session:
-        assert ("danger", "Please enter a valid Quote ID.") in session["_flashes"]
+        assert (
+            "danger",
+            "We could not find a matching quote for that lookup.",
+        ) in session["_flashes"]
 
 
 def test_lookup_quote_post_missing_quote_renders_lookup_with_not_found_flash(
@@ -169,10 +172,7 @@ def test_lookup_quote_post_missing_quote_renders_lookup_with_not_found_flash(
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
     with client.session_transaction() as session:
-        assert (
-            "danger",
-            "Quote not found. Please verify the Quote ID and try again.",
-        ) in session["_flashes"]
+        assert ("danger", "We could not find a matching quote for that lookup.") in session["_flashes"]
 
 
 def test_lookup_quote_post_found_quote_renders_result_context(
@@ -257,6 +257,57 @@ def test_lookup_quote_post_lowercase_quote_id_normalizes_to_match(
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
+def test_lookup_quote_post_client_reference_returns_controlled_list_for_collisions(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Client reference collisions should return the lookup template list view."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    quote_a = Quote(
+        quote_id="Q-RTYPLM23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=120.0,
+        total=300.0,
+        quote_metadata='{"client_reference":"PO 1001"}',
+        user_id=user.id,
+        user_email=user.email,
+    )
+    quote_b = Quote(
+        quote_id="Q-RTYPLM24",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=120.0,
+        total=305.0,
+        quote_metadata='{"client_reference":"PO 1001"}',
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add_all([quote_a, quote_b])
+    db.session.commit()
+
+    captured: dict[str, object] = {}
+
+    def _fake_render(template_name: str, **context: object) -> str:
+        captured["template_name"] = template_name
+        captured["context"] = context
+        return f"template={template_name}"
+
+    monkeypatch.setattr("app.quotes.routes.render_template", _fake_render)
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "po 1001"},
+    )
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=lookup_quote.html"
+    assert captured["template_name"] == "lookup_quote.html"
+    assert len(captured["context"]["matching_quotes"]) == 2
 
 
 def test_lookup_quote_post_customer_cannot_access_other_users_quote(

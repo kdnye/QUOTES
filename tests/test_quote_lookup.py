@@ -164,6 +164,7 @@ def test_lookup_quote_get_renders_heading_for_authenticated_user(app: Flask) -> 
     html = response.get_data(as_text=True)
     assert "Find Existing Quote" in html
     assert "Quote ID" in html
+    assert "Client Reference" in html
 
 
 def test_lookup_quote_post_invalid_uuid_shows_validation_flash(app: Flask) -> None:
@@ -176,7 +177,7 @@ def test_lookup_quote_post_invalid_uuid_shows_validation_flash(app: Flask) -> No
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Please enter a valid Quote ID." in html
+    assert "We could not find a matching quote for that lookup." in html
     assert 'class="alert alert-danger"' in html
 
 
@@ -190,7 +191,7 @@ def test_lookup_quote_post_missing_quote_shows_not_found_flash(app: Flask) -> No
 
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "Quote not found. Please verify the Quote ID and try again." in html
+    assert "We could not find a matching quote for that lookup." in html
     assert 'class="alert alert-danger"' in html
 
 
@@ -257,6 +258,92 @@ def test_lookup_quote_post_malformed_metadata_renders_without_server_error(
     assert "Origin: 30301 | Destination: 60601" in html
     assert "Quote Total" in html
     assert "$199.99" in html
+
+
+def test_lookup_quote_post_client_reference_returns_single_match(
+    app: Flask,
+) -> None:
+    """Client reference lookup should render result when exactly one scoped match exists."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    _create_quote(
+        user,
+        "Q-NMPQRT23",
+        quote_metadata=json.dumps({"client_reference": "PO 10452"}),
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "po 10452"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Q-NMPQRT23" in html
+
+
+def test_lookup_quote_post_client_reference_collision_shows_controlled_list(
+    app: Flask,
+) -> None:
+    """Collisions must not auto-select a first record and should show a list."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    _create_quote(
+        user,
+        "Q-COLLIDE2",
+        quote_metadata=json.dumps({"client_reference": "OPS-REF"}),
+    )
+    _create_quote(
+        user,
+        "Q-COLLIDE3",
+        quote_metadata=json.dumps({"client_reference": "OPS-REF"}),
+        total=245.5,
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "OPS-REF"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Multiple matches found" in html
+    assert "Q-COLLIDE2" in html
+    assert "Q-COLLIDE3" in html
+
+
+def test_lookup_quote_post_client_reference_scope_excludes_other_users(
+    app: Flask,
+) -> None:
+    """Customer users must only see collisions from their own quote scope."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    other_user = _create_user(role="customer")
+    _create_quote(
+        user,
+        "Q-OWNMATCH2",
+        quote_metadata=json.dumps({"client_reference": "PO-ONLY-MINE"}),
+    )
+    _create_quote(
+        other_user,
+        "Q-OTHERMAT2",
+        quote_metadata=json.dumps({"client_reference": "PO-ONLY-MINE"}),
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "PO-ONLY-MINE"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Q-OWNMATCH2" in html
+    assert "Q-OTHERMAT2" not in html
 
 
 def test_lookup_quote_post_customer_cannot_access_other_users_quote(app: Flask) -> None:
