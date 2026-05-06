@@ -277,6 +277,28 @@
   ></script>
   {% endif %}
 
+  <div class="fsi-form-section fsi-form-section--boxed">
+    <label for="client_reference" class="form-label">
+      Client Reference #
+      <i
+        class="bi bi-question-circle ms-1 text-secondary"
+        data-bs-toggle="tooltip"
+        title="Optional. Enter your PO number, job number, or internal reference to associate with this quote. Allowed characters: letters, numbers, spaces, hyphens, underscores, and slashes."
+      ></i>
+      <span class="text-muted fw-normal ms-1">(optional)</span>
+    </label>
+    <input
+      type="text"
+      id="client_reference"
+      name="client_reference"
+      class="form-control"
+      maxlength="64"
+      placeholder="e.g. PO-12345"
+      value="{{ client_reference or '' }}"
+      autocomplete="off"
+    />
+  </div>
+
   {% if errors %}
     <div class="alert alert-danger mt-3">
       <ul class="mb-0">
