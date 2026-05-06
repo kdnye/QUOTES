@@ -182,6 +182,40 @@ def clear_air_rate_cache() -> None:
     _air_rate_table_cache.cache_clear()
 
 
+def _quote_lookup_query_for_user(user: object):
+    """Return a quote lookup query scoped to the caller's visibility policy.
+
+    Inputs:
+        user: Authenticated principal, usually :data:`flask_login.current_user`.
+
+    Outputs:
+        SQLAlchemy query rooted at :attr:`app.models.Quote.query` and filtered
+        according to the lookup visibility policy.
+
+    External dependencies:
+        Starts from :attr:`app.models.Quote.query` and evaluates ``user`` role
+        flags stored on :class:`app.models.User`.
+
+    Visibility policy:
+        * ``customer`` users can only view their own quotes.
+        * Approved ``employee`` users and ``super_admin`` users can view all
+          quotes (global staff visibility).
+        * Unapproved ``employee`` users are limited to their own quotes.
+    """
+
+    scoped_query = Quote.query
+    role = (getattr(user, "role", "") or "").lower()
+    user_id = getattr(user, "id", None)
+
+    if role == "super_admin":
+        return scoped_query
+
+    if role == "employee" and bool(getattr(user, "employee_approved", False)):
+        return scoped_query
+
+    return scoped_query.filter(Quote.user_id == user_id)
+
+
 def _normalize_and_validate_quote_id(quote_id_input: str | None) -> str | None:
     """Normalize and validate a readable public quote identifier.
 
@@ -490,7 +524,8 @@ def lookup_quote():
         when a matching record is found.
 
     External dependencies:
-        Uses ``Quote.query.filter_by`` to load persisted quotes, calls
+        Uses :func:`_quote_lookup_query_for_user` to scope quote visibility and
+        load persisted quotes, calls
         :func:`app.quote.thresholds.check_thresholds` to recompute the
         threshold warning banner, and uses
         :func:`app.services.settings.is_quote_email_smtp_enabled` plus
@@ -506,7 +541,11 @@ def lookup_quote():
         flash("Please enter a valid Quote ID.", "danger")
         return render_template("lookup_quote.html")
 
-    quote = Quote.query.filter_by(quote_id=normalized_quote_id).first()
+    quote = (
+        _quote_lookup_query_for_user(current_user)
+        .filter_by(quote_id=normalized_quote_id)
+        .first()
+    )
     if quote is None:
         flash("Quote not found. Please verify the Quote ID and try again.", "danger")
         return render_template("lookup_quote.html")
