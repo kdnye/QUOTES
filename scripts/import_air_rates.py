@@ -448,7 +448,7 @@ def import_csvs(directory: Path) -> None:
                 ("zipcode", "rate_set"),
             )
             print(f"Inserted {inserted} ZipZone rows (skipped {skipped}).")
-            if inserted == 0:
+            if inserted == 0 and skipped == 0:
                 raise RuntimeError("No ZipZone rows loaded from CSV")
 
         vsc_zip_file = directory / "vsc zones.csv"
