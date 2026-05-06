@@ -21,7 +21,7 @@
             </select>
           </div>
 
-          <div class="col-12">
+          <div class="col-12" id="field_quote_id">
             <label for="quote_id" class="form-label">Quote ID</label>
             <input
               type="text"
@@ -32,17 +32,17 @@
             />
           </div>
 
-          <div class="col-12">
-            <label for="client_reference" class="form-label">Client Reference</label>
+          <div class="col-12 d-none" id="field_client_reference">
+            <label for="client_reference" class="form-label">Client Reference #</label>
             <input
               type="text"
               id="client_reference"
               name="client_reference"
               class="form-control"
-              placeholder="e.g. PO 10452"
+              placeholder="e.g. PO-12345"
             />
             <div class="form-text">
-              Use the same client reference value that was saved with the quote.
+              Enter the reference number exactly as it was saved with the quote.
             </div>
           </div>
 
@@ -50,6 +50,29 @@
             <button type="submit" class="btn btn-primary w-100">Find Quote</button>
           </div>
         </form>
+
+        <script>
+          (function () {
+            var modeSelect = document.getElementById('lookup_mode');
+            var fieldQuoteId = document.getElementById('field_quote_id');
+            var fieldClientRef = document.getElementById('field_client_reference');
+
+            function toggleFields() {
+              var mode = modeSelect.value;
+              if (mode === 'client_reference') {
+                fieldQuoteId.classList.add('d-none');
+                fieldClientRef.classList.remove('d-none');
+                fieldClientRef.querySelector('input').focus();
+              } else {
+                fieldClientRef.classList.add('d-none');
+                fieldQuoteId.classList.remove('d-none');
+                fieldQuoteId.querySelector('input').focus();
+              }
+            }
+
+            modeSelect.addEventListener('change', toggleFields);
+          })();
+        </script>
 
         {% if matching_quotes %}
           <hr />
