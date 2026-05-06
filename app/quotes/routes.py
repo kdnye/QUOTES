@@ -101,7 +101,7 @@ def _normalize_client_reference(raw_reference: object) -> tuple[str | None, str 
     if not isinstance(raw_reference, str):
         return None, "Client reference must be a string."
 
-    normalized = raw_reference.strip()
+    normalized = raw_reference.strip().upper()
     if not normalized:
         return None, None
 
@@ -654,7 +654,7 @@ def _build_quote_history_summary(quote: Quote) -> dict[str, str]:
     if not isinstance(metadata, dict):
         return fallback
 
-    client_reference = str(metadata.get("client_reference") or "—")
+    client_reference = quote.client_reference or "—"
     status = str(metadata.get("status") or "Saved")
     return {"client_reference": client_reference, "status": status}
 
@@ -699,12 +699,9 @@ def lookup_quote():
             flash("We could not find a matching quote for that lookup.", "danger")
             return render_template("lookup_quote.html")
 
-        compact_json_match = f'%"client_reference":"{normalized_client_reference}"%'
-        spaced_json_match = f'%"client_reference": "{normalized_client_reference}"%'
         matching_quotes = (
             scoped_query.filter(
-                Quote.quote_metadata.ilike(compact_json_match)
-                | Quote.quote_metadata.ilike(spaced_json_match)
+                Quote.client_reference.ilike(normalized_client_reference)
             )
             .order_by(Quote.created_at.desc(), Quote.id.desc())
             .all()
