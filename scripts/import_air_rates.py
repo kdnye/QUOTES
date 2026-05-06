@@ -152,6 +152,8 @@ def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[VscZone], int]:
             f"vsc zones.csv missing expected columns: {', '.join(sorted(missing))}"
         )
 
+    df["RATE_SET"] = _normalize_rate_sets(df)
+
     zone_rows: list[VscZone] = []
     invalid_zone_count = 0
     dedupe: dict[tuple[str, str], VscZone] = {}
@@ -170,10 +172,12 @@ def load_vsc_zip_zones(df: pd.DataFrame) -> tuple[list[VscZone], int]:
             invalid_zone_count += 1
             continue
 
+        rate_set = row.get("RATE_SET", DEFAULT_RATE_SET)
+
         parsed = VscZone(
             zipcode=zipcode,
             vsc_zone=zone,
-            rate_set=DEFAULT_RATE_SET,
+            rate_set=rate_set,
         )
         dedupe[(parsed.zipcode, parsed.rate_set)] = parsed
 

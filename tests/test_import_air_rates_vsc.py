@@ -79,6 +79,34 @@ def test_load_vsc_zip_zones_accepts_zone_column() -> None:
     }
 
 
+def test_load_vsc_zip_zones_reads_rate_set_per_row() -> None:
+    """Rate set is read from the Rate_Set column so scicr rows are tagged correctly."""
+    df = pd.DataFrame(
+        {
+            "Zipcode": ["90808", "90808"],
+            "Zone": [9, 9],
+            "Rate_Set": ["scicr", "default"],
+        }
+    )
+
+    rows, invalid_count = import_air_rates.load_vsc_zip_zones(df)
+
+    assert invalid_count == 0
+    assert {(r.zipcode, r.vsc_zone, r.rate_set) for r in rows} == {
+        ("90808", 9, "scicr"),
+        ("90808", 9, "default"),
+    }
+
+
+def test_load_vsc_zip_zones_defaults_rate_set_when_column_absent() -> None:
+    """Falls back to 'default' rate set when CSV has no Rate Set column."""
+    df = pd.DataFrame({"Zipcode": ["90808"], "Zone": [9]})
+
+    rows, _ = import_air_rates.load_vsc_zip_zones(df)
+
+    assert rows[0].rate_set == "default"
+
+
 def test_load_vsc_zip_zones_reports_malformed_zone_rows() -> None:
     df = pd.DataFrame(
         {
