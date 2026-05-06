@@ -290,7 +290,8 @@ const data = {{ {
   "subject_prefix": subject_prefix,
   "admin_fee": admin_fee,
   "origin_note": origin_notes or "",
-  "dest_note": dest_notes or ""
+  "dest_note": dest_notes or "",
+  "client_reference": quote.client_reference or ""
 }|tojson }};
 
 function updateAddressFeedback(feedbackElement, message) {
@@ -430,6 +431,9 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
   body += `QUOTE DETAILS\n`;
   body += `==========================================\n`;
   body += `Quote ID:      ${data.quote_id}\n`;
+  if (data.client_reference) {
+    body += `Client Ref #:  ${data.client_reference}\n`;
+  }
   body += `Pickup Date:   ${pickupDate}\n`;
   body += `Delivery Date: ${deliveryDate}\n`;
   body += `Return Quote:  ${returnQuoteRequested ? 'YES' : 'No'}\n\n`;
