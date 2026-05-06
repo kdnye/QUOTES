@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}My Quotes · FSI Quote Tool{% endblock %}
+
+{% block content %}
+  <h1 class="h3 mb-3">My Quotes</h1>
+
+  {% if quotes %}
+    <div class="table-responsive">
+      <table class="table table-striped table-hover align-middle">
+        <thead>
+          <tr>
+            <th scope="col">Date</th>
+            <th scope="col">Quote ID</th>
+            <th scope="col">Client Reference</th>
+            <th scope="col">Origin / Destination</th>
+            <th scope="col">Total</th>
+            <th scope="col">Status / Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for quote in quotes %}
+            {% set summary = quote_summaries.get(quote.id, {}) %}
+            <tr>
+              <td>{{ quote.created_at.strftime('%Y-%m-%d %H:%M') if quote.created_at else '—' }}</td>
+              <td><a href="{{ url_for('quotes.lookup_quote') }}">{{ quote.quote_id }}</a></td>
+              <td>{{ summary.get('client_reference', '—') }}</td>
+              <td>{{ quote.origin or '—' }} → {{ quote.destination or '—' }}</td>
+              <td>${{ '%.2f'|format(quote.total or 0) }}</td>
+              <td>{{ summary.get('status', 'Saved') }} / {{ quote.quote_type or '—' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <nav aria-label="My quotes pages">
+      <ul class="pagination">
+        <li class="page-item {% if not pagination.has_prev %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('quotes.my_quotes', page=pagination.prev_num, per_page=pagination.per_page) if pagination.has_prev else '#' }}">Previous</a>
+        </li>
+        <li class="page-item disabled"><span class="page-link">Page {{ pagination.page }} of {{ pagination.pages or 1 }}</span></li>
+        <li class="page-item {% if not pagination.has_next %}disabled{% endif %}">
+          <a class="page-link" href="{{ url_for('quotes.my_quotes', page=pagination.next_num, per_page=pagination.per_page) if pagination.has_next else '#' }}">Next</a>
+        </li>
+      </ul>
+    </nav>
+  {% else %}
+    <p class="text-muted">You do not have any saved quotes yet.</p>
+  {% endif %}
+{% endblock %}
