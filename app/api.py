@@ -6,11 +6,12 @@ import json
 import secrets
 from typing import Any, Dict
 
-from flask import Blueprint, current_app, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 from flask.typing import ResponseReturnValue
 from flask_limiter.util import get_remote_address
 
 from app import limiter
+from app.models import User
 from app.services import quote as quote_service
 
 api_bp = Blueprint("api", __name__)
@@ -75,18 +76,25 @@ def _api_rate_limit_value() -> str:
 
 
 def _api_rate_limit_key() -> str:
-    """Scope API rate limits by caller IP address and API token.
+    """Scope API rate limits by caller IP address and API identity.
+
+    Per-user keys are scoped by user id so that IP rotation does not bypass
+    per-key limits. The global service token is scoped by IP + token.
 
     Returns:
-        A key combining the remote address with the supplied API token. If no
-        token is provided, only the caller IP is used.
+        A string key used by Flask-Limiter to bucket this request.
 
     External dependencies:
+        * Reads :data:`flask.g` for ``api_user`` set by
+          :func:`_authorize_api_request`.
         * Reads :data:`flask.request.headers` for the ``Authorization`` header.
         * Calls :func:`flask_limiter.util.get_remote_address` for IP fallback.
     """
 
     remote_addr = request.remote_addr or get_remote_address()
+    api_user = getattr(g, "api_user", None)
+    if api_user is not None:
+        return f"user:{api_user.id}"
     token = _extract_api_token(request.headers.get("Authorization"))
     if token:
         return f"{remote_addr}:{token}"
@@ -96,6 +104,13 @@ def _api_rate_limit_key() -> str:
 def _authorize_api_request() -> ResponseReturnValue | None:
     """Validate the API authentication header for JSON API requests.
 
+    Accepts either the global ``API_AUTH_TOKEN`` (service-to-service) or a
+    per-user key issued via the admin dashboard. Per-user keys must have
+    both ``api_approved`` and ``api_enabled`` set on the matching
+    :class:`~app.models.User`. When a per-user key is matched the user
+    object is stored on :data:`flask.g` as ``g.api_user`` for downstream
+    views.
+
     Returns:
         ``None`` when the request is authorized. Otherwise returns a JSON
         response with the appropriate HTTP status code.
@@ -104,26 +119,16 @@ def _authorize_api_request() -> ResponseReturnValue | None:
         * Reads :data:`flask.current_app.config` for ``API_AUTH_TOKEN``.
         * Reads :data:`flask.request.headers` for the ``Authorization`` header.
         * Calls :func:`secrets.compare_digest` for constant-time comparison.
+        * Queries :class:`~app.models.User` for per-user key lookup.
         * Calls :func:`_api_error_response` to build standardized errors.
     """
-
-    expected_token = current_app.config.get("API_AUTH_TOKEN")
-    if not expected_token:
-        return _api_error_response(
-            error="API authentication is not configured.",
-            remediation=(
-                "Set API_AUTH_TOKEN in your environment or app settings, then "
-                "restart the service."
-            ),
-            status_code=500,
-        )
 
     authorization_header = request.headers.get("Authorization")
     if not authorization_header:
         return _api_error_response(
             error="Missing Authorization header.",
             remediation=(
-                "Provide an Authorization header using 'Bearer <API_AUTH_TOKEN>' "
+                "Provide an Authorization header using 'Bearer <your_api_key>' "
                 "and retry the request."
             ),
             status_code=401,
@@ -134,23 +139,34 @@ def _authorize_api_request() -> ResponseReturnValue | None:
         return _api_error_response(
             error="Invalid Authorization header.",
             remediation=(
-                "Use a single token value in the format 'Bearer <API_AUTH_TOKEN>' "
+                "Use a single token value in the format 'Bearer <your_api_key>' "
                 "without extra words."
             ),
             status_code=401,
         )
 
-    if not secrets.compare_digest(provided_token, expected_token):
-        return _api_error_response(
-            error="Invalid API token.",
-            remediation=(
-                "Verify API_AUTH_TOKEN matches the server configuration and rotate "
-                "the token if you suspect it leaked."
-            ),
-            status_code=403,
-        )
+    # Check global service token first.
+    global_token = current_app.config.get("API_AUTH_TOKEN")
+    if global_token and secrets.compare_digest(provided_token, global_token):
+        g.api_user = None
+        return None
 
-    return None
+    # Fall back to per-user keys.
+    api_user = User.query.filter_by(
+        api_key=provided_token, api_approved=True, api_enabled=True
+    ).first()
+    if api_user is not None:
+        g.api_user = api_user
+        return None
+
+    return _api_error_response(
+        error="Invalid API token.",
+        remediation=(
+            "Verify your API key is correct and that your account has active "
+            "API access. Contact your administrator if you need a key issued."
+        ),
+        status_code=403,
+    )
 
 
 @api_bp.before_request

@@ -1,0 +1,453 @@
+{% extends "base.html" %}
+{% block title %}API Reference · FSI Quote Tool{% endblock %}
+{% block content %}
+<div class="row">
+  <div class="col-lg-3 d-none d-lg-block">
+    <nav class="sticky-top pt-3" style="top: 1rem;">
+      <ul class="list-unstyled small">
+        <li class="mb-1"><a href="#authentication" class="text-decoration-none">Authentication</a></li>
+        <li class="mb-1"><a href="#base-url" class="text-decoration-none">Base URL</a></li>
+        <li class="mb-1"><a href="#rate-limits" class="text-decoration-none">Rate Limits</a></li>
+        <li class="mb-1"><a href="#endpoints" class="text-decoration-none">Endpoints</a>
+          <ul class="list-unstyled ms-3 mt-1">
+            <li class="mb-1"><a href="#post-quote" class="text-decoration-none">POST /api/quote</a></li>
+            <li class="mb-1"><a href="#get-quote" class="text-decoration-none">GET /api/quote/{id}</a></li>
+          </ul>
+        </li>
+        <li class="mb-1"><a href="#accessorials" class="text-decoration-none">Accessorials</a></li>
+        <li class="mb-1"><a href="#errors" class="text-decoration-none">Error Responses</a></li>
+        <li class="mb-1"><a href="#examples" class="text-decoration-none">Examples</a></li>
+      </ul>
+    </nav>
+  </div>
+
+  <div class="col-lg-9">
+    <h1 class="fsi-display mb-1">API Reference</h1>
+    <p class="fsi-body-muted mb-4">Programmatically generate and retrieve freight quotes.</p>
+
+    {% if api_key and api_enabled %}
+    <div class="fsi-notice fsi-notice--info mb-4">
+      <strong>Your API key is active.</strong> Use it as the Bearer token in all requests.
+      <div class="input-group mt-2" style="max-width: 560px;">
+        <input type="text" class="form-control form-control-sm font-monospace" id="my-api-key"
+               value="{{ api_key }}" readonly>
+        <button class="btn btn-outline-secondary btn-sm" type="button"
+                onclick="navigator.clipboard.writeText(document.getElementById('my-api-key').value).then(() => this.textContent = 'Copied!')">
+          Copy
+        </button>
+      </div>
+    </div>
+    {% elif api_key and not api_enabled %}
+    <div class="fsi-notice fsi-notice--warning mb-4">
+      Your API key exists but is currently <strong>disabled</strong>. Contact your administrator.
+    </div>
+    {% endif %}
+
+    <!-- Authentication -->
+    <section id="authentication" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Authentication</h2>
+      <p class="fsi-body">
+        All API requests require an <code>Authorization</code> header using the
+        <strong>Bearer</strong> token scheme. Two key types are accepted:
+      </p>
+      <ul class="fsi-body">
+        <li><strong>Per-user API key</strong> — issued by an FSI administrator per account.
+            Requests are rate-limited and tracked per key.</li>
+        <li><strong>Global service token</strong> — for server-to-server integrations.
+            Contact FSI operations to request one.</li>
+      </ul>
+      <div class="fsi-card mb-3">
+        <pre class="mb-0"><code>Authorization: Bearer &lt;your_api_key&gt;</code></pre>
+      </div>
+      <p class="fsi-body-muted small">
+        Keys must be kept confidential. If you suspect your key has been compromised,
+        contact your FSI administrator immediately to have it regenerated.
+      </p>
+    </section>
+
+    <!-- Base URL -->
+    <section id="base-url" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Base URL</h2>
+      <div class="fsi-card">
+        <pre class="mb-0"><code>https://&lt;your-instance-host&gt;/api</code></pre>
+      </div>
+      <p class="fsi-body-muted small mt-2">
+        All endpoints are relative to this base. The host matches the domain you use
+        to access the web quote tool.
+      </p>
+    </section>
+
+    <!-- Rate Limits -->
+    <section id="rate-limits" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Rate Limits</h2>
+      <p class="fsi-body">
+        API requests are limited to <strong>30 per minute</strong> per key by default.
+        Per-user keys are bucketed by account; the global service token is bucketed by
+        IP address. Rate limit headers are included on every response:
+      </p>
+      <div class="fsi-card">
+        <pre class="mb-0"><code>X-RateLimit-Limit: 30
+X-RateLimit-Remaining: 27
+X-RateLimit-Reset: 1746564720</code></pre>
+      </div>
+      <p class="fsi-body-muted small mt-2">
+        Exceeding the limit returns HTTP <code>429 Too Many Requests</code>. Back off
+        and retry after the reset time indicated in the headers.
+      </p>
+    </section>
+
+    <!-- Endpoints -->
+    <section id="endpoints" class="mb-5">
+      <h2 class="fsi-section-title mb-4">Endpoints</h2>
+
+      <!-- POST /api/quote -->
+      <div id="post-quote" class="mb-5">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge bg-success fs-6 px-3 py-2">POST</span>
+          <code class="fs-5">/api/quote</code>
+        </div>
+        <p class="fsi-body">Generate a new freight quote. Returns a persisted quote record with a unique Quote ID.</p>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Request Body (JSON)</h3>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr>
+                <th>Field</th>
+                <th>Type</th>
+                <th>Required</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>quote_type</code></td>
+                <td>string</td>
+                <td><span class="badge bg-danger">Yes</span></td>
+                <td><code>"Hotshot"</code> or <code>"Air"</code></td>
+              </tr>
+              <tr>
+                <td><code>origin</code></td>
+                <td>string</td>
+                <td><span class="badge bg-danger">Yes</span></td>
+                <td>Origin 5-digit US ZIP code (e.g. <code>"98001"</code>)</td>
+              </tr>
+              <tr>
+                <td><code>destination</code></td>
+                <td>string</td>
+                <td><span class="badge bg-danger">Yes</span></td>
+                <td>Destination 5-digit US ZIP code</td>
+              </tr>
+              <tr>
+                <td><code>weight</code></td>
+                <td>number</td>
+                <td><span class="badge bg-danger">Yes</span></td>
+                <td>Actual shipment weight in pounds</td>
+              </tr>
+              <tr>
+                <td><code>pieces</code></td>
+                <td>integer</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>Number of pieces/units. Default: <code>1</code></td>
+              </tr>
+              <tr>
+                <td><code>length</code></td>
+                <td>number</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>Package length in inches. Used to compute dimensional weight.</td>
+              </tr>
+              <tr>
+                <td><code>width</code></td>
+                <td>number</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>Package width in inches.</td>
+              </tr>
+              <tr>
+                <td><code>height</code></td>
+                <td>number</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>Package height in inches.</td>
+              </tr>
+              <tr>
+                <td><code>dim_weight</code></td>
+                <td>number</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>
+                  Pre-calculated dimensional weight in pounds. Provide this
+                  instead of <code>length</code>/<code>width</code>/<code>height</code>
+                  if you calculate it on your side. Billable weight is
+                  <code>max(weight, dim_weight)</code>.
+                </td>
+              </tr>
+              <tr>
+                <td><code>accessorials</code></td>
+                <td>array of strings</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>
+                  List of accessorial service names to add to the quote.
+                  Names are case-insensitive. See the
+                  <a href="#accessorials">Accessorials</a> section below.
+                  Example: <code>["Liftgate", "Residential Delivery"]</code>
+                </td>
+              </tr>
+              <tr>
+                <td><code>user_email</code></td>
+                <td>string</td>
+                <td><span class="badge bg-secondary">No</span></td>
+                <td>
+                  Email address to associate with the quote record.
+                  If omitted, the quote is created anonymously.
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Billable Weight Logic</h3>
+        <p class="fsi-body">
+          The system automatically selects the higher of actual weight and dimensional weight
+          as the billable weight. Dimensional weight is calculated as
+          <code>(L × W × H) / 139</code> when dimensions are provided. The response
+          indicates which method was used via the <code>weight_method</code> field.
+        </p>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Response — 201 Created</h3>
+        <div class="fsi-card mb-3">
+          <pre class="mb-0"><code>{
+  "quote_id":      "Q-BCDFGHJ2",
+  "quote_type":    "Hotshot",
+  "origin":        "98001",
+  "destination":   "90210",
+  "weight":        520.0,
+  "weight_method": "actual",
+  "actual_weight": 520.0,
+  "dim_weight":    310.0,
+  "pieces":        3,
+  "total":         847.50,
+  "metadata": {
+    "zone":              "C",
+    "miles":             1142.3,
+    "base_rate":         680.00,
+    "fuel_surcharge":    102.00,
+    "fuel_pct":          0.15,
+    "vsc_surcharge":     65.50,
+    "accessorials": {
+      "Liftgate": 75.00
+    },
+    "accessorial_total": 75.00,
+    "dest_zone":         3,
+    "weight_break":      null
+  }
+}</code></pre>
+        </div>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Metadata Fields</h3>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered align-middle">
+            <thead class="table-light">
+              <tr><th>Field</th><th>Description</th></tr>
+            </thead>
+            <tbody>
+              <tr><td><code>zone</code></td><td>Rate zone assigned based on calculated distance (Hotshot) or ZIP-zone mapping (Air)</td></tr>
+              <tr><td><code>miles</code></td><td>Driving distance in miles between origin and destination (Hotshot only)</td></tr>
+              <tr><td><code>base_rate</code></td><td>Core freight charge before surcharges and accessorials</td></tr>
+              <tr><td><code>fuel_surcharge</code></td><td>Fuel surcharge dollar amount</td></tr>
+              <tr><td><code>fuel_pct</code></td><td>Fuel surcharge percentage applied</td></tr>
+              <tr><td><code>vsc_surcharge</code></td><td>Variable fuel surcharge dollar amount based on EIA diesel prices</td></tr>
+              <tr><td><code>accessorials</code></td><td>Object mapping each applied accessorial name to its dollar amount</td></tr>
+              <tr><td><code>accessorial_total</code></td><td>Sum of all accessorial charges</td></tr>
+              <tr><td><code>dest_zone</code></td><td>VSC destination zone number (1–10) used for fuel surcharge lookup</td></tr>
+              <tr><td><code>weight_break</code></td><td>Optional weight threshold above which a reduced per-lb rate applies</td></tr>
+              <tr><td><code>origin_notes</code></td><td>Any special handling notes for the origin ZIP (e.g. airtray restrictions)</td></tr>
+              <tr><td><code>dest_notes</code></td><td>Any special handling notes for the destination ZIP</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- GET /api/quote/{id} -->
+      <div id="get-quote" class="mb-5">
+        <div class="d-flex align-items-center gap-2 mb-3">
+          <span class="badge bg-primary fs-6 px-3 py-2">GET</span>
+          <code class="fs-5">/api/quote/{quote_id}</code>
+        </div>
+        <p class="fsi-body">
+          Retrieve a previously generated quote by its Quote ID (e.g. <code>Q-BCDFGHJ2</code>).
+          Returns the same payload structure as the POST endpoint.
+        </p>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Path Parameter</h3>
+        <div class="table-responsive mb-3">
+          <table class="table table-sm table-bordered">
+            <thead class="table-light"><tr><th>Parameter</th><th>Description</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><code>quote_id</code></td>
+                <td>The Quote ID returned when the quote was created (e.g. <code>Q-BCDFGHJ2</code>)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Response — 200 OK</h3>
+        <p class="fsi-body">Same JSON structure as the POST response above.</p>
+
+        <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Response — 404 Not Found</h3>
+        <div class="fsi-card">
+          <pre class="mb-0"><code>{
+  "error":       "Quote not found",
+  "remediation": "Confirm the quote_id exists and belongs to this environment, then retry the lookup."
+}</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <!-- Accessorials -->
+    <section id="accessorials" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Accessorials</h2>
+      <p class="fsi-body">
+        Pass accessorial names as a JSON array in the <code>accessorials</code> field.
+        Names are matched case-insensitively. Unknown names are silently ignored.
+      </p>
+      {% if accessorials %}
+      <div class="table-responsive mb-3">
+        <table class="table table-sm table-bordered align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>Name</th>
+              <th>Type</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for acc in accessorials %}
+            <tr>
+              <td><code>{{ acc.name }}</code></td>
+              <td>{{ "Percentage of base charge" if acc.is_percentage else "Flat fee" }}</td>
+              <td>
+                {% if acc.amount is not none %}
+                  {% if acc.is_percentage %}
+                    {{ "%.1f"|format(acc.amount * 100) }}%
+                  {% else %}
+                    ${{ "%.2f"|format(acc.amount) }}
+                  {% endif %}
+                {% else %}
+                  <span class="text-muted">Variable</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% else %}
+      <p class="fsi-body-muted">No accessorials are currently configured.</p>
+      {% endif %}
+      <p class="fsi-body-muted small">
+        Accessorial amounts shown above are current values and may change.
+        The quote total always reflects the rate at time of quote generation.
+      </p>
+    </section>
+
+    <!-- Error Responses -->
+    <section id="errors" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Error Responses</h2>
+      <p class="fsi-body">
+        All error responses follow the same JSON structure with an <code>error</code>
+        summary and a <code>remediation</code> field containing the recommended fix.
+      </p>
+      <div class="fsi-card mb-3">
+        <pre class="mb-0"><code>{
+  "error":       "Missing Authorization header.",
+  "remediation": "Provide an Authorization header using 'Bearer &lt;your_api_key&gt;' and retry the request."
+}</code></pre>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-bordered align-middle">
+          <thead class="table-light">
+            <tr><th>HTTP Status</th><th>Meaning</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>400 Bad Request</code></td><td>Invalid field value (e.g. unknown <code>quote_type</code>)</td></tr>
+            <tr><td><code>401 Unauthorized</code></td><td>Missing or malformed <code>Authorization</code> header</td></tr>
+            <tr><td><code>403 Forbidden</code></td><td>API key is invalid, disabled, or not approved</td></tr>
+            <tr><td><code>404 Not Found</code></td><td>Quote ID does not exist</td></tr>
+            <tr><td><code>429 Too Many Requests</code></td><td>Rate limit exceeded — back off and retry</td></tr>
+            <tr><td><code>500 Internal Server Error</code></td><td>Server-side error — contact FSI operations</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Examples -->
+    <section id="examples" class="mb-5">
+      <h2 class="fsi-section-title mb-3">Examples</h2>
+
+      <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Basic Hotshot Quote</h3>
+      <div class="fsi-card mb-4">
+        <pre class="mb-0"><code>curl -X POST https://&lt;host&gt;/api/quote \
+  -H "Authorization: Bearer &lt;your_api_key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quote_type":  "Hotshot",
+    "origin":      "98001",
+    "destination": "90210",
+    "weight":      520,
+    "pieces":      3
+  }'</code></pre>
+      </div>
+
+      <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Air Quote with Dimensions and Accessorials</h3>
+      <div class="fsi-card mb-4">
+        <pre class="mb-0"><code>curl -X POST https://&lt;host&gt;/api/quote \
+  -H "Authorization: Bearer &lt;your_api_key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quote_type":    "Air",
+    "origin":        "10001",
+    "destination":   "90210",
+    "weight":        150,
+    "pieces":        2,
+    "length":        48,
+    "width":         40,
+    "height":        36,
+    "accessorials":  ["Liftgate", "Residential Delivery"],
+    "user_email":    "dispatcher@example.com"
+  }'</code></pre>
+      </div>
+
+      <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Retrieve a Saved Quote</h3>
+      <div class="fsi-card mb-4">
+        <pre class="mb-0"><code>curl https://&lt;host&gt;/api/quote/Q-BCDFGHJ2 \
+  -H "Authorization: Bearer &lt;your_api_key&gt;"</code></pre>
+      </div>
+
+      <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Python Example</h3>
+      <div class="fsi-card mb-4">
+        <pre class="mb-0"><code>import requests
+
+API_KEY = "&lt;your_api_key&gt;"
+BASE_URL = "https://&lt;host&gt;/api"
+
+response = requests.post(
+    f"{BASE_URL}/quote",
+    headers={"Authorization": f"Bearer {API_KEY}"},
+    json={
+        "quote_type":   "Hotshot",
+        "origin":       "98001",
+        "destination":  "90210",
+        "weight":       750,
+        "pieces":       1,
+        "accessorials": ["Liftgate"],
+    },
+)
+response.raise_for_status()
+quote = response.json()
+print(f"Quote {quote['quote_id']}: ${quote['total']:.2f}")
+</code></pre>
+      </div>
+    </section>
+
+  </div>
+</div>
+{% endblock %}

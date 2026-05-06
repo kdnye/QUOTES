@@ -104,7 +104,7 @@ def test_missing_authorization_header_returns_remediation(client: FlaskClient) -
     assert response.get_json() == {
         "error": "Missing Authorization header.",
         "remediation": (
-            "Provide an Authorization header using 'Bearer <API_AUTH_TOKEN>' "
+            "Provide an Authorization header using 'Bearer <your_api_key>' "
             "and retry the request."
         ),
     }
