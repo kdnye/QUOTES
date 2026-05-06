@@ -7,7 +7,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import FuelSurcharge, User, ZipZone, db
+from app.models import FuelSurcharge, Quote, User, ZipZone, db
 from app.services.settings import set_setting
 
 
@@ -152,6 +152,100 @@ def test_new_quote_post_includes_shipment_notes_on_initial_render(
     context = captured["context"]
     assert context["origin_notes"] == "Origin test note"
     assert context["dest_notes"] == "Destination test note"
+
+
+def test_new_quote_persists_normalized_client_reference(app: Flask) -> None:
+    """Persist a trimmed client reference when provided by the request.
+
+    Inputs:
+        app: Flask app fixture configured with database-backed quote routes.
+
+    Outputs:
+        None. Asserts the saved :class:`app.models.Quote` stores the normalized
+        client reference.
+
+    External dependencies:
+        Calls :meth:`flask.testing.FlaskClient.post` for ``/quotes/new`` and
+        then queries :class:`app.models.Quote` through
+        :attr:`app.models.Quote.query`.
+    """
+
+    client = app.test_client()
+    _create_user_and_login(client)
+
+    response = client.post(
+        "/quotes/new",
+        json={
+            "quote_type": "Air",
+            "origin_zip": "30301",
+            "dest_zip": "60601",
+            "weight_actual": "10",
+            "pieces": "1",
+            "client_reference": "  REF-123 / A  ",
+        },
+    )
+
+    assert response.status_code == 200
+    quote = Quote.query.order_by(Quote.id.desc()).first()
+    assert quote is not None
+    assert quote.client_reference == "REF-123 / A"
+
+
+def test_new_quote_allows_missing_client_reference(app: Flask) -> None:
+    """Save quotes without client references as NULL values."""
+
+    client = app.test_client()
+    _create_user_and_login(client)
+
+    response = client.post(
+        "/quotes/new",
+        json={
+            "quote_type": "Air",
+            "origin_zip": "30301",
+            "dest_zip": "60601",
+            "weight_actual": "10",
+            "pieces": "1",
+        },
+    )
+
+    assert response.status_code == 200
+    quote = Quote.query.order_by(Quote.id.desc()).first()
+    assert quote is not None
+    assert quote.client_reference is None
+
+
+@pytest.mark.parametrize(
+    "bad_reference",
+    [
+        "@bad",
+        "A" * 65,
+    ],
+)
+def test_new_quote_rejects_invalid_client_reference(
+    app: Flask, bad_reference: str
+) -> None:
+    """Reject invalid client-reference inputs with a 400 response."""
+
+    client = app.test_client()
+    _create_user_and_login(client)
+
+    response = client.post(
+        "/quotes/new",
+        json={
+            "quote_type": "Air",
+            "origin_zip": "30301",
+            "dest_zip": "60601",
+            "weight_actual": "10",
+            "pieces": "1",
+            "client_reference": bad_reference,
+        },
+    )
+
+    assert response.status_code == 400
+    payload = response.get_json()
+    assert payload is not None
+    assert "errors" in payload
+    assert any("Client reference" in message for message in payload["errors"])
 
 
 def test_admin_settings_links_include_vsc_pages(app: Flask) -> None:
