@@ -245,6 +245,7 @@ def api_create_quote() -> ResponseReturnValue:
     # omits user_id / user_email from the request body.
     user_id = data.get("user_id") or (api_user.id if api_user else None)
     user_email = data.get("user_email") or (api_user.email if api_user else None)
+    user_rate_set = api_user.rate_set if api_user else None
     quote_source = "api_key" if api_user is not None else "api_service"
 
     result = quote_service.create_quote(
@@ -260,6 +261,7 @@ def api_create_quote() -> ResponseReturnValue:
         height=data.get("height", 0.0),
         dim_weight=data.get("dim_weight", 0.0),
         accessorials=data.get("accessorials", []),
+        rate_set=user_rate_set,
         quote_source=quote_source,
         request_ip=request.remote_addr,
     )

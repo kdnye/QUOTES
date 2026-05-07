@@ -6,18 +6,59 @@ retrieve quote records for the application.
 """
 
 import json
+from threading import Lock
+from time import time
 
-from app.database import Session, Quote, EmailQuoteRequest, Accessorial, ZipZone
+from app.database import Session, Quote, EmailQuoteRequest, ZipZone
+from app.models import Accessorial
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
+_ACCESSORIAL_CACHE_TTL_SECONDS = 60 * 60 * 24
+_accessorial_cache_lock = Lock()
+_accessorial_cache_rows: list[Accessorial] | None = None
+_accessorial_cache_expires_at: float = 0.0
+
+
+def _get_accessorial_rows() -> list[Accessorial]:
+    """Return cached accessorial rows with a 24-hour max refresh interval.
+
+    Inputs:
+        None.
+
+    Outputs:
+        list[Accessorial]: Accessorial rows loaded via
+        :attr:`app.models.Accessorial.query`.
+
+    External dependencies:
+        * Calls :meth:`flask_sqlalchemy.query.Query.all` through
+          :attr:`app.models.Accessorial.query`.
+        * Uses :func:`time.time` to enforce a 24-hour time-to-live cache.
+    """
+
+    global _accessorial_cache_rows
+    global _accessorial_cache_expires_at
+
+    now = time()
+    if _accessorial_cache_rows is not None and now < _accessorial_cache_expires_at:
+        return _accessorial_cache_rows
+
+    with _accessorial_cache_lock:
+        now = time()
+        if _accessorial_cache_rows is not None and now < _accessorial_cache_expires_at:
+            return _accessorial_cache_rows
+
+        rows = list(Accessorial.query.all())
+        _accessorial_cache_rows = rows
+        _accessorial_cache_expires_at = now + _ACCESSORIAL_CACHE_TTL_SECONDS
+        return rows
+
 
 def get_accessorial_options(quote_type: str) -> list[str]:
     """Return list of accessorial names from the database."""
-    with Session() as db:
-        names = [a.name for a in db.query(Accessorial).all()]
+    names = [a.name for a in _get_accessorial_rows()]
     if quote_type == "Hotshot":
         names = [n for n in names if "guarantee" not in n.lower()]
     return names
@@ -105,27 +146,26 @@ def create_quote(
     guarantee_pct: float | None = None
 
     if accessorials:
-        with Session() as db:
-            acc_map = {str(a.name).strip().lower(): a for a in db.query(Accessorial).all()}
+        acc_map = {str(a.name).strip().lower(): a for a in _get_accessorial_rows()}
 
-            for raw_acc in accessorials:
-                if not raw_acc:
-                    continue
+        for raw_acc in accessorials:
+            if not raw_acc:
+                continue
 
-                acc = str(raw_acc).strip()
-                record = acc_map.get(acc.lower())
+            acc = str(raw_acc).strip()
+            record = acc_map.get(acc.lower())
 
-                if not record:
-                    continue
+            if not record:
+                continue
 
-                display_name = str(record.name).strip()
-                amount = float(record.amount or 0.0)
+            display_name = str(record.name).strip()
+            amount = float(record.amount or 0.0)
 
-                if "guarantee" in display_name.lower():
-                    guarantee_pct = amount if amount > 0 else 25.0
-                elif display_name not in accessorial_costs:
-                    accessorial_costs[display_name] = amount
-                    accessorial_total += amount
+            if "guarantee" in display_name.lower():
+                guarantee_pct = amount if amount > 0 else 25.0
+            elif display_name not in accessorial_costs:
+                accessorial_costs[display_name] = amount
+                accessorial_total += amount
 
     if quote_type == "Air":
         result = calculate_air_quote(
