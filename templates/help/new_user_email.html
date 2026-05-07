@@ -27,7 +27,7 @@
 <h1 class="mb-1">New User Welcome Email</h1>
 <p class="text-muted mb-4">
   Fill in the fields below, then click <strong>Open in Outlook</strong> to launch a pre-filled Compose window.
-  Send the email with Outlook's built-in encryption (Encrypt-Only or Do Not Forward).
+  Use Outlook's built-in <strong>Encrypt</strong> button before sending so credentials are protected in transit.
 </p>
 
 <div class="row g-4">
@@ -53,13 +53,13 @@
         </div>
 
         <div class="mb-3">
-          <label for="secretLink" class="form-label">One-Time Secret Link</label>
-          <input type="url" class="form-control" id="secretLink" placeholder="https://onetimesecret.com/secret/..." autocomplete="off">
-          <div class="form-text">
-            Create at <a href="https://onetimesecret.com" target="_blank" rel="noopener noreferrer">onetimesecret.com</a> —
-            paste password &amp; API key into one secret, set to expire after first view.
-            Leave blank to fill in manually after opening Outlook.
-          </div>
+          <label for="password" class="form-label">Temporary Password <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="password" placeholder="TempP@ssw0rd!" autocomplete="off">
+        </div>
+
+        <div class="mb-3">
+          <label for="apiKey" class="form-label">API Key <span class="text-muted small">(optional)</span></label>
+          <input type="text" class="form-control font-monospace" id="apiKey" placeholder="Leave blank if no API access" autocomplete="off">
         </div>
 
         <div class="mb-4">
@@ -78,6 +78,10 @@
           </button>
         </div>
         <div id="copyFeedback" class="text-success small mt-2" style="display:none;">Copied to clipboard.</div>
+        <div id="lengthWarning" class="alert alert-warning small mt-3 mb-0" style="display:none;">
+          <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
+          Body too long for mailto: — use <strong>Copy Body</strong>, then paste into a new Outlook message and encrypt before sending.
+        </div>
       </div>
     </div>
   </div>
@@ -97,10 +101,11 @@
   const BASE_URL = window.location.origin;
   const SUBJECT  = "FSI Quote Tool — Your Account Is Ready";
 
-  function buildBody(firstName, userEmail, secretLink, includeApi) {
+  function buildBody(firstName, userEmail, password, apiKey, includeApi) {
     const name      = firstName  || "[First Name]";
     const loginUser = userEmail  || "[email@example.com]";
-    const credLink  = secretLink || "[INSERT ONE-TIME SECRET LINK]";
+    const pw        = password   || "[temporary password]";
+    const key       = apiKey     || "[api key]";
 
     const lines = [
       "Hi " + name + ",",
@@ -112,11 +117,18 @@
       "----------------------------------------------------------------",
       "Login URL:   " + BASE_URL,
       "Username:    " + loginUser,
-      "Password:    (see secure link below)",
-      "API Key:     (see secure link below)",
+      "Password:    " + pw,
+    ];
+
+    if (includeApi && apiKey) {
+      lines.push("API Key:     " + key);
+    } else if (includeApi) {
+      lines.push("API Key:     " + key);
+    }
+
+    lines.push(
       "",
-      "Credentials link — click once to reveal, then save to a password manager:",
-      credLink,
+      "Please change your password after your first login.",
       "",
       "----------------------------------------------------------------",
       "HOW THE APP WORKS",
@@ -144,7 +156,7 @@
       "",
       "IMPORTANT: All quotes are subject to final review by Freight",
       "Services Inc. Rates may change if requirements differ from inputs.",
-    ];
+    );
 
     if (includeApi) {
       lines.push(
@@ -155,7 +167,7 @@
         "Base URL:  " + BASE_URL + "/api",
         "",
         "Authentication — include your API key as a Bearer token:",
-        "  Authorization: Bearer YOUR_API_KEY",
+        "  Authorization: Bearer " + (apiKey || "YOUR_API_KEY"),
         "",
         "Rate limit: 30 requests per minute.",
         "Response headers include X-RateLimit-Remaining and X-RateLimit-Reset.",
@@ -175,7 +187,7 @@
         "  All errors include “error” and “remediation” fields.",
         "",
         "Excel / Power Query: use Web.Contents with an Authorization header.",
-        "Full example: " + BASE_URL + "/help/api",
+        "Full reference: " + BASE_URL + "/help/api",
       );
     }
 
@@ -185,15 +197,15 @@
       "HELP & SUPPORT",
       "----------------------------------------------------------------",
       "Help Center:  " + BASE_URL + "/help",
-      "API Docs:     " + BASE_URL + "/help/api",
+      (includeApi ? "API Docs:     " + BASE_URL + "/help/api" : null),
       "Operations:   operations@freightservices.net",
       "",
       "Let us know if you have any questions getting started.",
       "",
       "— Freight Services Inc.",
-    );
+    ).filter(Boolean);
 
-    return lines.join("\r\n");
+    return lines.filter(function (l) { return l !== null; }).join("\r\n");
   }
 
   function getValues() {
@@ -201,36 +213,37 @@
       toEmail:    document.getElementById("toEmail").value.trim(),
       firstName:  document.getElementById("firstName").value.trim(),
       userEmail:  document.getElementById("userEmail").value.trim(),
-      secretLink: document.getElementById("secretLink").value.trim(),
+      password:   document.getElementById("password").value.trim(),
+      apiKey:     document.getElementById("apiKey").value.trim(),
       includeApi: document.getElementById("includeApi").checked,
     };
   }
 
   function updatePreview() {
     const v = getValues();
-    document.getElementById("preview").textContent =
-      buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+    const body = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
+    document.getElementById("preview").textContent = body;
+
+    const href = "mailto:" + encodeURIComponent(v.toEmail)
+               + "?subject=" + encodeURIComponent(SUBJECT)
+               + "&body=" + encodeURIComponent(body);
+    const tooLong = href.length > 2000;
+    document.getElementById("lengthWarning").style.display = tooLong ? "block" : "none";
+    document.getElementById("openOutlook").disabled = tooLong;
   }
 
   document.getElementById("openOutlook").addEventListener("click", function () {
     const v    = getValues();
-    const body = buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+    const body = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
     const href = "mailto:" + encodeURIComponent(v.toEmail)
                + "?subject=" + encodeURIComponent(SUBJECT)
                + "&body="    + encodeURIComponent(body);
-    if (href.length > 2000) {
-      alert(
-        "The email body is too long to open directly in Outlook (" + href.length + " characters).\n\n" +
-        "Use the ‘Copy Body’ button instead, then paste into a new Outlook message."
-      );
-      return;
-    }
     window.location.href = href;
   });
 
   document.getElementById("copyBody").addEventListener("click", function () {
     const v = getValues();
-    const text = buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+    const text = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
     navigator.clipboard.writeText(text).then(function () {
       const fb = document.getElementById("copyFeedback");
       fb.style.display = "block";
@@ -238,7 +251,7 @@
     });
   });
 
-  ["toEmail", "firstName", "userEmail", "secretLink", "includeApi"].forEach(function (id) {
+  ["toEmail", "firstName", "userEmail", "password", "apiKey", "includeApi"].forEach(function (id) {
     document.getElementById(id).addEventListener("input", updatePreview);
     document.getElementById(id).addEventListener("change", updatePreview);
   });
