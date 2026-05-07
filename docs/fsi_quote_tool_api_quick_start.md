@@ -236,15 +236,91 @@ The API can be called directly via `UrlFetchApp.fetch` from Apps Script.
 Use this pattern:
 
 - Keep API keys in script properties (not directly in worksheet cells).
-- POST to `https://<your-instance-host>/api/quote`.
+- POST to `https://quote.freightservices.net/api/quote`.
+- Use `+` for string concatenation in Apps Script.
 - Parse JSON and return either total or full breakdown fields.
+- Display the `remediation` field from error responses to help users fix invalid inputs.
 
 ### Microsoft Excel (Power Query)
 
-Power Query supports:
+Power Query supports POST requests via `Web.Contents(..., [Content = body, ManualStatusHandling = {400, 403, 404, 429}])`.
 
-- `GET` for retrieving existing quotes by ID.
-- `POST` via `Web.Contents(..., [Content = body])` for creating quotes.
+> **Privacy level required**: Set the data source privacy level to **Organizational** or **Public** in Power Query options. The default "Private" level blocks cross-source data transmission to external hosts.
+
+#### Power Query gotchas
+
+**String concatenation uses `&`, not `+`.**
+In Power Query's M language, `+` is strictly arithmetic. Use `&` to join text values:
+
+```m
+// Wrong — raises an error
+let url = "https://quote.freightservices.net/api/quote" + "/quote"
+
+// Correct
+let url = "https://quote.freightservices.net/api/quote"
+```
+
+**Avoid naming function parameters the same as JSON field names.**
+M can silently shadow a parameter name with a local binding, causing an "unbound name" compile error. Use a prefix on function parameters to prevent collisions:
+
+```m
+// Risky — "origin" parameter may shadow the JSON key "origin"
+(origin as text, destination as text) => ...
+
+// Safe — prefix parameters clearly
+(pOrigin as text, pDestination as text) =>
+  let
+    body = Json.FromValue([
+      quote_type = "Hotshot",
+      origin     = pOrigin,
+      destination = pDestination,
+      weight      = 100
+    ])
+  in body
+```
+
+**Normalize `quote_type` with `Text.Proper`** to tolerate user input like `"hotshot"` or `"HOTSHOT"`:
+
+```m
+quote_type = Text.Proper(pQuoteType)  // "hotshot" → "Hotshot"
+```
+
+**Always wrap ZIP codes in `Text.From`** to prevent Excel from stripping leading zeros (e.g., ZIP `01001` becomes `1001` when treated as a number):
+
+```m
+origin = Text.From(pOrigin)
+```
+
+**Use `ManualStatusHandling` to surface API error details.**
+Without it, Power Query raises a generic `400 Bad Request` and discards the response body. With it, you can read the `error` and `remediation` fields:
+
+```m
+let
+  body = Text.ToBinary(Json.FromValue([
+    quote_type  = Text.Proper(pQuoteType),
+    origin      = Text.From(pOrigin),
+    destination = Text.From(pDestination),
+    weight      = pWeight
+  ])),
+  response = Web.Contents(
+    "https://quote.freightservices.net/api/quote",
+    [
+      Headers        = [
+        Authorization  = "Bearer " & pApiKey,
+        #"Content-Type" = "application/json"
+      ],
+      Content             = body,
+      ManualStatusHandling = {400, 403, 404, 429, 500}
+    ]
+  ),
+  parsed = Json.Document(response),
+  result = if Record.HasFields(parsed, "error")
+           then error parsed[remediation]
+           else parsed
+in result
+```
+
+> Note: The `Authorization` header value must include `Bearer ` followed by a space before the token. Missing the space causes a `401 Unauthorized`.
 
 For repeatable workflows, parameterize origin/destination with named ranges and refresh.
 

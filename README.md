@@ -32,6 +32,8 @@ Services portal.
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
 | Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component is a stub (`get_dynamic_vsc_pct` returns `0.0`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
+| Microsoft Excel (Power Query) integration | ✅ Stable | POST quotes from Excel via `Web.Contents` with `ManualStatusHandling`. Set data source privacy to **Organizational** or **Public** — the default "Private" level blocks requests to external hosts. Use `&` for string concatenation and `Text.Proper` to normalize `quote_type`. See [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) for a complete M-code example. |
+| Google Sheets (Apps Script) integration | ✅ Stable | POST quotes via `UrlFetchApp.fetch`. Store the API key in script properties, not worksheet cells. |
 
 Operator note: Air quotes enforce per-piece limits using billable weight (the greater of actual or dimensional weight).
 

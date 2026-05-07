@@ -204,6 +204,8 @@ class Quote(db.Model):
     client_reference = db.Column(db.String(64), nullable=True, index=True)
     # IP address of the client that requested this quote (optional)
     request_ip = db.Column(db.String(45), nullable=True, index=True)
+    # Origin of the quote: "web", "api_key" (per-user API key), or "api_service" (global token)
+    quote_source = db.Column(db.String(20), nullable=True, index=True)
     warnings = db.Column(db.Text)  # calculation warnings shown to the user
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 

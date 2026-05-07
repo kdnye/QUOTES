@@ -562,6 +562,7 @@ def new_quote():
             warnings="\n".join(warnings) if warnings else "",
             user=current_user,
             user_email=current_user.email,
+            quote_source="web",
         )
         db.session.add(q)
         try:
