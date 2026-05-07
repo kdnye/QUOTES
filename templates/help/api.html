@@ -69,7 +69,7 @@
     <section id="base-url" class="mb-5">
       <h2 class="fsi-section-title mb-3">Base URL</h2>
       <div class="fsi-card">
-        <pre class="mb-0"><code>https://&lt;your-instance-host&gt;/api</code></pre>
+        <pre class="mb-0"><code>https://quote.freightservices.net/api</code></pre>
       </div>
       <p class="fsi-body-muted small mt-2">
         All endpoints are relative to this base. The host matches the domain you use
@@ -385,7 +385,7 @@ X-RateLimit-Reset: 1746564720</code></pre>
 
       <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Basic Hotshot Quote</h3>
       <div class="fsi-card mb-4">
-        <pre class="mb-0"><code>curl -X POST https://&lt;host&gt;/api/quote \
+        <pre class="mb-0"><code>curl -X POST https://quote.freightservices.net/api/quote \
   -H "Authorization: Bearer &lt;your_api_key&gt;" \
   -H "Content-Type: application/json" \
   -d '{
@@ -399,7 +399,7 @@ X-RateLimit-Reset: 1746564720</code></pre>
 
       <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Air Quote with Dimensions and Accessorials</h3>
       <div class="fsi-card mb-4">
-        <pre class="mb-0"><code>curl -X POST https://&lt;host&gt;/api/quote \
+        <pre class="mb-0"><code>curl -X POST https://quote.freightservices.net/api/quote \
   -H "Authorization: Bearer &lt;your_api_key&gt;" \
   -H "Content-Type: application/json" \
   -d '{
@@ -418,7 +418,7 @@ X-RateLimit-Reset: 1746564720</code></pre>
 
       <h3 class="h6 text-uppercase fw-bold mb-2" style="letter-spacing:.05em;">Retrieve a Saved Quote</h3>
       <div class="fsi-card mb-4">
-        <pre class="mb-0"><code>curl https://&lt;host&gt;/api/quote/Q-BCDFGHJ2 \
+        <pre class="mb-0"><code>curl https://quote.freightservices.net/api/quote/Q-BCDFGHJ2 \
   -H "Authorization: Bearer &lt;your_api_key&gt;"</code></pre>
       </div>
 
@@ -427,7 +427,7 @@ X-RateLimit-Reset: 1746564720</code></pre>
         <pre class="mb-0"><code>import requests
 
 API_KEY = "&lt;your_api_key&gt;"
-BASE_URL = "https://&lt;host&gt;/api"
+BASE_URL = "https://quote.freightservices.net/api"
 
 response = requests.post(
     f"{BASE_URL}/quote",
