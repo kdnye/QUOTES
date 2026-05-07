@@ -116,8 +116,7 @@ def run_migrations_online() -> None:
             transaction_per_migration=True,
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+        context.run_migrations()
 
 
 if context.is_offline_mode():
