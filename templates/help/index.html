@@ -26,12 +26,14 @@
           <h3 class="h5">Application Purpose</h3>
           <p class="mb-2">The Quote Tool is a web application for generating rapid freight quotes for <strong>Hotshot</strong> (expedited truck) and <strong>Air</strong> shipments. Users can register, calculate quotes, and email details; all quotes are saved to the database for future lookup.</p>
 
+          {% if is_internal %}
           <h3 class="h5">Technical Engine</h3>
           <ul class="mb-2">
             <li><strong>Routing:</strong> The pricing engine utilizes Google Maps integration and internal rate tables.</li>
             <li><strong>ZIP Validation:</strong> ZIP codes are validated against Google Places to ensure routing accuracy.</li>
             <li><strong>Service Defaults:</strong> New quotes default to <strong>Air</strong> mode unless the user explicitly selects <strong>Hotshot</strong>.</li>
           </ul>
+          {% endif %}
 
           <h3 class="h5">Standard Formulas</h3>
           <p class="mb-1"><strong>Dimensional Weight (Dim Weight):</strong></p>
@@ -224,6 +226,27 @@
         </div>
       </div>
     </div>
+
+    {% if is_internal %}
+    <div class="accordion-item border-warning">
+      <h2 class="accordion-header" id="headingInternal">
+        <button class="accordion-button collapsed text-warning-emphasis bg-warning-subtle" type="button" data-bs-toggle="collapse" data-bs-target="#collapseInternal" aria-expanded="false" aria-controls="collapseInternal">
+          <i class="bi bi-shield-lock me-2" aria-hidden="true"></i> Internal Resources — FSI Staff Only
+        </button>
+      </h2>
+      <div id="collapseInternal" class="accordion-collapse collapse" aria-labelledby="headingInternal" data-bs-parent="#helpAccordion">
+        <div class="accordion-body">
+          <p class="text-muted small mb-3">These guides are restricted to Freight Services employees and administrators.</p>
+          {% for topic in internal_topics %}
+          <div class="mb-3">
+            <h3 class="h6 mb-1"><a href="{{ url_for(topic.endpoint) }}">{{ topic.title }}</a></h3>
+            <p class="mb-0 text-muted small">{{ topic.summary }}</p>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    {% endif %}
 
   </div>
 </div>

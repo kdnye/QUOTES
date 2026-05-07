@@ -71,27 +71,53 @@ HELP_TOPICS: Final[List[HelpTopic]] = [
 ]
 """Ordered list of help topics displayed in the sidebar navigation."""
 
+INTERNAL_HELP_TOPICS: Final[List[HelpTopic]] = [
+    {
+        "slug": "admin",
+        "title": "Administrator Guide",
+        "endpoint": "help.admin",
+        "summary": "Rate table configuration, user approvals, and SMTP controls.",
+        "details": [
+            "Manage Hotshot, Beyond, Air, and Zone rate tables from the admin dashboard.",
+            "Review and approve employee registrations and API key requests.",
+            "Configure SMTP credentials and toggle email delivery for maintenance windows.",
+        ],
+    },
+    {
+        "slug": "emailing",
+        "title": "Email Request Workflow",
+        "endpoint": "help.emailing_guide",
+        "summary": "Booking request email handoff and return-quote behavior.",
+        "details": [
+            "Use the Compose Email form to send pre-filled booking requests to operations.",
+            "Check the return-quote checkbox to flag loads that may need reverse pricing.",
+            "The generated email opens in your default mail client addressed to operations@freightservices.net.",
+        ],
+    },
+]
+"""Ordered list of internal help topics shown only to FSI employees and admins."""
+
 
 def is_internal_employee(user: object) -> bool:
     """Return whether ``user`` should see employee-only help content.
 
     Args:
         user: Object that may expose ``is_authenticated``, ``email``, ``role``,
-            and ``employee_approved`` attributes.
+            and ``is_admin`` attributes.
 
     Returns:
-        ``True`` only when the user is authenticated and uses a
-        ``@freightservices.net`` email address.
+        ``True`` for authenticated super admins, legacy admin-flagged accounts,
+        or users whose email ends with ``@freightservices.net``.
     """
 
     if not getattr(user, "is_authenticated", False):
         return False
 
-    email = (getattr(user, "email", "") or "").strip().lower()
-    if not email.endswith("@freightservices.net"):
-        return False
+    if getattr(user, "role", None) == "super_admin" or getattr(user, "is_admin", False):
+        return True
 
-    return True
+    email = (getattr(user, "email", "") or "").strip().lower()
+    return email.endswith("@freightservices.net")
 
 
 def _base_help_context() -> dict[str, bool]:
@@ -129,6 +155,7 @@ def _render_help_page(active_topic: str | None) -> str:
     return render_template(
         "help/index.html",
         topics=HELP_TOPICS,
+        internal_topics=INTERNAL_HELP_TOPICS,
         active_topic=active_topic,
         selected_topic=selected_topic,
         **_base_help_context(),
