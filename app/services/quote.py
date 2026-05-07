@@ -103,26 +103,29 @@ def create_quote(
 
     accessorial_costs: dict[str, float] = {}
     guarantee_pct: float | None = None
+
     if accessorials:
         with Session() as db:
-            acc_map = {a.name.lower(): a for a in db.query(Accessorial).all()}
-        for raw_acc in accessorials:
-            if not raw_acc:
-                continue
-            acc = str(raw_acc).strip()
-            record = acc_map.get(acc.lower())
-            if not record:
-                continue
-            if record.is_percentage:
-                if record.name.lower() == "guarantee":
-                    guarantee_pct = record.amount or 0.0
-                else:
-                    accessorial_costs[record.name] = record.amount or 0.0
-                    accessorial_total += record.amount or 0.0
-            else:
-                cost = record.amount or 0.0
-                accessorial_costs[record.name] = cost
-                accessorial_total += cost
+            acc_map = {str(a.name).strip().lower(): a for a in db.query(Accessorial).all()}
+
+            for raw_acc in accessorials:
+                if not raw_acc:
+                    continue
+
+                acc = str(raw_acc).strip()
+                record = acc_map.get(acc.lower())
+
+                if not record:
+                    continue
+
+                display_name = str(record.name).strip()
+                amount = float(record.amount or 0.0)
+
+                if "guarantee" in display_name.lower():
+                    guarantee_pct = amount if amount > 0 else 25.0
+                elif display_name not in accessorial_costs:
+                    accessorial_costs[display_name] = amount
+                    accessorial_total += amount
 
     if quote_type == "Air":
         result = calculate_air_quote(
