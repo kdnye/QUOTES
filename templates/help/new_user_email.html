@@ -94,7 +94,7 @@
 
 <script>
 (function () {
-  const BASE_URL = "https://quote.freightservices.net";
+  const BASE_URL = window.location.origin;
   const SUBJECT  = "FSI Quote Tool — Your Account Is Ready";
 
   function buildBody(firstName, userEmail, secretLink, includeApi) {
@@ -218,6 +218,13 @@
     const href = "mailto:" + encodeURIComponent(v.toEmail)
                + "?subject=" + encodeURIComponent(SUBJECT)
                + "&body="    + encodeURIComponent(body);
+    if (href.length > 2000) {
+      alert(
+        "The email body is too long to open directly in Outlook (" + href.length + " characters).\n\n" +
+        "Use the ‘Copy Body’ button instead, then paste into a new Outlook message."
+      );
+      return;
+    }
     window.location.href = href;
   });
 
