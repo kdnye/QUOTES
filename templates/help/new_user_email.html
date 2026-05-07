@@ -26,8 +26,8 @@
 
 <h1 class="mb-1">New User Welcome Email</h1>
 <p class="text-muted mb-4">
-  Fill in the fields below, then click <strong>Open in Outlook</strong> to launch a pre-filled Compose window.
-  Use Outlook's built-in <strong>Encrypt</strong> button before sending so credentials are protected in transit.
+  Fill in the fields, click <strong>Copy</strong>, then paste into a new Outlook message and click
+  <strong>Encrypt</strong> before sending.
 </p>
 
 <div class="row g-4">
@@ -37,11 +37,6 @@
         <h2 class="h5 card-title mb-3">Recipient Details</h2>
 
         <div class="mb-3">
-          <label for="toEmail" class="form-label">To (recipient email) <span class="text-danger">*</span></label>
-          <input type="email" class="form-control" id="toEmail" placeholder="jane@customer.com" autocomplete="off">
-        </div>
-
-        <div class="mb-3">
           <label for="firstName" class="form-label">First Name <span class="text-danger">*</span></label>
           <input type="text" class="form-control" id="firstName" placeholder="Jane" autocomplete="off">
         </div>
@@ -49,7 +44,6 @@
         <div class="mb-3">
           <label for="userEmail" class="form-label">Login Username (their email) <span class="text-danger">*</span></label>
           <input type="email" class="form-control" id="userEmail" placeholder="jane@customer.com" autocomplete="off">
-          <div class="form-text">Usually the same as the To address above.</div>
         </div>
 
         <div class="mb-3">
@@ -69,18 +63,14 @@
           </div>
         </div>
 
-        <div class="d-flex gap-2 flex-wrap">
-          <button type="button" class="btn btn-primary" id="openOutlook">
-            <i class="bi bi-envelope-open me-1" aria-hidden="true"></i>Open in Outlook
-          </button>
-          <button type="button" class="btn btn-outline-secondary" id="copyBody">
-            <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy Body
-          </button>
+        <button type="button" class="btn btn-primary" id="copyBody">
+          <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy Email Body
+        </button>
+        <div id="copyFeedback" class="text-success small mt-2" style="display:none;">
+          Copied — paste into Outlook and click Encrypt before sending.
         </div>
-        <div id="copyFeedback" class="text-success small mt-2" style="display:none;">Copied to clipboard.</div>
-        <div id="lengthWarning" class="alert alert-warning small mt-3 mb-0" style="display:none;">
-          <i class="bi bi-exclamation-triangle me-1" aria-hidden="true"></i>
-          Body too long for mailto: — use <strong>Copy Body</strong>, then paste into a new Outlook message and encrypt before sending.
+        <div id="copyError" class="text-danger small mt-2" style="display:none;">
+          Copy failed. Select the preview text and copy manually.
         </div>
       </div>
     </div>
@@ -99,10 +89,95 @@
 <script>
 (function () {
   const BASE_URL = window.location.origin;
-  const SUBJECT  = "FSI Quote Tool — Your Account Is Ready";
 
-  function buildBody(firstName, userEmail, password, apiKey, includeApi) {
-    const name      = firstName  || "[First Name]";
+  function esc(s) {
+    return String(s)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+
+  function buildHtml(firstName, userEmail, password, apiKey, includeApi) {
+    const name      = esc(firstName || "[First Name]");
+    const loginUser = esc(userEmail  || "[email@example.com]");
+    const pw        = esc(password   || "[temporary password]");
+    const key       = esc(apiKey     || "[api key]");
+    const base      = esc(BASE_URL);
+
+    const S = "border-collapse:collapse;margin-bottom:8px";
+    const TD1 = "style='padding:2px 12px 2px 0;font-weight:bold;white-space:nowrap;vertical-align:top'";
+    const TD2 = "style='padding:2px 0;font-family:monospace'";
+
+    let html = "<p>Hi " + name + ",</p>"
+      + "<p>Your Freight Services Inc. Quote Tool account has been set up and is ready to use.</p>"
+      + "<hr>"
+      + "<p><strong>YOUR ACCOUNT DETAILS</strong></p>"
+      + "<table style='" + S + "'>"
+      + "<tr><td " + TD1 + ">Login URL</td><td " + TD2 + "><a href='" + base + "'>" + base + "</a></td></tr>"
+      + "<tr><td " + TD1 + ">Username</td><td " + TD2 + ">" + loginUser + "</td></tr>"
+      + "<tr><td " + TD1 + ">Password</td><td " + TD2 + ">" + pw + "</td></tr>";
+
+    if (includeApi) {
+      html += "<tr><td " + TD1 + ">API Key</td><td " + TD2 + ">" + key + "</td></tr>";
+    }
+
+    html += "</table>"
+      + "<p><em>Please change your password after your first login.</em></p>"
+      + "<hr>"
+      + "<p><strong>HOW THE APP WORKS</strong></p>"
+      + "<p>The FSI Quote Tool generates instant freight quotes for <strong>Hotshot</strong> (expedited truck) and <strong>Next Day Air</strong> shipments.</p>"
+      + "<p><strong>Getting a quote:</strong></p>"
+      + "<ol>"
+      + "<li>Go to <strong>Get New Quote</strong> in the top nav.</li>"
+      + "<li>Enter origin ZIP, destination ZIP, weight, piece count, and service type.</li>"
+      + "<li>Add any required accessorials (liftgate, residential delivery, limited access, etc.) — these affect the final rate.</li>"
+      + "<li>The tool returns a base charge, accessorial breakdown, total miles, and a grand total.</li>"
+      + "</ol>"
+      + "<p><strong>After you have a quote:</strong></p>"
+      + "<ul>"
+      + "<li><strong>Book via TS2000</strong> — click &ldquo;Book Quote&rdquo; to open the TransSoft portal.</li>"
+      + "<li><strong>Email operations</strong> — click &ldquo;Email to Request Booking&rdquo; to send a pre-filled request to ops. A $15 admin fee applies.</li>"
+      + "<li><strong>Save / share</strong> — use &ldquo;Send to Myself&rdquo; for your own copy.</li>"
+      + "</ul>"
+      + "<p>Use <strong>Quote Lookup</strong> to retrieve any past quote by ID (format: Q-XXXXXXXX). Use <strong>My Quotes</strong> to see all quotes you've generated.</p>"
+      + "<p><em>All quotes are subject to final review by Freight Services Inc. Rates may change if requirements differ from inputs.</em></p>";
+
+    if (includeApi) {
+      html += "<hr>"
+        + "<p><strong>API QUICK START</strong></p>"
+        + "<table style='" + S + "'>"
+        + "<tr><td " + TD1 + ">Base URL</td><td " + TD2 + ">" + base + "/api</td></tr>"
+        + "<tr><td " + TD1 + ">Auth header</td><td " + TD2 + ">Authorization: Bearer " + key + "</td></tr>"
+        + "<tr><td " + TD1 + ">Rate limit</td><td " + TD2 + ">30 requests / minute</td></tr>"
+        + "</table>"
+        + "<p><strong>Create a quote &mdash; POST /api/quote</strong></p>"
+        + "<p>Required: <code>quote_type</code> (&ldquo;Hotshot&rdquo; or &ldquo;Air&rdquo;), <code>origin</code> (ZIP), <code>destination</code> (ZIP), <code>weight</code> (lbs)<br>"
+        + "Optional: <code>pieces</code>, <code>length</code>, <code>width</code>, <code>height</code> (in.), <code>accessorials</code> (list)<br>"
+        + "Response: <code>quote_id</code>, <code>total</code>, and full pricing metadata &mdash; 201 Created</p>"
+        + "<p><strong>Retrieve a quote &mdash; GET /api/quote/{quote_id}</strong></p>"
+        + "<p>Returns the same JSON shape &mdash; 200 OK.</p>"
+        + "<p><strong>Error codes:</strong> 400 bad input &middot; 401 missing auth &middot; 403 key invalid/disabled &middot; 404 not found &middot; 429 rate limited &middot; 500 server error.<br>"
+        + "All errors include <code>error</code> and <code>remediation</code> fields.</p>"
+        + "<p>Excel / Power Query: use <code>Web.Contents</code> with an <code>Authorization</code> header. Full example: <a href='" + base + "/help/api'>" + base + "/help/api</a></p>";
+    }
+
+    html += "<hr>"
+      + "<p><strong>HELP &amp; SUPPORT</strong></p>"
+      + "<p>Help Center: <a href='" + base + "/help'>" + base + "/help</a><br>";
+
+    if (includeApi) {
+      html += "API Docs: <a href='" + base + "/help/api'>" + base + "/help/api</a><br>";
+    }
+
+    html += "Operations: <a href='mailto:operations@freightservices.net'>operations@freightservices.net</a></p>"
+      + "<p>Let us know if you have any questions getting started.</p>"
+      + "<p>&mdash; Freight Services Inc.</p>";
+
+    return html;
+  }
+
+  function buildPlain(firstName, userEmail, password, apiKey, includeApi) {
+    const name      = firstName || "[First Name]";
     const loginUser = userEmail  || "[email@example.com]";
     const pw        = password   || "[temporary password]";
     const key       = apiKey     || "[api key]";
@@ -112,103 +187,83 @@
       "",
       "Your Freight Services Inc. Quote Tool account has been set up and is ready to use.",
       "",
-      "----------------------------------------------------------------",
       "YOUR ACCOUNT DETAILS",
-      "----------------------------------------------------------------",
-      "Login URL:   " + BASE_URL,
-      "Username:    " + loginUser,
-      "Password:    " + pw,
+      "--------------------",
+      "Login URL:  " + BASE_URL,
+      "Username:   " + loginUser,
+      "Password:   " + pw,
     ];
 
     if (includeApi) {
-      lines.push("API Key:     " + key);
+      lines.push("API Key:    " + key);
     }
 
     lines.push(
       "",
       "Please change your password after your first login.",
       "",
-      "----------------------------------------------------------------",
       "HOW THE APP WORKS",
-      "----------------------------------------------------------------",
+      "-----------------",
       "The FSI Quote Tool generates instant freight quotes for Hotshot",
       "(expedited truck) and Next Day Air shipments.",
       "",
       "Getting a quote:",
       "  1. Go to Get New Quote in the top nav.",
-      "  2. Enter origin ZIP, destination ZIP, weight, piece count, and",
-      "     service type.",
-      "  3. Add any required accessorials (liftgate, residential delivery,",
-      "     limited access, etc.) — these affect the final rate.",
-      "  4. The tool returns a base charge, accessorial breakdown, total",
-      "     miles, and a grand total.",
+      "  2. Enter origin ZIP, destination ZIP, weight, piece count, and service type.",
+      "  3. Add any required accessorials — these affect the final rate.",
+      "  4. The tool returns a base charge, breakdown, total miles, and grand total.",
       "",
       "After you have a quote:",
-      "  • Book via TS2000 — click “Book Quote” to open the TransSoft portal.",
-      "  • Email operations — click “Email to Request Booking” to send a",
-      "    pre-filled request to ops (a $15 admin fee applies).",
-      "  • Save / share — use “Send to Myself” for your own copy.",
+      "  - Book via TS2000: click Book Quote to open the TransSoft portal.",
+      "  - Email operations: click Email to Request Booking ($15 admin fee applies).",
+      "  - Save / share: use Send to Myself for your own copy.",
       "",
       "Quote Lookup: retrieve any past quote by ID (format: Q-XXXXXXXX).",
-      "My Quotes: see all quotes you’ve generated.",
+      "My Quotes: see all quotes you have generated.",
       "",
-      "IMPORTANT: All quotes are subject to final review by Freight",
-      "Services Inc. Rates may change if requirements differ from inputs.",
+      "All quotes are subject to final review. Rates may change if requirements differ.",
     );
 
     if (includeApi) {
       lines.push(
         "",
-        "----------------------------------------------------------------",
         "API QUICK START",
-        "----------------------------------------------------------------",
-        "Base URL:  " + BASE_URL + "/api",
+        "---------------",
+        "Base URL:   " + BASE_URL + "/api",
+        "Auth:       Authorization: Bearer " + key,
+        "Rate limit: 30 requests per minute",
         "",
-        "Authentication — include your API key as a Bearer token:",
-        "  Authorization: Bearer " + (apiKey || "YOUR_API_KEY"),
+        "Create a quote:   POST /api/quote",
+        "  Required: quote_type, origin (ZIP), destination (ZIP), weight (lbs)",
+        "  Optional: pieces, length, width, height, accessorials",
         "",
-        "Rate limit: 30 requests per minute.",
-        "Response headers include X-RateLimit-Remaining and X-RateLimit-Reset.",
+        "Retrieve a quote: GET /api/quote/{quote_id}",
         "",
-        "Create a Quote — POST /api/quote",
-        "  Required: quote_type (“Hotshot” or “Air”), origin (ZIP),",
-        "            destination (ZIP), weight (lbs)",
-        "  Optional: pieces, length, width, height (in.), accessorials (list)",
-        "  Response: quote_id, total, and full pricing metadata (201 Created)",
+        "Errors: 400 bad input | 401 missing auth | 403 key invalid",
+        "        404 not found | 429 rate limit   | 500 server error",
         "",
-        "Retrieve a Quote — GET /api/quote/{quote_id}",
-        "  Returns the same JSON shape as the create response (200 OK).",
-        "",
-        "Error codes:",
-        "  400 bad input  ·  401 missing auth  ·  403 key invalid/disabled",
-        "  404 not found  ·  429 rate limit exceeded  ·  500 server error",
-        "  All errors include “error” and “remediation” fields.",
-        "",
-        "Excel / Power Query: use Web.Contents with an Authorization header.",
         "Full reference: " + BASE_URL + "/help/api",
       );
     }
 
     lines.push(
       "",
-      "----------------------------------------------------------------",
       "HELP & SUPPORT",
-      "----------------------------------------------------------------",
+      "--------------",
       "Help Center:  " + BASE_URL + "/help",
       (includeApi ? "API Docs:     " + BASE_URL + "/help/api" : null),
       "Operations:   operations@freightservices.net",
       "",
       "Let us know if you have any questions getting started.",
       "",
-      "— Freight Services Inc.",
+      "- Freight Services Inc.",
     );
 
-    return lines.filter(function (l) { return l !== null; }).join("\r\n");
+    return lines.filter(function (l) { return l !== null; }).join("\n");
   }
 
   function getValues() {
     return {
-      toEmail:    document.getElementById("toEmail").value.trim(),
       firstName:  document.getElementById("firstName").value.trim(),
       userEmail:  document.getElementById("userEmail").value.trim(),
       password:   document.getElementById("password").value.trim(),
@@ -219,37 +274,48 @@
 
   function updatePreview() {
     const v = getValues();
-    const body = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
-    document.getElementById("preview").textContent = body;
-
-    const href = "mailto:" + encodeURIComponent(v.toEmail)
-               + "?subject=" + encodeURIComponent(SUBJECT)
-               + "&body=" + encodeURIComponent(body);
-    const tooLong = href.length > 2000;
-    document.getElementById("lengthWarning").style.display = tooLong ? "block" : "none";
-    document.getElementById("openOutlook").disabled = tooLong;
+    document.getElementById("preview").textContent =
+      buildPlain(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
   }
 
-  document.getElementById("openOutlook").addEventListener("click", function () {
-    const v    = getValues();
-    const body = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
-    const href = "mailto:" + encodeURIComponent(v.toEmail)
-               + "?subject=" + encodeURIComponent(SUBJECT)
-               + "&body="    + encodeURIComponent(body);
-    window.location.href = href;
-  });
-
   document.getElementById("copyBody").addEventListener("click", function () {
-    const v = getValues();
-    const text = buildBody(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
-    navigator.clipboard.writeText(text).then(function () {
-      const fb = document.getElementById("copyFeedback");
-      fb.style.display = "block";
-      setTimeout(function () { fb.style.display = "none"; }, 2500);
-    });
+    const v    = getValues();
+    const html = buildHtml(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
+    const text = buildPlain(v.firstName, v.userEmail, v.password, v.apiKey, v.includeApi);
+
+    const ok  = document.getElementById("copyFeedback");
+    const err = document.getElementById("copyError");
+
+    try {
+      const item = new ClipboardItem({
+        "text/html":  new Blob([html], { type: "text/html" }),
+        "text/plain": new Blob([text], { type: "text/plain" }),
+      });
+      navigator.clipboard.write([item]).then(function () {
+        ok.style.display  = "block";
+        err.style.display = "none";
+        setTimeout(function () { ok.style.display = "none"; }, 3000);
+      }).catch(function () {
+        navigator.clipboard.writeText(text).then(function () {
+          ok.style.display  = "block";
+          err.style.display = "none";
+          setTimeout(function () { ok.style.display = "none"; }, 3000);
+        }).catch(function () {
+          err.style.display = "block";
+        });
+      });
+    } catch (e) {
+      navigator.clipboard.writeText(text).then(function () {
+        ok.style.display  = "block";
+        err.style.display = "none";
+        setTimeout(function () { ok.style.display = "none"; }, 3000);
+      }).catch(function () {
+        err.style.display = "block";
+      });
+    }
   });
 
-  ["toEmail", "firstName", "userEmail", "password", "apiKey", "includeApi"].forEach(function (id) {
+  ["firstName", "userEmail", "password", "apiKey", "includeApi"].forEach(function (id) {
     document.getElementById(id).addEventListener("input", updatePreview);
     document.getElementById(id).addEventListener("change", updatePreview);
   });
