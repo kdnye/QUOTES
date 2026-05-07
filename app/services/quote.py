@@ -121,13 +121,9 @@ def create_quote(
                 display_name = str(record.name).strip()
                 amount = float(record.amount or 0.0)
 
-                if getattr(record, "is_percentage", False) or "guarantee" in display_name.lower():
-                    if "guarantee" in display_name.lower():
-                        guarantee_pct = amount if amount > 0 else 25.0
-                    else:
-                        accessorial_costs[display_name] = amount
-                        accessorial_total += amount
-                else:
+                if "guarantee" in display_name.lower():
+                    guarantee_pct = amount if amount > 0 else 25.0
+                elif display_name not in accessorial_costs:
                     accessorial_costs[display_name] = amount
                     accessorial_total += amount
 
