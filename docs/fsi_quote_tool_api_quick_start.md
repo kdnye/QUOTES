@@ -21,7 +21,7 @@ Keep your key confidential. If you believe it has been exposed, contact your FSI
 All endpoints are relative to:
 
 ```text
-https://<your-instance-host>/api
+https://quote.freightservices.net/api
 ```
 
 Use the same host you use for the web tool.
@@ -172,7 +172,7 @@ All API errors return:
 ### curl — Hotshot quote
 
 ```bash
-curl -X POST https://<your-instance-host>/api/quote \
+curl -X POST https://quote.freightservices.net/api/quote \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -187,7 +187,7 @@ curl -X POST https://<your-instance-host>/api/quote \
 ### curl — Air quote with dimensions and accessorials
 
 ```bash
-curl -X POST https://<your-instance-host>/api/quote \
+curl -X POST https://quote.freightservices.net/api/quote \
   -H "Authorization: Bearer <your_api_key>" \
   -H "Content-Type: application/json" \
   -d '{
@@ -208,7 +208,7 @@ curl -X POST https://<your-instance-host>/api/quote \
 import requests
 
 API_KEY = "<your_api_key>"
-BASE_URL = "https://<your-instance-host>/api"
+BASE_URL = "https://quote.freightservices.net/api"
 
 response = requests.post(
     f"{BASE_URL}/quote",
