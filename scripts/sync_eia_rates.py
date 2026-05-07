@@ -6,7 +6,7 @@ configured EIA series IDs, validates each response, and upserts
 
 Inputs:
     * Environment variables:
-        * ``EIA_API_KEY``: Optional EIA API key for higher rate limits.
+        * ``EIA_API_KEY``: Required EIA API key. The EIA v2 API returns 403 without it.
         * ``EIA_TIMEOUT_SECONDS``: Request timeout in seconds (default: ``15``).
         * ``EIA_SERIES_MAP_JSON``: Optional JSON object mapping region labels to
           EIA series IDs.
@@ -134,8 +134,14 @@ def fetch_series_payload(series_id: str, timeout_seconds: int) -> Dict[str, Any]
         Calls :func:`requests.get` against the EIA v2 API endpoint.
     """
 
+    api_key = os.environ.get("EIA_API_KEY", "").strip()
+    if not api_key:
+        raise ValueError(
+            "EIA_API_KEY environment variable is not set or empty; "
+            "set it in the Cloud Run job configuration"
+        )
     url = f"{EIA_BASE_URL}/{series_id}"
-    params = {"api_key": os.environ.get("EIA_API_KEY", "")}
+    params = {"api_key": api_key}
     response: Response = requests.get(url, params=params, timeout=timeout_seconds)
     response.raise_for_status()
     payload = response.json()
