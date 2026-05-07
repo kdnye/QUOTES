@@ -148,8 +148,7 @@ def create_quote(
             raise ValueError(f"Hotshot quote calculation failed: {e}")
 
     quote_total = result["quote_total"]
-    if quote_type == "Air" and guarantee_pct:
-        # Guarantee covers the linehaul and beyond charges, excluding other accessorials.
+    if guarantee_pct:
         linehaul_with_beyond = quote_total - accessorial_total
         guarantee_cost = linehaul_with_beyond * (guarantee_pct / 100.0)
         accessorial_costs["Guarantee"] = guarantee_cost
