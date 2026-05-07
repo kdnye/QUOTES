@@ -1,0 +1,242 @@
+{% extends "base.html" %}
+
+{% block title %}New User Welcome Email · Quote Tool{% endblock %}
+
+{% block head %}
+<style>
+  #preview {
+    white-space: pre-wrap;
+    word-break: break-word;
+    font-family: monospace;
+    font-size: 0.85rem;
+    background: var(--bs-body-bg);
+    border: 1px solid var(--bs-border-color);
+    border-radius: 0.375rem;
+    padding: 1rem;
+    min-height: 200px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="alert alert-warning d-flex align-items-center gap-2 mb-4" role="alert">
+  <i class="bi bi-shield-lock-fill" aria-hidden="true"></i>
+  <span><strong>Internal — FSI Staff Only.</strong> This page is restricted to Freight Services employees and administrators.</span>
+</div>
+
+<h1 class="mb-1">New User Welcome Email</h1>
+<p class="text-muted mb-4">
+  Fill in the fields below, then click <strong>Open in Outlook</strong> to launch a pre-filled Compose window.
+  Send the email with Outlook's built-in encryption (Encrypt-Only or Do Not Forward).
+</p>
+
+<div class="row g-4">
+  <div class="col-lg-5">
+    <div class="card">
+      <div class="card-body">
+        <h2 class="h5 card-title mb-3">Recipient Details</h2>
+
+        <div class="mb-3">
+          <label for="toEmail" class="form-label">To (recipient email) <span class="text-danger">*</span></label>
+          <input type="email" class="form-control" id="toEmail" placeholder="jane@customer.com" autocomplete="off">
+        </div>
+
+        <div class="mb-3">
+          <label for="firstName" class="form-label">First Name <span class="text-danger">*</span></label>
+          <input type="text" class="form-control" id="firstName" placeholder="Jane" autocomplete="off">
+        </div>
+
+        <div class="mb-3">
+          <label for="userEmail" class="form-label">Login Username (their email) <span class="text-danger">*</span></label>
+          <input type="email" class="form-control" id="userEmail" placeholder="jane@customer.com" autocomplete="off">
+          <div class="form-text">Usually the same as the To address above.</div>
+        </div>
+
+        <div class="mb-3">
+          <label for="secretLink" class="form-label">One-Time Secret Link</label>
+          <input type="url" class="form-control" id="secretLink" placeholder="https://onetimesecret.com/secret/..." autocomplete="off">
+          <div class="form-text">
+            Create at <a href="https://onetimesecret.com" target="_blank" rel="noopener noreferrer">onetimesecret.com</a> —
+            paste password &amp; API key into one secret, set to expire after first view.
+            Leave blank to fill in manually after opening Outlook.
+          </div>
+        </div>
+
+        <div class="mb-4">
+          <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" role="switch" id="includeApi" checked>
+            <label class="form-check-label" for="includeApi">Include API Quick Start section</label>
+          </div>
+        </div>
+
+        <div class="d-flex gap-2 flex-wrap">
+          <button type="button" class="btn btn-primary" id="openOutlook">
+            <i class="bi bi-envelope-open me-1" aria-hidden="true"></i>Open in Outlook
+          </button>
+          <button type="button" class="btn btn-outline-secondary" id="copyBody">
+            <i class="bi bi-clipboard me-1" aria-hidden="true"></i>Copy Body
+          </button>
+        </div>
+        <div id="copyFeedback" class="text-success small mt-2" style="display:none;">Copied to clipboard.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-lg-7">
+    <h2 class="h5 mb-2">Preview</h2>
+    <div id="preview" aria-live="polite" aria-label="Email body preview"></div>
+  </div>
+</div>
+
+<p class="mt-4">
+  <a class="btn btn-outline-secondary" href="{{ url_for('help.help_index') }}">Back to Help Center</a>
+</p>
+
+<script>
+(function () {
+  const BASE_URL = "https://quote.freightservices.net";
+  const SUBJECT  = "FSI Quote Tool — Your Account Is Ready";
+
+  function buildBody(firstName, userEmail, secretLink, includeApi) {
+    const name      = firstName  || "[First Name]";
+    const loginUser = userEmail  || "[email@example.com]";
+    const credLink  = secretLink || "[INSERT ONE-TIME SECRET LINK]";
+
+    const lines = [
+      "Hi " + name + ",",
+      "",
+      "Your Freight Services Inc. Quote Tool account has been set up and is ready to use.",
+      "",
+      "----------------------------------------------------------------",
+      "YOUR ACCOUNT DETAILS",
+      "----------------------------------------------------------------",
+      "Login URL:   " + BASE_URL,
+      "Username:    " + loginUser,
+      "Password:    (see secure link below)",
+      "API Key:     (see secure link below)",
+      "",
+      "Credentials link — click once to reveal, then save to a password manager:",
+      credLink,
+      "",
+      "----------------------------------------------------------------",
+      "HOW THE APP WORKS",
+      "----------------------------------------------------------------",
+      "The FSI Quote Tool generates instant freight quotes for Hotshot",
+      "(expedited truck) and Next Day Air shipments.",
+      "",
+      "Getting a quote:",
+      "  1. Go to Get New Quote in the top nav.",
+      "  2. Enter origin ZIP, destination ZIP, weight, piece count, and",
+      "     service type.",
+      "  3. Add any required accessorials (liftgate, residential delivery,",
+      "     limited access, etc.) — these affect the final rate.",
+      "  4. The tool returns a base charge, accessorial breakdown, total",
+      "     miles, and a grand total.",
+      "",
+      "After you have a quote:",
+      "  • Book via TS2000 — click “Book Quote” to open the TransSoft portal.",
+      "  • Email operations — click “Email to Request Booking” to send a",
+      "    pre-filled request to ops (a $15 admin fee applies).",
+      "  • Save / share — use “Send to Myself” for your own copy.",
+      "",
+      "Quote Lookup: retrieve any past quote by ID (format: Q-XXXXXXXX).",
+      "My Quotes: see all quotes you’ve generated.",
+      "",
+      "IMPORTANT: All quotes are subject to final review by Freight",
+      "Services Inc. Rates may change if requirements differ from inputs.",
+    ];
+
+    if (includeApi) {
+      lines.push(
+        "",
+        "----------------------------------------------------------------",
+        "API QUICK START",
+        "----------------------------------------------------------------",
+        "Base URL:  " + BASE_URL + "/api",
+        "",
+        "Authentication — include your API key as a Bearer token:",
+        "  Authorization: Bearer YOUR_API_KEY",
+        "",
+        "Rate limit: 30 requests per minute.",
+        "Response headers include X-RateLimit-Remaining and X-RateLimit-Reset.",
+        "",
+        "Create a Quote — POST /api/quote",
+        "  Required: quote_type (“Hotshot” or “Air”), origin (ZIP),",
+        "            destination (ZIP), weight (lbs)",
+        "  Optional: pieces, length, width, height (in.), accessorials (list)",
+        "  Response: quote_id, total, and full pricing metadata (201 Created)",
+        "",
+        "Retrieve a Quote — GET /api/quote/{quote_id}",
+        "  Returns the same JSON shape as the create response (200 OK).",
+        "",
+        "Error codes:",
+        "  400 bad input  ·  401 missing auth  ·  403 key invalid/disabled",
+        "  404 not found  ·  429 rate limit exceeded  ·  500 server error",
+        "  All errors include “error” and “remediation” fields.",
+        "",
+        "Excel / Power Query: use Web.Contents with an Authorization header.",
+        "Full example: " + BASE_URL + "/help/api",
+      );
+    }
+
+    lines.push(
+      "",
+      "----------------------------------------------------------------",
+      "HELP & SUPPORT",
+      "----------------------------------------------------------------",
+      "Help Center:  " + BASE_URL + "/help",
+      "API Docs:     " + BASE_URL + "/help/api",
+      "Operations:   operations@freightservices.net",
+      "",
+      "Let us know if you have any questions getting started.",
+      "",
+      "— Freight Services Inc.",
+    );
+
+    return lines.join("\r\n");
+  }
+
+  function getValues() {
+    return {
+      toEmail:    document.getElementById("toEmail").value.trim(),
+      firstName:  document.getElementById("firstName").value.trim(),
+      userEmail:  document.getElementById("userEmail").value.trim(),
+      secretLink: document.getElementById("secretLink").value.trim(),
+      includeApi: document.getElementById("includeApi").checked,
+    };
+  }
+
+  function updatePreview() {
+    const v = getValues();
+    document.getElementById("preview").textContent =
+      buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+  }
+
+  document.getElementById("openOutlook").addEventListener("click", function () {
+    const v    = getValues();
+    const body = buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+    const href = "mailto:" + encodeURIComponent(v.toEmail)
+               + "?subject=" + encodeURIComponent(SUBJECT)
+               + "&body="    + encodeURIComponent(body);
+    window.location.href = href;
+  });
+
+  document.getElementById("copyBody").addEventListener("click", function () {
+    const v = getValues();
+    const text = buildBody(v.firstName, v.userEmail, v.secretLink, v.includeApi);
+    navigator.clipboard.writeText(text).then(function () {
+      const fb = document.getElementById("copyFeedback");
+      fb.style.display = "block";
+      setTimeout(function () { fb.style.display = "none"; }, 2500);
+    });
+  });
+
+  ["toEmail", "firstName", "userEmail", "secretLink", "includeApi"].forEach(function (id) {
+    document.getElementById(id).addEventListener("input", updatePreview);
+    document.getElementById(id).addEventListener("change", updatePreview);
+  });
+
+  updatePreview();
+})();
+</script>
+{% endblock %}

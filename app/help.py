@@ -94,6 +94,17 @@ INTERNAL_HELP_TOPICS: Final[List[HelpTopic]] = [
             "The generated email opens in your default mail client addressed to operations@freightservices.net.",
         ],
     },
+    {
+        "slug": "new-user-email",
+        "title": "New User Welcome Email",
+        "endpoint": "help.new_user_email",
+        "summary": "Generate an encrypted onboarding email with credentials and an API primer for new users.",
+        "details": [
+            "Fill in the new user's name, email, and one-time secret link to compose the welcome email.",
+            "Toggle the API section on or off depending on whether the account has API access.",
+            "Click Open in Outlook to launch a pre-filled Compose window ready for encrypted send.",
+        ],
+    },
 ]
 """Ordered list of internal help topics shown only to FSI employees and admins."""
 
@@ -357,6 +368,21 @@ def api_reference() -> str:
         api_enabled=api_enabled,
         **_base_help_context(),
     )
+
+
+@help_bp.get("/new-user-email")
+@employee_required(approved_only=True)
+def new_user_email() -> str:
+    """Render the new-user welcome email composer for FSI staff.
+
+    Provides a form that generates a pre-filled mailto: link so employees
+    can open a composed welcome email in Outlook and send it with encryption.
+
+    Returns:
+        Rendered HTML string for the new-user email composer page.
+    """
+
+    return render_template("help/new_user_email.html", **_base_help_context())
 
 
 @help_bp.get("/terms-of-use")
