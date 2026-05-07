@@ -7,7 +7,8 @@ retrieve quote records for the application.
 
 import json
 
-from app.database import Session, Quote, EmailQuoteRequest, Accessorial, ZipZone
+from app.database import Session, Quote, EmailQuoteRequest, ZipZone
+from app.models import Accessorial
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
@@ -105,27 +106,26 @@ def create_quote(
     guarantee_pct: float | None = None
 
     if accessorials:
-        with Session() as db:
-            acc_map = {str(a.name).strip().lower(): a for a in db.query(Accessorial).all()}
+        acc_map = {str(a.name).strip().lower(): a for a in Accessorial.query.all()}
 
-            for raw_acc in accessorials:
-                if not raw_acc:
-                    continue
+        for raw_acc in accessorials:
+            if not raw_acc:
+                continue
 
-                acc = str(raw_acc).strip()
-                record = acc_map.get(acc.lower())
+            acc = str(raw_acc).strip()
+            record = acc_map.get(acc.lower())
 
-                if not record:
-                    continue
+            if not record:
+                continue
 
-                display_name = str(record.name).strip()
-                amount = float(record.amount or 0.0)
+            display_name = str(record.name).strip()
+            amount = float(record.amount or 0.0)
 
-                if "guarantee" in display_name.lower():
-                    guarantee_pct = amount if amount > 0 else 25.0
-                elif display_name not in accessorial_costs:
-                    accessorial_costs[display_name] = amount
-                    accessorial_total += amount
+            if "guarantee" in display_name.lower():
+                guarantee_pct = amount if amount > 0 else 25.0
+            elif display_name not in accessorial_costs:
+                accessorial_costs[display_name] = amount
+                accessorial_total += amount
 
     if quote_type == "Air":
         result = calculate_air_quote(

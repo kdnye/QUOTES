@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 from typing import Iterator
+from types import SimpleNamespace
 
 import pytest
 from flask import Flask
@@ -169,3 +170,65 @@ def test_quote_not_found_returns_remediation(
             "retry the lookup."
         ),
     }
+
+
+def test_api_quote_uses_authenticated_user_rate_set(
+    app: Flask, client: FlaskClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Pass the authenticated per-user API key's rate_set into quote creation.
+
+    Args:
+        app: Flask application configured for this test module.
+        client: Flask API test client.
+        monkeypatch: Fixture used to replace quote service behavior.
+
+    Returns:
+        None. Assertions validate the forwarded ``rate_set`` argument.
+
+    External dependencies:
+        * Calls :func:`monkeypatch.setattr` to replace
+          :func:`app.services.quote.create_quote`.
+        * Calls :meth:`flask.testing.FlaskClient.post` for API execution.
+    """
+
+    with app.app_context():
+        api_user = User(email="per-user-key@example.com", role="customer", rate_set="vip")
+        api_user.set_password("StrongPassw0rd!")
+        api_user.api_approved = True
+        api_user.api_enabled = True
+        api_user.api_key = "per-user-token"
+        db.session.add(api_user)
+        db.session.commit()
+
+    captured: dict[str, object] = {}
+
+    def _fake_create_quote(*args, **kwargs):
+        captured["rate_set"] = kwargs.get("rate_set")
+        return SimpleNamespace(
+            quote_id="Q-API-1",
+            quote_type="Hotshot",
+            origin="30301",
+            destination="60601",
+            weight=100.0,
+            weight_method="Actual",
+            actual_weight=100.0,
+            dim_weight=0.0,
+            pieces=1,
+            total=123.45,
+        ), {}
+
+    monkeypatch.setattr("app.api.quote_service.create_quote", _fake_create_quote)
+
+    response = client.post(
+        "/api/quote",
+        headers={"Authorization": "Bearer per-user-token"},
+        json={
+            "quote_type": "Hotshot",
+            "origin": "30301",
+            "destination": "60601",
+            "weight": 100,
+        },
+    )
+
+    assert response.status_code == 201
+    assert captured["rate_set"] == "vip"
