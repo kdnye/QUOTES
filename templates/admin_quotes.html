@@ -14,6 +14,7 @@
           <th>User ID</th>
           <th>User Email</th>
           <th>Type</th>
+          <th>Source</th>
           <th>Origin</th>
           <th>Destination</th>
           <th>Request IP</th>
@@ -33,6 +34,7 @@
           <td class="text-break">{{ q.user_id }}</td>
           <td class="text-break">{{ q.user_email }}</td>
           <td class="text-break">{{ q.quote_type }}</td>
+          <td class="text-break">{{ q.quote_source or '' }}</td>
           <td class="text-break">{{ q.origin }}</td>
           <td class="text-break">{{ q.destination }}</td>
           <td class="text-break">{{ q.request_ip }}</td>

@@ -32,6 +32,16 @@ quote/                  - Pricing logic and helpers
 services/               - Business logic wrappers for auth and quotes
 ```
 
+### External API Clients
+
+The JSON API (`POST /api/quote`) supports any HTTP client that can set `Authorization: Bearer <token>` and send a JSON body. Tier-1 tested integrations:
+
+| Client | Method | Notes |
+|--------|--------|-------|
+| curl / HTTP libraries | `POST` | Reference implementation — see quick-start guide |
+| Google Sheets (Apps Script) | `UrlFetchApp.fetch` | Use `+` for string concat; store key in script properties |
+| Microsoft Excel (Power Query) | `Web.Contents` with `Content=` | Use `&` for string concat; requires Organizational or Public privacy level; use `ManualStatusHandling` to surface API error details |
+
 ### Application Factory (`app/__init__.py`)
 - Initializes Flask, database, login manager, CSRF protection, and the Limiter integration.
 - Registers blueprints: `auth`, `admin`, `admin_quotes`, `quotes`, and `help`.
@@ -56,7 +66,8 @@ Key tables:
 ### Quote Workflow (`app/quotes/routes.py`)
 - `/quotes/new` displays the form for creating quotes or accepts JSON payloads.
 - Retrieves accessorial options from the database, calculates dimensional weight, and delegates pricing to the `quote` package.
-- Saves the resulting `Quote` and returns HTML or JSON.
+- Saves the resulting `Quote` and returns HTML or JSON. Web-originated quotes are tagged `quote_source="web"`.
+- `/api/quote` (see `app/api.py`) accepts `POST` requests with a `Bearer` token. Per-user API key quotes are tagged `quote_source="api_key"` and automatically attributed to the authenticated user; global service-token quotes are tagged `quote_source="api_service"`. The `quote_source` and `request_ip` fields are stored on every quote so admins can audit who made each request.
 - `/quotes/<quote_id>/email` gathers booking information and prepares an email for staff with mail privileges.
 - `/quotes/<quote_id>/email-volume` escalates overweight/overvalue shipments for manual review without applying the admin fee.
 
@@ -163,6 +174,8 @@ The application relies on several environment variables (see `.env.example`):
 - `SECRET_KEY` for session signing
 - `GOOGLE_MAPS_API_KEY` for distance lookups
 - Admin bootstrap credentials (`ADMIN_EMAIL`, `ADMIN_PASSWORD`)
+
+> **Client integration note — ZIP normalization**: External clients (Excel, Google Sheets, custom scripts) must send origin and destination as 5-digit strings. The backend validates ZIPs in `app/quote/zip_validation.py` and rejects inputs that are numeric integers or shorter than 5 digits. Always wrap ZIP values in a string coercion (e.g., `Text.From()` in Power Query, `str().zfill(5)` in Python) before sending the request.
 - `EIA_API_KEY` – authenticates calls to the EIA v2 API from `sync_eia_rates.py`; optional (omit for unauthenticated public access)
 - `EIA_SERIES_MAP_JSON` – overrides the built-in region→EIA-series mapping; keys must match `FuelSurcharge.padd_region` values
 - `EIA_TIMEOUT_SECONDS` – HTTP timeout per EIA request (default `15` seconds)
