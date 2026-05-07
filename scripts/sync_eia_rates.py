@@ -134,14 +134,8 @@ def fetch_series_payload(series_id: str, timeout_seconds: int) -> Dict[str, Any]
         Calls :func:`requests.get` against the EIA v2 API endpoint.
     """
 
-    api_key = os.environ.get("EIA_API_KEY", "").strip()
-    if not api_key:
-        raise ValueError(
-            "EIA_API_KEY environment variable is not set or empty; "
-            "set it in the Cloud Run job configuration"
-        )
     url = f"{EIA_BASE_URL}/{series_id}"
-    params = {"api_key": api_key}
+    params = {"api_key": os.environ["EIA_API_KEY"]}
     response: Response = requests.get(url, params=params, timeout=timeout_seconds)
     response.raise_for_status()
     payload = response.json()
@@ -309,6 +303,12 @@ def main() -> int:
         level=os.environ.get("LOG_LEVEL", "INFO"),
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
     )
+    if not os.environ.get("EIA_API_KEY", "").strip():
+        LOGGER.error(
+            "EIA_API_KEY is not set; mount the Secret Manager secret in the "
+            "Cloud Run job configuration and re-run"
+        )
+        return 1
     commit_strategy = os.environ.get("EIA_COMMIT_STRATEGY", "all_or_nothing").strip()
     if commit_strategy not in {"all_or_nothing", "per_region"}:
         raise ValueError("EIA_COMMIT_STRATEGY must be 'all_or_nothing' or 'per_region'")

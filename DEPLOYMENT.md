@@ -198,7 +198,7 @@ required to read secrets and reach dependencies:
 | `HEALTHCHECK_REQUIRE_DB` | No | Set to a truthy value to require database connectivity for the `/healthz` probe endpoint. |
 | `HEALTHCHECK_DB_TIMEOUT_SECONDS` | No | Timeout (in seconds) for the optional database probe performed by `/healthz`. Defaults to `2.0`. |
 | `FSI_LOGO_PATH` | No | Filesystem path served at `/fsi-logo`. Defaults to `/logos/fsi-logo.png`, which expects a Cloud Run Cloud Storage volume mount at `/logos`. |
-| `EIA_API_KEY` | No | API key for the U.S. Energy Information Administration v2 API, used by `sync_eia_rates.py`. Omit for unauthenticated access (lower rate limits). Store in Secret Manager in production. |
+| `EIA_API_KEY` | Yes (for `sync-eia-rates` job) | API key for the U.S. Energy Information Administration v2 API, used by `sync_eia_rates.py`. The EIA v2 API returns 403 without a valid key — unauthenticated access is no longer supported. Store in Secret Manager and mount via `--set-secrets` in the Cloud Run job configuration. |
 | `EIA_SERIES_MAP_JSON` | No | JSON object overriding the built-in 11-region EIA series ID map. Keys must exactly match `FuelSurcharge.padd_region` values (e.g. `PADD1`, `PADD2`, `NATIONAL`). Defaults to the hardcoded map in `sync_eia_rates.py`. |
 | `EIA_TIMEOUT_SECONDS` | No | HTTP request timeout in seconds for each EIA API call made by `sync_eia_rates.py`. Default: `15`. |
 | `EIA_COMMIT_STRATEGY` | No | Transaction strategy for `sync_eia_rates.py`: `all_or_nothing` (default) commits all regions in one transaction and rolls back on any failure; `per_region` commits each region independently so partial updates succeed even when some regions fail. |
@@ -481,9 +481,11 @@ To automate the weekly EIA sync on Cloud Run:
 
 1. **Create a Cloud Run Job** from the same container image used by the main
    service. Set the job's command to `python scripts/sync_eia_rates.py`.
-2. **Inject environment variables** – provide the same `POSTGRES_*` /
-   `DATABASE_URL` connection settings as the main service, plus `EIA_API_KEY`
-   and `EIA_COMMIT_STRATEGY`.
+2. **Inject environment variables and secrets** – provide the same `POSTGRES_*` /
+   `DATABASE_URL` connection settings as the main service, plus `EIA_COMMIT_STRATEGY`.
+   Mount the `EIA_API_KEY` Secret Manager secret via
+   `--set-secrets=EIA_API_KEY=projects/PROJECT/secrets/EIA_API_KEY:latest`.
+   The job will exit immediately with a clear error if this secret is missing.
 3. **Create a Cloud Scheduler job** targeting the Cloud Run Jobs API with cron
    expression `0 18 * * 1`. Grant `roles/run.invoker` on the Cloud Run Job to
    the Scheduler service account.
