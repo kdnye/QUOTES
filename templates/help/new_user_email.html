@@ -120,9 +120,7 @@
       "Password:    " + pw,
     ];
 
-    if (includeApi && apiKey) {
-      lines.push("API Key:     " + key);
-    } else if (includeApi) {
+    if (includeApi) {
       lines.push("API Key:     " + key);
     }
 
@@ -203,7 +201,7 @@
       "Let us know if you have any questions getting started.",
       "",
       "— Freight Services Inc.",
-    ).filter(Boolean);
+    );
 
     return lines.filter(function (l) { return l !== null; }).join("\r\n");
   }
