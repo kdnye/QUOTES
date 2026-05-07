@@ -17,8 +17,7 @@ from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 def get_accessorial_options(quote_type: str) -> list[str]:
     """Return list of accessorial names from the database."""
-    with Session() as db:
-        names = [a.name for a in db.query(Accessorial).all()]
+    names = [a.name for a in Accessorial.query.all()]
     if quote_type == "Hotshot":
         names = [n for n in names if "guarantee" not in n.lower()]
     return names
