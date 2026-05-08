@@ -278,7 +278,7 @@ def api_create_quote() -> ResponseReturnValue:
         quote_obj, metadata = result, {}
 
     send_quote_email = bool(data.get("send_email", False))
-    email_sent: bool | None = None
+    email_sent = False
 
     if send_quote_email and api_user and api_user.email:
         if is_quote_email_smtp_enabled():
@@ -287,19 +287,29 @@ def api_create_quote() -> ResponseReturnValue:
                     SELF_QUOTE_EMAIL_INTRO,
                     _format_quote_copy_email_body,
                     _format_quote_copy_email_html,
+                    _get_zip_notes,
                 )
 
                 email_meta = dict(metadata or {})
                 email_meta["accessorial_total"] = float(
                     email_meta.get("accessorial_total", 0.0) or 0.0
                 )
+                origin_notes = _get_zip_notes(quote_obj.origin or "", quote_obj.rate_set)
+                dest_notes = _get_zip_notes(quote_obj.destination or "", quote_obj.rate_set)
                 action_url = url_for("quotes.new_quote", _external=True)
-                email_body = _format_quote_copy_email_body(quote_obj, metadata=email_meta)
+                email_body = _format_quote_copy_email_body(
+                    quote_obj,
+                    metadata=email_meta,
+                    origin_notes=origin_notes,
+                    dest_notes=dest_notes,
+                )
                 html_body = _format_quote_copy_email_html(
                     quote_obj,
                     metadata=email_meta,
                     intro_message=SELF_QUOTE_EMAIL_INTRO,
                     action_url=action_url,
+                    origin_notes=origin_notes,
+                    dest_notes=dest_notes,
                 )
                 send_email(
                     to=api_user.email,
@@ -315,14 +325,11 @@ def api_create_quote() -> ResponseReturnValue:
                 )
                 email_sent = True
             except MailRateLimitError:
-                email_sent = False
+                pass
             except Exception:
                 logger.exception(
                     "Failed to send API quote email for quote_id=%s", quote_obj.quote_id
                 )
-                email_sent = False
-        else:
-            email_sent = False
 
     response_data = _serialize_quote(quote_obj, metadata)
     if send_quote_email:
