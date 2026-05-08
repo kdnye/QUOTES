@@ -35,16 +35,13 @@
 //  Outputs (written by the script)
 //   K  Quote ID
 //   L  Total ($)
-//   M  Weight Method    "actual" or "dimensional"
+//   M  Weight Method    "Actual" or "Dimensional"
 //   N  Billable Weight  weight used for pricing
 //   O  Base Rate ($)
-//   P  Fuel Surcharge ($)
-//   Q  Fuel %
-//   R  VSC Surcharge ($)
-//   S  Accessorial Total ($)
-//   T  Zone
-//   U  Miles
-//   V  Status           "Success" or error detail
+//   P  Accessorial Total ($)
+//   Q  Zone
+//   R  Miles
+//   S  Status           "Success" or error detail
 // -----------------------------------------------------------------------
 
 const API_URL = 'https://quote.freightservices.net/api/quote';
@@ -71,16 +68,13 @@ const CONFIG = {
   // Output columns
   COL_QUOTE_ID:    11,  // K — Quote ID
   COL_TOTAL:       12,  // L — Total price ($)
-  COL_WT_METHOD:   13,  // M — "actual" or "dimensional"
+  COL_WT_METHOD:   13,  // M — "Actual" or "Dimensional"
   COL_BILL_WT:     14,  // N — Billable weight used for pricing
   COL_BASE_RATE:   15,  // O — Base rate ($)
-  COL_FUEL_SURCH:  16,  // P — Fuel surcharge ($)
-  COL_FUEL_PCT:    17,  // Q — Fuel surcharge rate (e.g. 0.15 = 15%)
-  COL_VSC:         18,  // R — VSC surcharge ($)
-  COL_ACC_TOTAL:   19,  // S — Total accessorial charges ($)
-  COL_ZONE:        20,  // T — Rate zone
-  COL_MILES:       21,  // U — Route distance in miles
-  COL_STATUS:      22,  // V — "Success" or error detail
+  COL_ACC_TOTAL:   16,  // P — Total accessorial charges ($)
+  COL_ZONE:        17,  // Q — Rate zone
+  COL_MILES:       18,  // R — Route distance in miles
+  COL_STATUS:      19,  // S — "Success" or error detail
 
   DATA_START_ROW:  2,   // First row with data (row 1 is assumed to be the header)
 };
@@ -166,10 +160,9 @@ function batchGenerateQuotes() {
 
   // Output buffers — one entry per row, flushed in batch at the end
   const empty = () => Array(numRows).fill(null).map(() => ['']);
-  const outQuoteId  = empty(), outTotal     = empty(), outWtMethod = empty();
-  const outBillWt   = empty(), outBaseRate  = empty(), outFuelSurch = empty();
-  const outFuelPct  = empty(), outVsc       = empty(), outAccTotal = empty();
-  const outZone     = empty(), outMiles     = empty(), outStatus   = empty();
+  const outQuoteId  = empty(), outTotal    = empty(), outWtMethod = empty();
+  const outBillWt   = empty(), outBaseRate = empty(), outAccTotal = empty();
+  const outZone     = empty(), outMiles    = empty(), outStatus   = empty();
 
   let processed = 0;
   for (let i = 0; i < numRows; i++) {
@@ -177,18 +170,15 @@ function batchGenerateQuotes() {
 
     try {
       const r = callApi(allValues[i]);
-      outQuoteId[i]   = [r.quoteId];
-      outTotal[i]     = [r.total];
-      outWtMethod[i]  = [r.weightMethod];
-      outBillWt[i]    = [r.billableWeight];
-      outBaseRate[i]  = [r.baseRate];
-      outFuelSurch[i] = [r.fuelSurcharge];
-      outFuelPct[i]   = [r.fuelPct];
-      outVsc[i]       = [r.vscSurcharge];
-      outAccTotal[i]  = [r.accessorialTotal];
-      outZone[i]      = [r.zone];
-      outMiles[i]     = [r.miles];
-      outStatus[i]    = [r.status];
+      outQuoteId[i]  = [r.quoteId];
+      outTotal[i]    = [r.total];
+      outWtMethod[i] = [r.weightMethod];
+      outBillWt[i]   = [r.billableWeight];
+      outBaseRate[i] = [r.baseRate];
+      outAccTotal[i] = [r.accessorialTotal];
+      outZone[i]     = [r.zone];
+      outMiles[i]    = [r.miles];
+      outStatus[i]   = [r.status];
     } catch (e) {
       outStatus[i] = ['Error: ' + e.message];
     }
@@ -201,18 +191,15 @@ function batchGenerateQuotes() {
 
   // One write per output column covers all rows
   const sr = CONFIG.DATA_START_ROW;
-  sheet.getRange(sr, CONFIG.COL_QUOTE_ID,   numRows, 1).setValues(outQuoteId);
-  sheet.getRange(sr, CONFIG.COL_TOTAL,      numRows, 1).setValues(outTotal);
-  sheet.getRange(sr, CONFIG.COL_WT_METHOD,  numRows, 1).setValues(outWtMethod);
-  sheet.getRange(sr, CONFIG.COL_BILL_WT,    numRows, 1).setValues(outBillWt);
-  sheet.getRange(sr, CONFIG.COL_BASE_RATE,  numRows, 1).setValues(outBaseRate);
-  sheet.getRange(sr, CONFIG.COL_FUEL_SURCH, numRows, 1).setValues(outFuelSurch);
-  sheet.getRange(sr, CONFIG.COL_FUEL_PCT,   numRows, 1).setValues(outFuelPct);
-  sheet.getRange(sr, CONFIG.COL_VSC,        numRows, 1).setValues(outVsc);
-  sheet.getRange(sr, CONFIG.COL_ACC_TOTAL,  numRows, 1).setValues(outAccTotal);
-  sheet.getRange(sr, CONFIG.COL_ZONE,       numRows, 1).setValues(outZone);
-  sheet.getRange(sr, CONFIG.COL_MILES,      numRows, 1).setValues(outMiles);
-  sheet.getRange(sr, CONFIG.COL_STATUS,     numRows, 1).setValues(outStatus);
+  sheet.getRange(sr, CONFIG.COL_QUOTE_ID,  numRows, 1).setValues(outQuoteId);
+  sheet.getRange(sr, CONFIG.COL_TOTAL,     numRows, 1).setValues(outTotal);
+  sheet.getRange(sr, CONFIG.COL_WT_METHOD, numRows, 1).setValues(outWtMethod);
+  sheet.getRange(sr, CONFIG.COL_BILL_WT,   numRows, 1).setValues(outBillWt);
+  sheet.getRange(sr, CONFIG.COL_BASE_RATE, numRows, 1).setValues(outBaseRate);
+  sheet.getRange(sr, CONFIG.COL_ACC_TOTAL, numRows, 1).setValues(outAccTotal);
+  sheet.getRange(sr, CONFIG.COL_ZONE,      numRows, 1).setValues(outZone);
+  sheet.getRange(sr, CONFIG.COL_MILES,     numRows, 1).setValues(outMiles);
+  sheet.getRange(sr, CONFIG.COL_STATUS,    numRows, 1).setValues(outStatus);
 
   SpreadsheetApp.getUi().alert('Done. ' + processed + ' row(s) processed.');
 }
@@ -235,9 +222,6 @@ function processRow(sheet, r) {
   sheet.getRange(r, CONFIG.COL_WT_METHOD).setValue(res.weightMethod);
   sheet.getRange(r, CONFIG.COL_BILL_WT).setValue(res.billableWeight);
   sheet.getRange(r, CONFIG.COL_BASE_RATE).setValue(res.baseRate);
-  sheet.getRange(r, CONFIG.COL_FUEL_SURCH).setValue(res.fuelSurcharge);
-  sheet.getRange(r, CONFIG.COL_FUEL_PCT).setValue(res.fuelPct);
-  sheet.getRange(r, CONFIG.COL_VSC).setValue(res.vscSurcharge);
   sheet.getRange(r, CONFIG.COL_ACC_TOTAL).setValue(res.accessorialTotal);
   sheet.getRange(r, CONFIG.COL_ZONE).setValue(res.zone);
   sheet.getRange(r, CONFIG.COL_MILES).setValue(res.miles);
@@ -324,23 +308,19 @@ function callApi(values) {
     return {
       quoteId:          data.quote_id,
       total:            data.total,
-      weightMethod:     data.weight_method                          || '',
+      weightMethod:     data.weight_method                         || '',
       billableWeight:   data.weight,
-      zone:             data.zone                                   || '',
-      baseRate:         details.base_rate       != null ? details.base_rate       : '',
-      fuelSurcharge:    details.fuel_surcharge  != null ? details.fuel_surcharge  : '',
-      fuelPct:          details.fuel_pct        != null ? details.fuel_pct        : '',
-      vscSurcharge:     details.vsc_surcharge   != null ? details.vsc_surcharge   : '',
-      accessorialTotal: meta.accessorial_total  != null ? meta.accessorial_total  : '',
-      miles:            meta.miles              != null ? meta.miles              : '',
+      zone:             data.zone                                  || '',
+      baseRate:         details.base_rate      != null ? details.base_rate      : '',
+      accessorialTotal: meta.accessorial_total != null ? meta.accessorial_total : '',
+      miles:            meta.miles             != null ? meta.miles             : '',
       status:           'Success',
     };
   } else {
     const errMsg = data.remediation || ('HTTP ' + code);
     return {
       quoteId: '', total: '', weightMethod: '', billableWeight: '',
-      baseRate: '', fuelSurcharge: '', fuelPct: '', vscSurcharge: '',
-      accessorialTotal: '', zone: '', miles: '',
+      baseRate: '', accessorialTotal: '', zone: '', miles: '',
       status: 'Error: ' + errMsg,
     };
   }
