@@ -173,9 +173,15 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
     ' Append dimensions if supplied.
     ' dim_weight takes priority over length/width/height.
+    ' IsNumeric() guards each CDbl call — a non-numeric non-empty cell writes a
+    ' row-level error and exits cleanly so a batch run continues with other rows.
     Dim dimWtRaw As Variant
     dimWtRaw = ws.Cells(r, COL_DIM_WEIGHT).Value
     If Not (IsEmpty(dimWtRaw) Or CStr(dimWtRaw) = "") Then
+        If Not IsNumeric(dimWtRaw) Then
+            ws.Cells(r, COL_STATUS).Value = "Error: Dim Weight must be a number."
+            Exit Sub
+        End If
         payload = payload & ", ""dim_weight"": " & Trim(Str(CDbl(dimWtRaw)))
     Else
         Dim lenRaw As Variant, widRaw As Variant, htRaw As Variant
@@ -185,6 +191,10 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         If Not (IsEmpty(lenRaw) Or CStr(lenRaw) = "") And _
            Not (IsEmpty(widRaw) Or CStr(widRaw) = "") And _
            Not (IsEmpty(htRaw)  Or CStr(htRaw)  = "") Then
+            If Not IsNumeric(lenRaw) Or Not IsNumeric(widRaw) Or Not IsNumeric(htRaw) Then
+                ws.Cells(r, COL_STATUS).Value = "Error: Length, Width, and Height must all be numbers."
+                Exit Sub
+            End If
             payload = payload & _
                 ", ""length"": " & Trim(Str(CDbl(lenRaw))) & _
                 ", ""width"": "  & Trim(Str(CDbl(widRaw))) & _
