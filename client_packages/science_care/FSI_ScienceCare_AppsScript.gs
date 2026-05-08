@@ -152,10 +152,23 @@ function runScienceCareQuote() {
   const sheet = SpreadsheetApp.getActiveSheet();
   const apiKey = getApiKey();
 
+  // Clear previous outputs so stale data never lingers after an abort or error
+  sheet.getRange(CONFIG.ROW_OUT_AIR, CONFIG.COL_OUT_AIR_TOTAL).clearContent();
+  sheet.getRange(CONFIG.ROW_OUT_AIR, CONFIG.COL_OUT_AIR_STATUS).clearContent();
+  sheet.getRange(CONFIG.ROW_OUT_HOT, CONFIG.COL_OUT_HOT_TOTAL).clearContent();
+  sheet.getRange(CONFIG.ROW_OUT_HOT, CONFIG.COL_OUT_HOT_STATUS).clearContent();
+  sheet.getRange(CONFIG.ROW_OUT_HOT, CONFIG.COL_OUT_HOT_MILES).clearContent();
+
   // --- Inputs ---
-  const labCode  = String(sheet.getRange(CONFIG.ROW_SC_LAB, CONFIG.COL_SC_LAB).getValue()).trim().toUpperCase();
-  const destRaw  = sheet.getRange(CONFIG.ROW_DEST_ZIP, CONFIG.COL_DEST_ZIP).getValue();
-  const destZip  = padZip(destRaw);
+  const labCode = String(sheet.getRange(CONFIG.ROW_SC_LAB, CONFIG.COL_SC_LAB).getValue()).trim().toUpperCase();
+
+  // Validate destination ZIP against the raw value before padding
+  const destRaw = sheet.getRange(CONFIG.ROW_DEST_ZIP, CONFIG.COL_DEST_ZIP).getValue();
+  if (destRaw === '' || destRaw == null) {
+    SpreadsheetApp.getUi().alert('US Zip Code cell is empty.');
+    return;
+  }
+  const destZip   = padZip(destRaw);
   const originZip = LAB_ZIP[labCode];
 
   if (!originZip) {
@@ -164,8 +177,8 @@ function runScienceCareQuote() {
     );
     return;
   }
-  if (!destZip || destZip.length !== 5) {
-    SpreadsheetApp.getUi().alert('US Zip Code cell is empty or invalid.');
+  if (!/^\d{5}$/.test(destZip)) {
+    SpreadsheetApp.getUi().alert('US Zip Code "' + destRaw + '" is invalid — must be 5 digits.');
     return;
   }
 
@@ -176,7 +189,7 @@ function runScienceCareQuote() {
   }
 
   const boxesRaw = sheet.getRange(CONFIG.ROW_TOTAL_BOXES, CONFIG.COL_TOTAL_BOXES).getValue();
-  const pieces   = (boxesRaw === '' || boxesRaw == null) ? 1 : parseInt(boxesRaw, 10);
+  const pieces   = Math.max(1, parseInt(boxesRaw, 10) || 1);
 
   const dimWeight    = calcDimWeight(sheet);
   const accessorials = readAccessorials(sheet);

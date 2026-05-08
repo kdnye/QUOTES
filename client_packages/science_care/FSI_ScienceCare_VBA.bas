@@ -152,9 +152,16 @@ Public Sub RunScienceCareQuote()
 
     ' --- Destination ZIP ---
     Dim destZip As String
-    destZip = FormatZip(ws.Range(CELL_DEST_ZIP).Value)
-    If Len(destZip) < 5 Then
-        MsgBox "US Zip Code cell (" & CELL_DEST_ZIP & ") is empty or invalid.", _
+    Dim destRaw As Variant
+    destRaw = ws.Range(CELL_DEST_ZIP).Value
+    If IsEmpty(destRaw) Or CStr(destRaw) = "" Then
+        MsgBox "US Zip Code cell (" & CELL_DEST_ZIP & ") is empty.", _
+               vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
+    destZip = FormatZip(destRaw)
+    If Not destZip Like "#####" Then
+        MsgBox "US Zip Code """ & destZip & """ is invalid — must be 5 digits.", _
                vbExclamation, "FSI Quote"
         Exit Sub
     End If
@@ -167,10 +174,11 @@ Public Sub RunScienceCareQuote()
     totalWeight = CDbl(ws.Range(CELL_TOTAL_WEIGHT).Value)
     Dim bVal As Variant
     bVal = ws.Range(CELL_TOTAL_BOXES).Value
-    If IsEmpty(bVal) Or CStr(bVal) = "" Then
+    If IsEmpty(bVal) Or CStr(bVal) = "" Or Not IsNumeric(bVal) Then
         totalBoxes = 1
     Else
         totalBoxes = CLng(bVal)
+        If totalBoxes < 1 Then totalBoxes = 1
     End If
     On Error GoTo 0
 
