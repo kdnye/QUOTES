@@ -51,14 +51,14 @@ All three integrations expect the **same column order** by default. Set up your 
 |---|---|---|
 | K | Quote ID | Unique quote reference, e.g. `Q-BCDFGHJ2` |
 | L | Total ($) | Final price including all charges |
-| M | Weight Method | `actual` — actual weight was used; `dimensional` — dim weight was higher and used instead |
+| M | Weight Method | `Actual` — actual weight was used; `Dimensional` — dim weight was higher and used instead |
 | N | Billable Weight | The weight the price was calculated on (greater of actual and dim) |
 | O | Base Rate ($) | Freight base rate before surcharges |
 | P | Fuel Surcharge ($) | Fuel surcharge dollar amount |
 | Q | Fuel % | Fuel surcharge rate, e.g. `0.15` = 15% |
 | R | VSC Surcharge ($) | Value-of-service charge |
 | S | Accessorial Total ($) | Sum of all accessorial charges |
-| T | Zone | Rate zone, e.g. `C` |
+| T | Zone | Rate zone, e.g. `C`. Populated once your FSI account admin enables zone serialization in the API |
 | U | Miles | Calculated route distance |
 | V | Status | `Success` or error detail |
 
@@ -70,7 +70,7 @@ If your columns are in a different order, see [Changing column assignments](#cha
 
 ## Dimensional weight
 
-Billable weight is always the **greater of actual weight and dimensional weight**. The `Weight Method` output column tells you which was used.
+Billable weight is always the **greater of actual weight and dimensional weight**. The `Weight Method` output column tells you which was used — the API returns `Actual` or `Dimensional` (Proper case).
 
 There are two ways to supply dimensional weight:
 

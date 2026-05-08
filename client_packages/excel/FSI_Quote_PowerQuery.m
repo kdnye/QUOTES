@@ -143,11 +143,18 @@ let
                  then null
                  else Json.Document(response),
 
-        meta   = if parsed = null or Record.HasFields(parsed, "error")
-                 then null
-                 else if Record.HasFields(parsed, "metadata")
-                      then parsed[metadata]
-                      else null,
+        meta    = if parsed = null or Record.HasFields(parsed, "error")
+                  then null
+                  else if Record.HasFields(parsed, "metadata")
+                       then parsed[metadata]
+                       else null,
+
+        // base_rate / fuel_surcharge / fuel_pct / vsc_surcharge are nested one
+        // level deeper inside metadata.details (see app/services/quote.py).
+        // miles and accessorial_total sit directly on metadata.
+        details = if meta = null or not Record.HasFields(meta, "details")
+                  then null
+                  else meta[details],
 
         result = if quoteType = null
                  then [
@@ -170,12 +177,12 @@ let
                           total             = parsed[total],
                           weight_method     = parsed[weight_method],
                           billable_weight   = parsed[weight],
-                          base_rate         = if meta = null then null else meta[base_rate],
-                          fuel_surcharge    = if meta = null then null else meta[fuel_surcharge],
-                          fuel_pct          = if meta = null then null else meta[fuel_pct],
-                          vsc_surcharge     = if meta = null then null else meta[vsc_surcharge],
+                          zone              = parsed[zone],
+                          base_rate         = if details = null then null else details[base_rate],
+                          fuel_surcharge    = if details = null then null else details[fuel_surcharge],
+                          fuel_pct          = if details = null then null else details[fuel_pct],
+                          vsc_surcharge     = if details = null then null else details[vsc_surcharge],
                           accessorial_total = if meta = null then null else meta[accessorial_total],
-                          zone              = if meta = null then null else meta[zone],
                           miles             = if meta = null then null else meta[miles],
                           status            = "Success"
                       ]

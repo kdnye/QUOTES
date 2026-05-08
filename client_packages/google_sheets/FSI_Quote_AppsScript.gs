@@ -316,18 +316,22 @@ function callApi(values) {
   const data     = JSON.parse(response.getContentText());
 
   if (code === 201) {
-    const meta = data.metadata || {};
+    const meta    = data.metadata || {};
+    // base_rate / fuel_surcharge / fuel_pct / vsc_surcharge live inside
+    // metadata.details (see app/services/quote.py). miles and
+    // accessorial_total sit directly on metadata. zone is a top-level field.
+    const details = meta.details || {};
     return {
       quoteId:          data.quote_id,
       total:            data.total,
-      weightMethod:     data.weight_method     || '',
+      weightMethod:     data.weight_method                          || '',
       billableWeight:   data.weight,
-      baseRate:         meta.base_rate          != null ? meta.base_rate          : '',
-      fuelSurcharge:    meta.fuel_surcharge     != null ? meta.fuel_surcharge     : '',
-      fuelPct:          meta.fuel_pct           != null ? meta.fuel_pct           : '',
-      vscSurcharge:     meta.vsc_surcharge      != null ? meta.vsc_surcharge      : '',
+      zone:             data.zone                                   || '',
+      baseRate:         details.base_rate       != null ? details.base_rate       : '',
+      fuelSurcharge:    details.fuel_surcharge  != null ? details.fuel_surcharge  : '',
+      fuelPct:          details.fuel_pct        != null ? details.fuel_pct        : '',
+      vscSurcharge:     details.vsc_surcharge   != null ? details.vsc_surcharge   : '',
       accessorialTotal: meta.accessorial_total  != null ? meta.accessorial_total  : '',
-      zone:             meta.zone               || '',
       miles:            meta.miles              != null ? meta.miles              : '',
       status:           'Success',
     };

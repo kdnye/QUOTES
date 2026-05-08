@@ -235,7 +235,15 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_BILL_WT).Value = Val(m(0).SubMatches(0))
 
-        ' --- Cost breakdown from metadata ---
+        ' --- Cost breakdown ---
+        ' zone is a top-level field in the response.
+        ' base_rate / fuel_surcharge / fuel_pct / vsc_surcharge live inside
+        ' metadata.details; miles and accessorial_total sit directly on metadata.
+        ' Regex searches the full JSON string so nesting depth does not matter.
+        rx.Pattern = """zone"":\s*""([^""]+)"""
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_ZONE).Value = m(0).SubMatches(0)
+
         rx.Pattern = """base_rate"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_BASE_RATE).Value = Val(m(0).SubMatches(0))
@@ -256,10 +264,6 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_ACC_TOTAL).Value = Val(m(0).SubMatches(0))
 
-        rx.Pattern = """zone"":\s*""([^""]+)"""
-        Set m = rx.Execute(resp)
-        If m.Count > 0 Then ws.Cells(r, COL_ZONE).Value = m(0).SubMatches(0)
-
         rx.Pattern = """miles"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_MILES).Value = Val(m(0).SubMatches(0))
@@ -277,7 +281,7 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     Exit Sub
 
 InputError:
-    ws.Cells(r, COL_STATUS).Value = "Error: Could not read numeric input — check Weight/Pieces cells."
+    ws.Cells(r, COL_STATUS).Value = "Error: Could not read numeric input — check Weight, Pieces, and Dimension cells."
     Exit Sub
 
 ConnectionError:

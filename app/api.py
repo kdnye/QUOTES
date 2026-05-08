@@ -208,6 +208,7 @@ def _serialize_quote(
         "dim_weight": quote_obj.dim_weight,
         "pieces": quote_obj.pieces,
         "total": quote_obj.total,
+        "zone": quote_obj.zone,
         "metadata": metadata or {},
     }
 
