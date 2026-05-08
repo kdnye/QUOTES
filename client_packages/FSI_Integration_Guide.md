@@ -54,13 +54,10 @@ All three integrations expect the **same column order** by default. Set up your 
 | M | Weight Method | `Actual` — actual weight was used; `Dimensional` — dim weight was higher and used instead |
 | N | Billable Weight | The weight the price was calculated on (greater of actual and dim) |
 | O | Base Rate ($) | Freight base rate before surcharges |
-| P | Fuel Surcharge ($) | Fuel surcharge dollar amount |
-| Q | Fuel % | Fuel surcharge rate, e.g. `0.15` = 15% |
-| R | VSC Surcharge ($) | Value-of-service charge |
-| S | Accessorial Total ($) | Sum of all accessorial charges |
-| T | Zone | Rate zone, e.g. `C`. Populated once your FSI account admin enables zone serialization in the API |
-| U | Miles | Calculated route distance |
-| V | Status | `Success` or error detail |
+| P | Accessorial Total ($) | Sum of all accessorial charges |
+| Q | Zone | Rate zone, e.g. `C` |
+| R | Miles | Calculated route distance |
+| S | Status | `Success` or error detail |
 
 Data starts in **row 2**. Row 1 is the header.
 
@@ -86,10 +83,10 @@ If you already know the dimensional weight, enter it directly in column J. This 
 
 ## Cost breakdown fields
 
-The API returns a full price breakdown alongside the total. The output columns O through U expose these values so you can see exactly how the total was built:
+The API returns a price breakdown alongside the total. The output columns O and P expose the key components:
 
 ```
-Total  =  Base Rate  +  Fuel Surcharge  +  VSC Surcharge  +  Accessorial Total
+Total  =  Base Rate  +  Surcharges  +  Accessorial Total
 ```
 
 Example for a 520 lb Hotshot quote, zone C, 1,142 miles:
@@ -97,12 +94,11 @@ Example for a 520 lb Hotshot quote, zone C, 1,142 miles:
 | Field | Value |
 |---|---|
 | Base Rate | $680.00 |
-| Fuel Surcharge (15%) | $102.00 |
-| VSC Surcharge | $65.50 |
+| Surcharges | $167.50 |
 | Liftgate accessorial | $75.00 |
 | **Total** | **$922.50** |
 
-> The breakdown is useful for auditing quotes, validating rate changes, and building margin calculations on top of the raw totals.
+> The breakdown is useful for auditing quotes and validating rate changes.
 
 ---
 
@@ -140,7 +136,7 @@ You only need to do this once.
 
 **All rows:** **FSI Quotes > Process all rows** — the script works from row 2 down to the last non-empty row.
 
-Results are written to columns K–V. A status of `Success` in column V means the quote was returned correctly. Any other value is an error message that explains what needs to be fixed.
+Results are written to columns K–S. A status of `Success` in column S means the quote was returned correctly. Any other value is an error message that explains what needs to be fixed.
 
 ---
 
@@ -176,7 +172,7 @@ When you open the file, click **Enable Content** in the yellow bar if it appears
 
 **All rows:** Run `BatchGenerateFSIQuotes` to process every non-empty row from row 2 downward.
 
-Results are written to columns K–V.
+Results are written to columns K–S.
 
 ---
 
@@ -240,7 +236,7 @@ Without this step Power Query will block the outbound connection.
    )
    ```
 
-4. Click the expand icon on the `Quote Result` column header (two arrows) and select the fields you want: `quote_id`, `total`, `weight_method`, `billable_weight`, `base_rate`, `fuel_surcharge`, `fuel_pct`, `vsc_surcharge`, `accessorial_total`, `zone`, `miles`, `status`.
+4. Click the expand icon on the `Quote Result` column header (two arrows) and select the fields you want: `quote_id`, `total`, `weight_method`, `billable_weight`, `base_rate`, `accessorial_total`, `zone`, `miles`, `status`.
 5. **Close & Load** — the results load into a new sheet.
 6. To refresh quotes: click anywhere in the results table > **Data > Refresh All**.
 

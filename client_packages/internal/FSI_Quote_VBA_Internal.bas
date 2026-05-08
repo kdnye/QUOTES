@@ -1,5 +1,9 @@
-Attribute VB_Name = "FSI_Quote"
-' FSI Quote Tool — Excel VBA Integration
+Attribute VB_Name = "FSI_Quote_Internal"
+' FSI Quote Tool — Excel VBA Integration (INTERNAL)
+' -----------------------------------------------------------------------
+' INTERNAL USE ONLY. This version includes fuel surcharge, fuel rate, and
+' VSC surcharge in the output. The client-facing version (excel/FSI_Quote_VBA.bas)
+' omits those columns — do not distribute this file externally.
 ' -----------------------------------------------------------------------
 ' Requirements: None. Uses MSXML2.XMLHTTP which ships with Windows/Office.
 ' Compatible with: Excel 2016+ on Windows (32-bit or 64-bit).
@@ -11,10 +15,8 @@ Attribute VB_Name = "FSI_Quote"
 '   4. Replace YOUR_API_KEY_HERE below with your actual key.
 '   5. Adjust the column letters in the CONFIGURATION section if needed.
 '   6. Close the editor (Alt+Q).
-'   7. Optional: Insert > Shapes, draw a button, right-click > Assign Macro
-'      > GenerateFSIQuote for single-row, or BatchGenerateFSIQuotes for all rows.
 '
-' SPREADSHEET LAYOUT (default — change letters in CONFIGURATION to match yours):
+' SPREADSHEET LAYOUT (default):
 '
 '  Inputs
 '   A  Quote Type      "Hotshot" or "Air"
@@ -26,7 +28,7 @@ Attribute VB_Name = "FSI_Quote"
 '   G  Length (in)     \
 '   H  Width (in)       > optional dimensions; all three required for dim-weight calc
 '   I  Height (in)     /
-'   J  Dim Weight (lbs) pre-calculated dim weight — supply instead of L/W/H
+'   J  Dim Weight (lbs) pre-calculated dim weight — supply instead of G/H/I
 '
 '  Outputs (written by the macro)
 '   K  Quote ID
@@ -34,10 +36,13 @@ Attribute VB_Name = "FSI_Quote"
 '   M  Weight Method   "Actual" or "Dimensional"
 '   N  Billable Weight weight used for pricing
 '   O  Base Rate ($)
-'   P  Accessorial Total ($)
-'   Q  Zone
-'   R  Miles
-'   S  Status          "Success" or error detail
+'   P  Fuel Surcharge ($)   <-- internal only
+'   Q  Fuel %               <-- internal only
+'   R  VSC Surcharge ($)    <-- internal only
+'   S  Accessorial Total ($)
+'   T  Zone
+'   U  Miles
+'   V  Status          "Success" or error detail
 ' -----------------------------------------------------------------------
 
 Option Explicit
@@ -48,36 +53,34 @@ Option Explicit
 Private Const API_KEY  As String = "YOUR_API_KEY_HERE"
 Private Const API_URL  As String = "https://quote.freightservices.net/api/quote"
 
-' Input column letters (A, B, C, ...)
-Private Const COL_QUOTE_TYPE  As String = "A"   ' "Hotshot" or "Air"
-Private Const COL_ORIGIN      As String = "B"   ' 5-digit origin ZIP code
-Private Const COL_DEST        As String = "C"   ' 5-digit destination ZIP code
-Private Const COL_WEIGHT      As String = "D"   ' Actual shipment weight in lbs
-Private Const COL_PIECES      As String = "E"   ' Number of pieces (blank = 1)
-Private Const COL_ACCESSORIAL As String = "F"   ' Comma-separated accessorials
-Private Const COL_LENGTH      As String = "G"   ' Package length in inches (optional)
-Private Const COL_WIDTH       As String = "H"   ' Package width in inches (optional)
-Private Const COL_HEIGHT      As String = "I"   ' Package height in inches (optional)
-Private Const COL_DIM_WEIGHT  As String = "J"   ' Pre-calculated dim weight in lbs (optional)
-'                                                  Supply dim_weight OR length+width+height, not both.
-'                                                  If neither is supplied, actual weight is used.
+' Input column letters
+Private Const COL_QUOTE_TYPE  As String = "A"
+Private Const COL_ORIGIN      As String = "B"
+Private Const COL_DEST        As String = "C"
+Private Const COL_WEIGHT      As String = "D"
+Private Const COL_PIECES      As String = "E"
+Private Const COL_ACCESSORIAL As String = "F"
+Private Const COL_LENGTH      As String = "G"
+Private Const COL_WIDTH       As String = "H"
+Private Const COL_HEIGHT      As String = "I"
+Private Const COL_DIM_WEIGHT  As String = "J"
 
 ' Output column letters
-Private Const COL_QUOTE_ID    As String = "K"   ' Quote ID
-Private Const COL_TOTAL       As String = "L"   ' Total price ($)
-Private Const COL_WT_METHOD   As String = "M"   ' "Actual" or "Dimensional"
-Private Const COL_BILL_WT     As String = "N"   ' Billable weight used for pricing
-Private Const COL_BASE_RATE   As String = "O"   ' Base rate ($)
-Private Const COL_ACC_TOTAL   As String = "P"   ' Total accessorial charges ($)
-Private Const COL_ZONE        As String = "Q"   ' Rate zone
-Private Const COL_MILES       As String = "R"   ' Route distance in miles
-Private Const COL_STATUS      As String = "S"   ' "Success" or error detail
-' Note: fuel surcharge, fuel %, and VSC surcharge are available in the
-' internal package (client_packages/internal/) but omitted here.
+Private Const COL_QUOTE_ID    As String = "K"
+Private Const COL_TOTAL       As String = "L"
+Private Const COL_WT_METHOD   As String = "M"
+Private Const COL_BILL_WT     As String = "N"
+Private Const COL_BASE_RATE   As String = "O"
+Private Const COL_FUEL_SURCH  As String = "P"   ' internal: not in client package
+Private Const COL_FUEL_PCT    As String = "Q"   ' internal: not in client package
+Private Const COL_VSC         As String = "R"   ' internal: not in client package
+Private Const COL_ACC_TOTAL   As String = "S"
+Private Const COL_ZONE        As String = "T"
+Private Const COL_MILES       As String = "U"
+Private Const COL_STATUS      As String = "V"
 ' =====================================================================
 
 
-' Run a quote for whichever row is currently selected.
 Public Sub GenerateFSIQuote()
     Dim r As Long
     r = ActiveCell.Row
@@ -89,7 +92,6 @@ Public Sub GenerateFSIQuote()
 End Sub
 
 
-' Run quotes for every non-empty row from row 2 to the last row.
 Public Sub BatchGenerateFSIQuotes()
     Dim ws As Worksheet
     Set ws = ActiveSheet
@@ -107,7 +109,7 @@ Public Sub BatchGenerateFSIQuotes()
         If Trim(CStr(ws.Cells(r, COL_QUOTE_TYPE).Value)) <> "" Then
             ProcessRow ws, r
             processed = processed + 1
-            DoEvents  ' keeps Excel responsive during long batch runs
+            DoEvents
         End If
     Next r
 
@@ -115,23 +117,14 @@ Public Sub BatchGenerateFSIQuotes()
 End Sub
 
 
-' -----------------------------------------------------------------------
-' Internal: send the API request and write results for one row.
-' -----------------------------------------------------------------------
 Private Sub ProcessRow(ws As Worksheet, r As Long)
-    ' Guard: API key must be set
     If API_KEY = "YOUR_API_KEY_HERE" Or Len(Trim(API_KEY)) = 0 Then
-        ws.Cells(r, COL_STATUS).Value = "Error: API key not configured. Edit FSI_Quote module."
+        ws.Cells(r, COL_STATUS).Value = "Error: API key not configured. Edit FSI_Quote_Internal module."
         Exit Sub
     End If
 
-    ' Read required inputs
-    Dim quoteType As String
-    Dim origin    As String
-    Dim dest      As String
-    Dim weight    As Double
-    Dim pieces    As Long
-    Dim accStr    As String
+    Dim quoteType As String, origin As String, dest As String
+    Dim weight As Double, pieces As Long, accStr As String
 
     quoteType = Trim(CStr(ws.Cells(r, COL_QUOTE_TYPE).Value))
     origin    = FormatZip(ws.Cells(r, COL_ORIGIN).Value)
@@ -151,10 +144,6 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
     accStr = Trim(CStr(ws.Cells(r, COL_ACCESSORIAL).Value))
 
-    ' Build JSON payload.
-    ' Str() is locale-independent and always uses a period as decimal separator.
-    ' String fields are escaped so quotes/backslashes in user input cannot
-    ' produce malformed JSON.
     Dim payload As String
     payload = "{" & _
         """quote_type"": """ & EscapeJson(quoteType) & """, " & _
@@ -167,10 +156,6 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         payload = payload & ", ""accessorials"": [" & BuildAccJsonArray(accStr) & "]"
     End If
 
-    ' Append dimensions if supplied.
-    ' dim_weight takes priority over length/width/height.
-    ' IsNumeric() guards each CDbl call — a non-numeric non-empty cell writes a
-    ' row-level error and exits cleanly so a batch run continues with other rows.
     Dim dimWtRaw As Variant
     dimWtRaw = ws.Cells(r, COL_DIM_WEIGHT).Value
     If Not (IsEmpty(dimWtRaw) Or CStr(dimWtRaw) = "") Then
@@ -200,7 +185,6 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
     payload = payload & "}"
 
-    ' Send HTTP request
     Dim http As Object
     Set http = CreateObject("MSXML2.XMLHTTP")
 
@@ -211,7 +195,6 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     http.send payload
     On Error GoTo 0
 
-    ' Parse response with regex (no external parser needed)
     Dim resp As String
     resp = http.responseText
 
@@ -222,12 +205,10 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     Dim m As Object
 
     If http.Status = 201 Then
-        ' --- Core fields ---
         rx.Pattern = """quote_id"":\s*""([^""]+)"""
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_QUOTE_ID).Value = m(0).SubMatches(0)
 
-        ' Val() is locale-independent: always reads period as decimal separator.
         rx.Pattern = """total"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_TOTAL).Value = Val(m(0).SubMatches(0))
@@ -236,23 +217,31 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_WT_METHOD).Value = m(0).SubMatches(0)
 
-        ' "weight" at the top level is the billable (greater of actual/dim) weight.
         rx.Pattern = """weight"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_BILL_WT).Value = Val(m(0).SubMatches(0))
 
-        ' --- Cost breakdown ---
-        ' zone is a top-level field in the response.
-        ' base_rate / fuel_surcharge / fuel_pct / vsc_surcharge live inside
-        ' metadata.details; miles and accessorial_total sit directly on metadata.
-        ' Regex searches the full JSON string so nesting depth does not matter.
         rx.Pattern = """zone"":\s*""([^""]+)"""
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_ZONE).Value = m(0).SubMatches(0)
 
+        ' base_rate / fuel_surcharge / fuel_pct / vsc_surcharge live inside
+        ' metadata.details; regex scans the full string so depth does not matter.
         rx.Pattern = """base_rate"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_BASE_RATE).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """fuel_surcharge"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_FUEL_SURCH).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """fuel_pct"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_FUEL_PCT).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """vsc_surcharge"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_VSC).Value = Val(m(0).SubMatches(0))
 
         rx.Pattern = """accessorial_total"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
@@ -283,7 +272,6 @@ ConnectionError:
 End Sub
 
 
-' Zero-pad a ZIP code to 5 digits, stripping any decimal Excel adds.
 Private Function FormatZip(v As Variant) As String
     Dim s As String
     s = CStr(v)
@@ -296,14 +284,10 @@ Private Function FormatZip(v As Variant) As String
     FormatZip = Left(s, 5)
 End Function
 
-
-' Escape backslashes and double-quotes for safe embedding in a JSON string value.
 Private Function EscapeJson(s As String) As String
     EscapeJson = Replace(Replace(s, "\", "\\"), """", "\""")
 End Function
 
-
-' Convert "Liftgate, Residential Delivery" → "Liftgate", "Residential Delivery"
 Private Function BuildAccJsonArray(csv As String) As String
     Dim parts() As String
     parts = Split(csv, ",")
