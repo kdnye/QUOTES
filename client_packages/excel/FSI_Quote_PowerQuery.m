@@ -38,7 +38,7 @@
 let
     FSIQuote = (
         pApiKey       as text,
-        pQuoteType    as text,
+        pQuoteType    as any,       // typed as any so an empty cell passes null rather than crashing
         pOrigin       as any,
         pDestination  as any,
         pWeight       as number,
@@ -47,8 +47,11 @@ let
     ) as record =>
 
     let
-        // Normalize inputs
-        quoteType   = Text.Proper(Text.Trim(pQuoteType)),           // "hotshot" → "Hotshot"
+        // Normalize inputs; guard against null/empty Quote Type up-front so the
+        // error lands in the status field rather than crashing the whole query.
+        quoteType   = if pQuoteType = null or Text.Trim(Text.From(pQuoteType)) = ""
+                      then null
+                      else Text.Proper(Text.Trim(Text.From(pQuoteType))),
         originText  = Text.End("00000" & Text.Trim(Text.From(pOrigin)), 5),      // preserve leading zeros
         destText    = Text.End("00000" & Text.Trim(Text.From(pDestination)), 5),
         piecesNum   = if pPieces = null then 1 else Number.Round(Number.From(pPieces), 0),
@@ -91,11 +94,15 @@ let
             ]
         ),
 
-        parsed = Json.Document(response),
+        parsed = if quoteType = null
+                 then null
+                 else Json.Document(response),
 
-        result = if Record.HasFields(parsed, "error")
-                 then [ quote_id = null, total = null, status = parsed[remediation] ]
-                 else [ quote_id = parsed[quote_id], total = parsed[total], status = "Success" ]
+        result = if quoteType = null
+                 then [ quote_id = null, total = null, status = "Error: Quote Type is required." ]
+                 else if Record.HasFields(parsed, "error")
+                      then [ quote_id = null, total = null, status = parsed[remediation] ]
+                      else [ quote_id = parsed[quote_id], total = parsed[total], status = "Success" ]
     in
         result
 in

@@ -100,6 +100,8 @@ function generateQuoteCurrentRow() {
 
 
 // Runs quotes for every non-empty row from DATA_START_ROW to the last row.
+// All input is read in a single getValues() call and all output is written
+// in three setValues() calls (one per output column) regardless of row count.
 function batchGenerateQuotes() {
   const sheet = SpreadsheetApp.getActiveSheet();
   const lastRow = sheet.getLastRow();
@@ -109,15 +111,31 @@ function batchGenerateQuotes() {
     return;
   }
 
+  const numRows = lastRow - CONFIG.DATA_START_ROW + 1;
+  const numInputCols = Math.max(
+    CONFIG.COL_QUOTE_TYPE, CONFIG.COL_ORIGIN, CONFIG.COL_DEST,
+    CONFIG.COL_WEIGHT, CONFIG.COL_PIECES, CONFIG.COL_ACCESSORIAL
+  );
+
+  // Single read for all input rows
+  const allValues = sheet.getRange(CONFIG.DATA_START_ROW, 1, numRows, numInputCols).getValues();
+
+  // Output buffers — one entry per row, written in batch at the end
+  const outQuoteId = Array(numRows).fill(['']);
+  const outTotal   = Array(numRows).fill(['']);
+  const outStatus  = Array(numRows).fill(['']);
+
   let processed = 0;
-  for (let r = CONFIG.DATA_START_ROW; r <= lastRow; r++) {
-    const typeCell = sheet.getRange(r, CONFIG.COL_QUOTE_TYPE).getValue();
-    if (String(typeCell).trim() === '') continue;  // skip blank rows
+  for (let i = 0; i < numRows; i++) {
+    if (String(allValues[i][CONFIG.COL_QUOTE_TYPE - 1]).trim() === '') continue;
 
     try {
-      processRow(sheet, r);
+      const result = callApi(allValues[i]);
+      outQuoteId[i] = [result.quoteId];
+      outTotal[i]   = [result.total];
+      outStatus[i]  = [result.status];
     } catch (e) {
-      sheet.getRange(r, CONFIG.COL_STATUS).setValue('Error: ' + e.message);
+      outStatus[i] = ['Error: ' + e.message];
     }
 
     processed++;
@@ -126,22 +144,38 @@ function batchGenerateQuotes() {
     if (processed % 10 === 0) Utilities.sleep(2000);
   }
 
+  // Three writes cover all rows, regardless of dataset size
+  sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.COL_QUOTE_ID, numRows, 1).setValues(outQuoteId);
+  sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.COL_TOTAL,    numRows, 1).setValues(outTotal);
+  sheet.getRange(CONFIG.DATA_START_ROW, CONFIG.COL_STATUS,   numRows, 1).setValues(outStatus);
+
   SpreadsheetApp.getUi().alert('Done. ' + processed + ' row(s) processed.');
 }
 
 
 // -----------------------------------------------------------------------
-// Internal: send the API request for one row and write results.
+// Internal: send the API request for one row and write results immediately.
+// Used by generateQuoteCurrentRow for single-row operation.
 // -----------------------------------------------------------------------
 function processRow(sheet, r) {
-  const apiKey = getApiKey();
-
-  // Read all input columns in one call for efficiency
   const numCols = Math.max(
     CONFIG.COL_QUOTE_TYPE, CONFIG.COL_ORIGIN, CONFIG.COL_DEST,
     CONFIG.COL_WEIGHT, CONFIG.COL_PIECES, CONFIG.COL_ACCESSORIAL
   );
   const values = sheet.getRange(r, 1, 1, numCols).getValues()[0];
+  const result = callApi(values);
+  sheet.getRange(r, CONFIG.COL_QUOTE_ID).setValue(result.quoteId);
+  sheet.getRange(r, CONFIG.COL_TOTAL).setValue(result.total);
+  sheet.getRange(r, CONFIG.COL_STATUS).setValue(result.status);
+}
+
+
+// -----------------------------------------------------------------------
+// Internal: build payload from a pre-read row values array, POST to the
+// API, and return { quoteId, total, status }. Throws on validation errors.
+// -----------------------------------------------------------------------
+function callApi(values) {
+  const apiKey = getApiKey();
 
   const quoteType = String(values[CONFIG.COL_QUOTE_TYPE - 1]).trim();
   const origin    = padZip(values[CONFIG.COL_ORIGIN - 1]);
@@ -160,7 +194,6 @@ function processRow(sheet, r) {
   if (!dest   || dest.length   !== 5) throw new Error('Destination ZIP must be 5 digits.');
   if (isNaN(weight) || weight <= 0)   throw new Error('Weight must be a positive number.');
 
-  // Build payload
   const payload = {
     quote_type:  normaliseQuoteType(quoteType),
     origin:      origin,
@@ -172,13 +205,12 @@ function processRow(sheet, r) {
     payload.accessorials = accRaw.split(',').map(s => s.trim()).filter(s => s.length > 0);
   }
 
-  // POST request
   const options = {
-    method:           'post',
-    contentType:      'application/json',
-    headers:          { Authorization: 'Bearer ' + apiKey },
-    payload:          JSON.stringify(payload),
-    muteHttpExceptions: true,  // lets us read error bodies from the API
+    method:             'post',
+    contentType:        'application/json',
+    headers:            { Authorization: 'Bearer ' + apiKey },
+    payload:            JSON.stringify(payload),
+    muteHttpExceptions: true,
   };
 
   const response = UrlFetchApp.fetch(API_URL, options);
@@ -186,12 +218,10 @@ function processRow(sheet, r) {
   const data     = JSON.parse(response.getContentText());
 
   if (code === 201) {
-    sheet.getRange(r, CONFIG.COL_QUOTE_ID).setValue(data.quote_id);
-    sheet.getRange(r, CONFIG.COL_TOTAL).setValue(data.total);
-    sheet.getRange(r, CONFIG.COL_STATUS).setValue('Success');
+    return { quoteId: data.quote_id, total: data.total, status: 'Success' };
   } else {
     const errMsg = data.remediation || ('HTTP ' + code);
-    sheet.getRange(r, CONFIG.COL_STATUS).setValue('Error: ' + errMsg);
+    return { quoteId: '', total: '', status: 'Error: ' + errMsg };
   }
 }
 

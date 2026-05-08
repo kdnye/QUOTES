@@ -68,6 +68,7 @@ Public Sub BatchGenerateFSIQuotes()
         If Trim(CStr(ws.Cells(r, COL_QUOTE_TYPE).Value)) <> "" Then
             ProcessRow ws, r
             processed = processed + 1
+            DoEvents  ' keeps Excel responsive during long batch runs
         End If
     Next r
 
@@ -99,21 +100,29 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
     On Error GoTo InputError
     weight = CDbl(ws.Cells(r, COL_WEIGHT).Value)
-    On Error GoTo 0
 
     Dim pVal As Variant
     pVal = ws.Cells(r, COL_PIECES).Value
-    pieces = IIf(IsEmpty(pVal) Or CStr(pVal) = "", 1, CLng(pVal))
+    If IsEmpty(pVal) Or CStr(pVal) = "" Then
+        pieces = 1
+    Else
+        pieces = CLng(pVal)
+    End If
+    On Error GoTo 0
 
     accStr = Trim(CStr(ws.Cells(r, COL_ACCESSORIAL).Value))
 
-    ' Build JSON payload manually (no external library needed)
+    ' Build JSON payload manually (no external library needed).
+    ' Str() is used for weight: unlike CStr/implicit conversion it is locale-independent
+    ' and always produces a period as the decimal separator (e.g. "1.5" not "1,5").
+    ' String fields are escaped so a rogue quote or backslash in user input cannot
+    ' produce malformed JSON.
     Dim payload As String
     payload = "{" & _
-        """quote_type"": """ & quoteType & """, " & _
-        """origin"": """ & origin & """, " & _
-        """destination"": """ & dest & """, " & _
-        """weight"": " & weight & ", " & _
+        """quote_type"": """ & EscapeJson(quoteType) & """, " & _
+        """origin"": """ & EscapeJson(origin) & """, " & _
+        """destination"": """ & EscapeJson(dest) & """, " & _
+        """weight"": " & Trim(Str(weight)) & ", " & _
         """pieces"": " & pieces
 
     If Len(accStr) > 0 Then
@@ -149,7 +158,9 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
         rx.Pattern = """total"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
-        If m.Count > 0 Then ws.Cells(r, COL_TOTAL).Value = CDbl(m(0).SubMatches(0))
+        ' Val() is locale-independent: always reads period as decimal separator,
+        ' so "847.50" parses correctly even on systems set to European locales.
+        If m.Count > 0 Then ws.Cells(r, COL_TOTAL).Value = Val(m(0).SubMatches(0))
 
         ws.Cells(r, COL_STATUS).Value = "Success"
     Else
@@ -183,6 +194,12 @@ Private Function FormatZip(v As Variant) As String
         s = "0" & s
     Loop
     FormatZip = Left(s, 5)
+End Function
+
+
+' Escape backslashes and double-quotes for safe embedding in a JSON string value.
+Private Function EscapeJson(s As String) As String
+    EscapeJson = Replace(Replace(s, "\", "\\"), """", "\""")
 End Function
 
 
