@@ -80,6 +80,7 @@ Send a JSON body with shipment details. On success, returns `201 Created` with a
 | `dim_weight` | number | Pre-calculated dimensional weight in lbs (instead of dimensions) |
 | `accessorials` | array of strings | Extra services, e.g. `["Liftgate", "Residential Delivery"]` |
 | `user_email` | string | Email to associate with the quote |
+| `send_email` | boolean | Send a quote-summary email to the address on your API account (default: `false`). Requires SMTP to be enabled server-side. Returns an `email_sent` field in the response. |
 
 ### Billable weight
 
@@ -100,23 +101,35 @@ Billable weight is always the greater of actual and dimensional weight.
   "origin": "98001",
   "destination": "90210",
   "weight": 520.0,
-  "weight_method": "actual",
+  "weight_method": "Actual",
   "actual_weight": 520.0,
   "dim_weight": 310.0,
   "pieces": 3,
   "total": 847.50,
+  "zone": "C",
   "metadata": {
-    "zone": "C",
     "miles": 1142.3,
-    "base_rate": 680.00,
-    "fuel_surcharge": 102.00,
-    "fuel_pct": 0.15,
-    "vsc_surcharge": 65.50,
+    "details": {
+      "base_rate": 680.00,
+      "fuel_surcharge": 102.00,
+      "fuel_pct": 0.15,
+      "vsc_surcharge": 65.50
+    },
     "accessorials": { "Liftgate": 75.00 },
     "accessorial_total": 75.00
   }
 }
 ```
+
+When `"send_email": true` is included in the request body, an additional field is present:
+
+```json
+{
+  "email_sent": true
+}
+```
+
+`email_sent` is `true` when the email was dispatched, `false` when it could not be sent (SMTP not configured, rate limit reached, or no email address on the API account).
 
 ## Retrieve a saved quote
 
@@ -183,6 +196,24 @@ curl -X POST https://quote.freightservices.net/api/quote \
     "pieces": 3
   }'
 ```
+
+### curl — Hotshot quote with email confirmation
+
+```bash
+curl -X POST https://quote.freightservices.net/api/quote \
+  -H "Authorization: Bearer <your_api_key>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "quote_type": "Hotshot",
+    "origin": "98001",
+    "destination": "90210",
+    "weight": 520,
+    "pieces": 3,
+    "send_email": true
+  }'
+```
+
+The API will send a formatted quote summary to the email address registered on your API account. The response includes `"email_sent": true` on success.
 
 ### curl — Air quote with dimensions and accessorials
 

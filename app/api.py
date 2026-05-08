@@ -3,16 +3,21 @@
 from __future__ import annotations
 
 import json
+import logging
 import secrets
 from typing import Any, Dict
 
-from flask import Blueprint, current_app, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request, url_for
 from flask.typing import ResponseReturnValue
 from flask_limiter.util import get_remote_address
 
 from app import limiter
 from app.models import User
 from app.services import quote as quote_service
+from app.services.mail import MailRateLimitError, send_email
+from app.services.settings import is_quote_email_smtp_enabled
+
+logger = logging.getLogger(__name__)
 
 api_bp = Blueprint("api", __name__)
 
@@ -272,7 +277,57 @@ def api_create_quote() -> ResponseReturnValue:
     else:  # backward compatibility
         quote_obj, metadata = result, {}
 
-    return jsonify(_serialize_quote(quote_obj, metadata)), 201
+    send_quote_email = bool(data.get("send_email", False))
+    email_sent: bool | None = None
+
+    if send_quote_email and api_user and api_user.email:
+        if is_quote_email_smtp_enabled():
+            try:
+                from app.quotes.routes import (  # local import avoids module-level circularity
+                    SELF_QUOTE_EMAIL_INTRO,
+                    _format_quote_copy_email_body,
+                    _format_quote_copy_email_html,
+                )
+
+                email_meta = dict(metadata or {})
+                email_meta["accessorial_total"] = float(
+                    email_meta.get("accessorial_total", 0.0) or 0.0
+                )
+                action_url = url_for("quotes.new_quote", _external=True)
+                email_body = _format_quote_copy_email_body(quote_obj, metadata=email_meta)
+                html_body = _format_quote_copy_email_html(
+                    quote_obj,
+                    metadata=email_meta,
+                    intro_message=SELF_QUOTE_EMAIL_INTRO,
+                    action_url=action_url,
+                )
+                send_email(
+                    to=api_user.email,
+                    subject=f"Freight Services Quote Details - {quote_obj.quote_id}",
+                    body=email_body,
+                    html_body=html_body,
+                    user=api_user,
+                    feature="quote_copy",
+                    headers={
+                        "List-Unsubscribe": "<https://quote.freightservices.net/help>",
+                        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+                    },
+                )
+                email_sent = True
+            except MailRateLimitError:
+                email_sent = False
+            except Exception:
+                logger.exception(
+                    "Failed to send API quote email for quote_id=%s", quote_obj.quote_id
+                )
+                email_sent = False
+        else:
+            email_sent = False
+
+    response_data = _serialize_quote(quote_obj, metadata)
+    if send_quote_email:
+        response_data["email_sent"] = email_sent
+    return jsonify(response_data), 201
 
 
 @api_bp.get("/quote/<quote_id>")
