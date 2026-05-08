@@ -30,20 +30,79 @@ Not sure if macros are allowed? Try opening any `.xlsm` file. If you see a yello
 
 All three integrations expect the **same column order** by default. Set up your sheet with these headers in row 1:
 
-| A | B | C | D | E | F | G | H | I |
-|---|---|---|---|---|---|---|---|---|
-| Quote Type | Origin ZIP | Destination ZIP | Weight (lbs) | Pieces | Accessorials | Quote ID | Total Price | Status |
+### Input columns (you fill in)
 
-- **Quote Type** — `Hotshot` or `Air` (capitalisation does not matter).
-- **Origin / Destination ZIP** — 5-digit US ZIP code. Format the column as **Text** in Excel to preserve leading zeros (e.g. `01234`).
-- **Weight** — actual shipment weight in pounds.
-- **Pieces** — number of units. Leave blank to default to 1.
-- **Accessorials** — optional extra services, comma-separated: `Liftgate, Residential Delivery`. Leave blank if none.
-- Columns G, H, I are written by the integration — leave them blank.
+| Column | Header | Notes |
+|---|---|---|
+| A | Quote Type | `Hotshot` or `Air` — capitalisation does not matter |
+| B | Origin ZIP | 5-digit US ZIP. Format column as **Text** in Excel to preserve leading zeros |
+| C | Destination ZIP | Same |
+| D | Weight (lbs) | Actual shipment weight in pounds |
+| E | Pieces | Number of units. Leave blank to default to 1 |
+| F | Accessorials | Comma-separated extra services, e.g. `Liftgate, Residential Delivery`. Leave blank if none |
+| G | Length (in) | Package length in inches — optional, used for dimensional weight |
+| H | Width (in) | Package width in inches — optional |
+| I | Height (in) | Package height in inches — optional |
+| J | Dim Weight (lbs) | Pre-calculated dimensional weight — use **instead of** G/H/I, not alongside |
+
+### Output columns (written by the integration — leave blank)
+
+| Column | Header | Notes |
+|---|---|---|
+| K | Quote ID | Unique quote reference, e.g. `Q-BCDFGHJ2` |
+| L | Total ($) | Final price including all charges |
+| M | Weight Method | `actual` — actual weight was used; `dimensional` — dim weight was higher and used instead |
+| N | Billable Weight | The weight the price was calculated on (greater of actual and dim) |
+| O | Base Rate ($) | Freight base rate before surcharges |
+| P | Fuel Surcharge ($) | Fuel surcharge dollar amount |
+| Q | Fuel % | Fuel surcharge rate, e.g. `0.15` = 15% |
+| R | VSC Surcharge ($) | Value-of-service charge |
+| S | Accessorial Total ($) | Sum of all accessorial charges |
+| T | Zone | Rate zone, e.g. `C` |
+| U | Miles | Calculated route distance |
+| V | Status | `Success` or error detail |
 
 Data starts in **row 2**. Row 1 is the header.
 
 If your columns are in a different order, see [Changing column assignments](#changing-column-assignments).
+
+---
+
+## Dimensional weight
+
+Billable weight is always the **greater of actual weight and dimensional weight**. The `Weight Method` output column tells you which was used.
+
+There are two ways to supply dimensional weight:
+
+**Option 1 — Let the API calculate it from dimensions (columns G, H, I):**
+Fill in Length, Width, and Height in inches. All three must be present or none will be sent. The API calculates dimensional weight using its internal divisor and returns both the calculated dim weight and the billable weight.
+
+**Option 2 — Supply a pre-calculated dim weight (column J):**
+If you already know the dimensional weight, enter it directly in column J. This skips the API's dimension calculation. Column J takes priority over G/H/I if both are filled.
+
+**Neither supplied:** The API uses actual weight only — column J and G/H/I can be left blank.
+
+---
+
+## Cost breakdown fields
+
+The API returns a full price breakdown alongside the total. The output columns O through U expose these values so you can see exactly how the total was built:
+
+```
+Total  =  Base Rate  +  Fuel Surcharge  +  VSC Surcharge  +  Accessorial Total
+```
+
+Example for a 520 lb Hotshot quote, zone C, 1,142 miles:
+
+| Field | Value |
+|---|---|
+| Base Rate | $680.00 |
+| Fuel Surcharge (15%) | $102.00 |
+| VSC Surcharge | $65.50 |
+| Liftgate accessorial | $75.00 |
+| **Total** | **$922.50** |
+
+> The breakdown is useful for auditing quotes, validating rate changes, and building margin calculations on top of the raw totals.
 
 ---
 
@@ -81,7 +140,7 @@ You only need to do this once.
 
 **All rows:** **FSI Quotes > Process all rows** — the script works from row 2 down to the last non-empty row.
 
-Results appear in columns G (Quote ID), H (Total Price), and I (Status). A status of `Success` means the quote was returned correctly. Any other value is an error message that explains what needs to be fixed.
+Results are written to columns K–V. A status of `Success` in column V means the quote was returned correctly. Any other value is an error message that explains what needs to be fixed.
 
 ---
 
@@ -117,7 +176,7 @@ When you open the file, click **Enable Content** in the yellow bar if it appears
 
 **All rows:** Run `BatchGenerateFSIQuotes` to process every non-empty row from row 2 downward.
 
-Results are written to columns G, H, and I as with the other integrations.
+Results are written to columns K–V.
 
 ---
 
@@ -149,8 +208,6 @@ Without this step Power Query will block the outbound connection.
 
 #### Step 3 — Create your data query
 
-This step creates a query that reads your sheet table and calls the function for each row.
-
 1. Format your data as an Excel Table: select your data range, press **Ctrl+T**, tick "My table has headers".
 2. In Power Query Editor: **New Source > From Table/Range** — select your table.
 3. Add a Custom Column: **Add Column > Custom Column**. Name it `Quote Result` and use this formula:
@@ -163,13 +220,27 @@ This step creates a query that reads your sheet table and calls the function for
        [#"Destination ZIP"],
        [#"Weight (lbs)"],
        [Pieces],
-       [Accessorials]
+       [Accessorials],
+       [#"Length (in)"],
+       [#"Width (in)"],
+       [#"Height (in)"],
+       [#"Dim Weight (lbs)"]
    )
    ```
 
    Replace `YOUR_API_KEY_HERE` with your actual key (keep the quotes).
+   Dimension columns are optional — pass `null` for any you don't use:
 
-4. Click the expand icon on the `Quote Result` column header (two arrows) and select `quote_id`, `total`, and `status`.
+   ```m
+   = FSIQuote(
+       "YOUR_API_KEY_HERE",
+       [#"Quote Type"], [#"Origin ZIP"], [#"Destination ZIP"], [#"Weight (lbs)"],
+       [Pieces], [Accessorials],
+       null, null, null, null   // no dimensions
+   )
+   ```
+
+4. Click the expand icon on the `Quote Result` column header (two arrows) and select the fields you want: `quote_id`, `total`, `weight_method`, `billable_weight`, `base_rate`, `fuel_surcharge`, `fuel_pct`, `vsc_surcharge`, `accessorial_total`, `zone`, `miles`, `status`.
 5. **Close & Load** — the results load into a new sheet.
 6. To refresh quotes: click anywhere in the results table > **Data > Refresh All**.
 
@@ -184,7 +255,7 @@ If your sheet uses different column positions, edit the configuration section at
 **VBA** (in the module, below `Option Explicit`):
 ```vba
 Private Const COL_QUOTE_TYPE  As String = "A"   ' change the letter
-Private Const COL_ORIGIN      As String = "B"
+Private Const COL_LENGTH      As String = "G"   ' dim input columns can also be moved
 ' etc.
 ```
 
@@ -192,7 +263,7 @@ Private Const COL_ORIGIN      As String = "B"
 ```js
 const CONFIG = {
   COL_QUOTE_TYPE:  1,   // 1 = column A, 2 = column B, etc.
-  COL_ORIGIN:      2,
+  COL_LENGTH:      7,   // column G
   // etc.
 };
 ```
@@ -238,6 +309,7 @@ The API allows **30 requests per minute**.
 | `HTTP 429` | Rate limit exceeded | Slow down batch processing (see above) |
 | `Connection failed` | Network issue | Check internet access; try again |
 | Origin/Destination ZIP error | Leading zero stripped by Excel | Format the ZIP column as **Text** before entering data |
+| Dim weight not reflected | Only some of L/W/H filled | Provide all three dimensions, or use column J for a pre-calculated value |
 
 ---
 

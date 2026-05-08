@@ -13,6 +13,34 @@ Attribute VB_Name = "FSI_Quote"
 '   6. Close the editor (Alt+Q).
 '   7. Optional: Insert > Shapes, draw a button, right-click > Assign Macro
 '      > GenerateFSIQuote for single-row, or BatchGenerateFSIQuotes for all rows.
+'
+' SPREADSHEET LAYOUT (default — change letters in CONFIGURATION to match yours):
+'
+'  Inputs
+'   A  Quote Type      "Hotshot" or "Air"
+'   B  Origin ZIP      5-digit
+'   C  Destination ZIP 5-digit
+'   D  Weight (lbs)    actual shipment weight
+'   E  Pieces          number of units (blank = 1)
+'   F  Accessorials    comma-separated, e.g. "Liftgate, Residential Delivery"
+'   G  Length (in)     \
+'   H  Width (in)       > optional dimensions; all three required for dim-weight calc
+'   I  Height (in)     /
+'   J  Dim Weight (lbs) pre-calculated dim weight — supply instead of L/W/H
+'
+'  Outputs (written by the macro)
+'   K  Quote ID
+'   L  Total ($)
+'   M  Weight Method   "actual" or "dimensional"
+'   N  Billable Weight weight used for pricing
+'   O  Base Rate ($)
+'   P  Fuel Surcharge ($)
+'   Q  Fuel %
+'   R  VSC Surcharge ($)
+'   S  Accessorial Total ($)
+'   T  Zone
+'   U  Miles
+'   V  Status          "Success" or error detail
 ' -----------------------------------------------------------------------
 
 Option Explicit
@@ -27,14 +55,29 @@ Private Const API_URL  As String = "https://quote.freightservices.net/api/quote"
 Private Const COL_QUOTE_TYPE  As String = "A"   ' "Hotshot" or "Air"
 Private Const COL_ORIGIN      As String = "B"   ' 5-digit origin ZIP code
 Private Const COL_DEST        As String = "C"   ' 5-digit destination ZIP code
-Private Const COL_WEIGHT      As String = "D"   ' Shipment weight in lbs
+Private Const COL_WEIGHT      As String = "D"   ' Actual shipment weight in lbs
 Private Const COL_PIECES      As String = "E"   ' Number of pieces (blank = 1)
-Private Const COL_ACCESSORIAL As String = "F"   ' Comma-separated, e.g. "Liftgate, Residential Delivery"
+Private Const COL_ACCESSORIAL As String = "F"   ' Comma-separated accessorials
+Private Const COL_LENGTH      As String = "G"   ' Package length in inches (optional)
+Private Const COL_WIDTH       As String = "H"   ' Package width in inches (optional)
+Private Const COL_HEIGHT      As String = "I"   ' Package height in inches (optional)
+Private Const COL_DIM_WEIGHT  As String = "J"   ' Pre-calculated dim weight in lbs (optional)
+'                                                  Supply dim_weight OR length+width+height, not both.
+'                                                  If neither is supplied, actual weight is used.
 
 ' Output column letters
-Private Const COL_QUOTE_ID    As String = "G"   ' Quote ID returned by API
-Private Const COL_TOTAL       As String = "H"   ' Total price ($)
-Private Const COL_STATUS      As String = "I"   ' "Success" or error detail
+Private Const COL_QUOTE_ID    As String = "K"   ' Quote ID
+Private Const COL_TOTAL       As String = "L"   ' Total price ($)
+Private Const COL_WT_METHOD   As String = "M"   ' "actual" or "dimensional"
+Private Const COL_BILL_WT     As String = "N"   ' Billable weight used for pricing
+Private Const COL_BASE_RATE   As String = "O"   ' Base rate ($)
+Private Const COL_FUEL_SURCH  As String = "P"   ' Fuel surcharge ($)
+Private Const COL_FUEL_PCT    As String = "Q"   ' Fuel surcharge rate (e.g. 0.15 = 15%)
+Private Const COL_VSC         As String = "R"   ' VSC surcharge ($)
+Private Const COL_ACC_TOTAL   As String = "S"   ' Total accessorial charges ($)
+Private Const COL_ZONE        As String = "T"   ' Rate zone (A–F)
+Private Const COL_MILES       As String = "U"   ' Route distance in miles
+Private Const COL_STATUS      As String = "V"   ' "Success" or error detail
 ' =====================================================================
 
 
@@ -86,7 +129,7 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
         Exit Sub
     End If
 
-    ' Read inputs
+    ' Read required inputs
     Dim quoteType As String
     Dim origin    As String
     Dim dest      As String
@@ -112,10 +155,9 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
 
     accStr = Trim(CStr(ws.Cells(r, COL_ACCESSORIAL).Value))
 
-    ' Build JSON payload manually (no external library needed).
-    ' Str() is used for weight: unlike CStr/implicit conversion it is locale-independent
-    ' and always produces a period as the decimal separator (e.g. "1.5" not "1,5").
-    ' String fields are escaped so a rogue quote or backslash in user input cannot
+    ' Build JSON payload.
+    ' Str() is locale-independent and always uses a period as decimal separator.
+    ' String fields are escaped so quotes/backslashes in user input cannot
     ' produce malformed JSON.
     Dim payload As String
     payload = "{" & _
@@ -128,6 +170,28 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     If Len(accStr) > 0 Then
         payload = payload & ", ""accessorials"": [" & BuildAccJsonArray(accStr) & "]"
     End If
+
+    ' Append dimensions if supplied.
+    ' dim_weight takes priority over length/width/height.
+    Dim dimWtRaw As Variant
+    dimWtRaw = ws.Cells(r, COL_DIM_WEIGHT).Value
+    If Not (IsEmpty(dimWtRaw) Or CStr(dimWtRaw) = "") Then
+        payload = payload & ", ""dim_weight"": " & Trim(Str(CDbl(dimWtRaw)))
+    Else
+        Dim lenRaw As Variant, widRaw As Variant, htRaw As Variant
+        lenRaw = ws.Cells(r, COL_LENGTH).Value
+        widRaw = ws.Cells(r, COL_WIDTH).Value
+        htRaw  = ws.Cells(r, COL_HEIGHT).Value
+        If Not (IsEmpty(lenRaw) Or CStr(lenRaw) = "") And _
+           Not (IsEmpty(widRaw) Or CStr(widRaw) = "") And _
+           Not (IsEmpty(htRaw)  Or CStr(htRaw)  = "") Then
+            payload = payload & _
+                ", ""length"": " & Trim(Str(CDbl(lenRaw))) & _
+                ", ""width"": "  & Trim(Str(CDbl(widRaw))) & _
+                ", ""height"": " & Trim(Str(CDbl(htRaw)))
+        End If
+    End If
+
     payload = payload & "}"
 
     ' Send HTTP request
@@ -141,7 +205,7 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     http.send payload
     On Error GoTo 0
 
-    ' Parse response (regex, no external parser needed)
+    ' Parse response with regex (no external parser needed)
     Dim resp As String
     resp = http.responseText
 
@@ -152,15 +216,53 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     Dim m As Object
 
     If http.Status = 201 Then
+        ' --- Core fields ---
         rx.Pattern = """quote_id"":\s*""([^""]+)"""
         Set m = rx.Execute(resp)
         If m.Count > 0 Then ws.Cells(r, COL_QUOTE_ID).Value = m(0).SubMatches(0)
 
+        ' Val() is locale-independent: always reads period as decimal separator.
         rx.Pattern = """total"":\s*([\d\.]+)"
         Set m = rx.Execute(resp)
-        ' Val() is locale-independent: always reads period as decimal separator,
-        ' so "847.50" parses correctly even on systems set to European locales.
         If m.Count > 0 Then ws.Cells(r, COL_TOTAL).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """weight_method"":\s*""([^""]+)"""
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_WT_METHOD).Value = m(0).SubMatches(0)
+
+        ' "weight" at the top level is the billable (greater of actual/dim) weight.
+        rx.Pattern = """weight"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_BILL_WT).Value = Val(m(0).SubMatches(0))
+
+        ' --- Cost breakdown from metadata ---
+        rx.Pattern = """base_rate"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_BASE_RATE).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """fuel_surcharge"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_FUEL_SURCH).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """fuel_pct"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_FUEL_PCT).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """vsc_surcharge"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_VSC).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """accessorial_total"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_ACC_TOTAL).Value = Val(m(0).SubMatches(0))
+
+        rx.Pattern = """zone"":\s*""([^""]+)"""
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_ZONE).Value = m(0).SubMatches(0)
+
+        rx.Pattern = """miles"":\s*([\d\.]+)"
+        Set m = rx.Execute(resp)
+        If m.Count > 0 Then ws.Cells(r, COL_MILES).Value = Val(m(0).SubMatches(0))
 
         ws.Cells(r, COL_STATUS).Value = "Success"
     Else
@@ -175,7 +277,7 @@ Private Sub ProcessRow(ws As Worksheet, r As Long)
     Exit Sub
 
 InputError:
-    ws.Cells(r, COL_STATUS).Value = "Error: Could not read Weight — check cell is a number."
+    ws.Cells(r, COL_STATUS).Value = "Error: Could not read numeric input — check Weight/Pieces cells."
     Exit Sub
 
 ConnectionError:
