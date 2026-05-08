@@ -165,6 +165,14 @@ Same error codes as the client package. Additionally:
 
 ---
 
+## Email confirmation
+
+Same feature as the client package — add `"send_email": true` to the JSON payload to send a quote summary to the email address on your API account. See the client integration guide for per-integration code snippets.
+
+Internal note: the email uses the same `quote_copy` template and respects the same `MAIL_RATE_LIMIT_PER_USER_PER_HOUR` / `MAIL_RATE_LIMIT_PER_USER_PER_DAY` limits as the in-app "Email this quote to me" button. If a user hits the limit, `email_sent` in the API response will be `false`.
+
+---
+
 ## Questions?
 
 API key issues → FSI account administrator.

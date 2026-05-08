@@ -309,6 +309,43 @@ The API allows **30 requests per minute**.
 
 ---
 
+## Email confirmation
+
+The API can send a formatted quote summary to the email address on your FSI account after each successful quote. To enable it, add `"send_email": true` to the JSON request body.
+
+- Works with per-user API keys only (not the global service token).
+- The email is sent to the address associated with your API key — not to an address you supply in the request.
+- The API returns an `"email_sent"` field alongside the quote result: `true` if the email was dispatched, `false` if it could not be sent (e.g. SMTP not configured, or email rate limit reached).
+
+**VBA example** — add one line to the payload in `ProcessRow`:
+
+```vba
+payload = payload & ", ""send_email"": true}"
+' Instead of:
+' payload = payload & "}"
+```
+
+**Apps Script example** — add the field to the payload object in `callApi`:
+
+```js
+payload.send_email = true;
+```
+
+**Power Query example** — add `send_email = true` to the base record:
+
+```m
+baseRecord = [
+    quote_type  = quoteType,
+    origin      = originText,
+    destination = destText,
+    weight      = pWeight,
+    pieces      = piecesNum,
+    send_email  = true
+],
+```
+
+---
+
 ## Questions?
 
 Contact your **FSI account administrator** for API key issues.
