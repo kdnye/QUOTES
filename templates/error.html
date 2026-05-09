@@ -5,6 +5,13 @@
   <img src="{{ url_for('theme.static', filename='error.png') }}" alt="Gone fishin'" class="img-fluid mb-0" style="max-width:480px;">
   <h1 class="display-1 fw-bold mt-0" style="line-height:1;">{{ error_code }}</h1>
   <p class="text-muted mt-2">{{ error_message }}</p>
+  {% if error_details %}
+  <ul class="list-unstyled text-start mt-3 text-muted small">
+    {% for detail in error_details %}
+    <li>{{ detail }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
   <a href="{{ url_for('index') }}" class="btn btn-primary mt-3">Go Home</a>
 </div>
 {% endblock %}

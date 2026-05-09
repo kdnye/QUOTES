@@ -325,7 +325,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
                 app.logger.error(f"SETUP_ERROR: Missing table: {table}")
                 errors.append(f"Missing table: {table}")
 
-    required_templates = ["index.html", "map.html", "new_quote.html", "500.html"]
+    required_templates = ["index.html", "map.html", "new_quote.html", "error.html"]
     for tmpl in required_templates:
         try:
             app.jinja_env.get_or_select_template(tmpl)
@@ -910,12 +910,15 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     @app.errorhandler(HTTPException)
     def handle_http_error(e):
         code = e.code or 500
-        title, message = _HTTP_MESSAGES.get(code, ("Error", str(e.description)))
+        title, default_message = _HTTP_MESSAGES.get(code, ("Error", str(e.description)))
+        message = e.description if isinstance(e.description, str) else default_message
+        error_details = raw_config_errors if code == 500 and show_config_errors else None
         return render_template(
             "error.html",
             error_code=code,
             error_title=title,
             error_message=message,
+            error_details=error_details,
         ), code
 
     @app.errorhandler(413)
