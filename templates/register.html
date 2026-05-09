@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/password_strength.html" import password_strength_ui %}
 {% block title %}Register{% endblock %}
 {% block content %}
   <div class="row justify-content-center">
@@ -136,7 +137,7 @@
                     class="bi bi-question-circle ms-1 text-secondary"
                     data-bs-toggle="tooltip"
                     data-bs-html="true"
-                    title="Use 28+ chars or 12+ with upper, lower, number, and symbol.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
+                    title="28+ character passphrase, or 12+ chars with upper, lower, and a number/symbol.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
                   ></i>
                 </label>
                 <input
@@ -166,6 +167,9 @@
                   autocomplete="new-password"
                   required
                 />
+              </div>
+              <div class="col-12">
+                {{ password_strength_ui("password", "confirm_password") }}
               </div>
               <div class="col-12">
                 <label class="form-label" for="human_verification">

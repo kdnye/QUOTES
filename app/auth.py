@@ -42,6 +42,7 @@ from authlib.integrations.base_client.errors import OAuthError
 from .models import db, User, PasswordResetToken
 from app.services.auth_utils import (
     EMPLOYEE_EMAIL_DOMAIN,
+    PASSWORD_REQUIREMENTS_HELP,
     authenticate,
     is_valid_password,
     is_valid_email,
@@ -197,11 +198,6 @@ def _sanitize_theme_preference(raw_value: Optional[str]) -> str:
         return normalized
     return "auto"
 
-
-PASSWORD_REQUIREMENTS_HELP = (
-    "Use at least 12 characters with upper- and lower-case letters, a number, and a "
-    "symbol, or supply a 28+ character passphrase."
-)
 
 
 def _account_settings_form_state(user: User) -> Dict[str, Union[str, bool]]:
@@ -580,7 +576,7 @@ def register() -> Union[str, Response]:
             return redirect(url_for("auth.register"))
 
         if not is_valid_password(password):
-            flash("Password does not meet complexity requirements.", "warning")
+            flash(PASSWORD_REQUIREMENTS_HELP, "warning")
             return redirect(url_for("auth.register"))
 
         if User.query.filter_by(email=email).first():

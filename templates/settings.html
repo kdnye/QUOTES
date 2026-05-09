@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "partials/password_strength.html" import password_strength_ui %}
 {% block title %}Account settings{% endblock %}
 {% block content %}
 <div class="row justify-content-center">
@@ -165,6 +166,9 @@
             name="confirm_password"
             autocomplete="new-password"
           />
+        </div>
+        <div class="col-12">
+          {{ password_strength_ui("new_password", "confirm_password") }}
         </div>
       </div>
       <div class="d-flex flex-column flex-sm-row gap-2 justify-content-between align-items-sm-center mt-4">
