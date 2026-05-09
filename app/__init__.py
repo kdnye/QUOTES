@@ -11,6 +11,7 @@ from flask import (
     send_file,
     url_for,
 )
+from werkzeug.exceptions import HTTPException
 from flask_login import LoginManager, current_user, login_required
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -324,7 +325,7 @@ def _verify_app_setup(app: Flask) -> List[str]:
                 app.logger.error(f"SETUP_ERROR: Missing table: {table}")
                 errors.append(f"Missing table: {table}")
 
-    required_templates = ["index.html", "map.html", "new_quote.html", "500.html"]
+    required_templates = ["index.html", "map.html", "new_quote.html", "error.html"]
     for tmpl in required_templates:
         try:
             app.jinja_env.get_or_select_template(tmpl)
@@ -892,6 +893,33 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             flash("Failed to send email. Check SMTP settings.", "danger")
 
         return redirect(url_for("index"))
+
+    _HTTP_MESSAGES = {
+        400: ("Bad Request", "The server could not understand your request."),
+        401: ("Unauthorized", "You need to log in to view this page."),
+        403: ("Forbidden", "You don't have permission to access this page."),
+        404: ("Not Found", "The page you're looking for doesn't exist or has been moved."),
+        405: ("Method Not Allowed", "That action isn't allowed here."),
+        408: ("Request Timeout", "The request took too long. Please try again."),
+        429: ("Too Many Requests", "You've made too many requests. Please slow down."),
+        500: ("Server Error", "The server encountered an unexpected error. Please try again later."),
+        502: ("Bad Gateway", "The server received an invalid response. Please try again later."),
+        503: ("Service Unavailable", "The service is temporarily unavailable. Please try again later."),
+    }
+
+    @app.errorhandler(HTTPException)
+    def handle_http_error(e):
+        code = e.code or 500
+        title, default_message = _HTTP_MESSAGES.get(code, ("Error", str(e.description)))
+        message = e.description if isinstance(e.description, str) else default_message
+        error_details = raw_config_errors if code == 500 and show_config_errors else None
+        return render_template(
+            "error.html",
+            error_code=code,
+            error_title=title,
+            error_message=message,
+            error_details=error_details,
+        ), code
 
     @app.errorhandler(413)
     def handle_too_large(e):
