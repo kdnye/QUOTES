@@ -900,6 +900,6 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
             f"{app.config.get('MAX_UPLOAD_MB', 20)} MB.",
             "danger",
         )
-        return redirect(request.referrer or url_for("admin.dashboard")), 413
+        return redirect(url_for("admin.dashboard")), 413
 
     return app
