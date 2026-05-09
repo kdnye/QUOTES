@@ -11,6 +11,7 @@ from flask import (
     send_file,
     url_for,
 )
+from werkzeug.exceptions import HTTPException
 from flask_login import LoginManager, current_user, login_required
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -893,13 +894,29 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         return redirect(url_for("index"))
 
-    @app.errorhandler(404)
-    def handle_not_found(e):
-        return render_template("404.html"), 404
+    _HTTP_MESSAGES = {
+        400: ("Bad Request", "The server could not understand your request."),
+        401: ("Unauthorized", "You need to log in to view this page."),
+        403: ("Forbidden", "You don't have permission to access this page."),
+        404: ("Not Found", "The page you're looking for doesn't exist or has been moved."),
+        405: ("Method Not Allowed", "That action isn't allowed here."),
+        408: ("Request Timeout", "The request took too long. Please try again."),
+        429: ("Too Many Requests", "You've made too many requests. Please slow down."),
+        500: ("Server Error", "The server encountered an unexpected error. Please try again later."),
+        502: ("Bad Gateway", "The server received an invalid response. Please try again later."),
+        503: ("Service Unavailable", "The service is temporarily unavailable. Please try again later."),
+    }
 
-    @app.errorhandler(500)
-    def handle_server_error(e):
-        return render_template("500.html"), 500
+    @app.errorhandler(HTTPException)
+    def handle_http_error(e):
+        code = e.code or 500
+        title, message = _HTTP_MESSAGES.get(code, ("Error", str(e.description)))
+        return render_template(
+            "error.html",
+            error_code=code,
+            error_title=title,
+            error_message=message,
+        ), code
 
     @app.errorhandler(413)
     def handle_too_large(e):
