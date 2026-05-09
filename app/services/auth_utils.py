@@ -182,7 +182,10 @@ def register_user(
 
     password = data.get("password") or ""
     if not is_valid_password(password):
-        return None, "Password does not meet complexity requirements."
+        return None, (
+            "Password must be at least 12 characters with upper- and lower-case "
+            "letters plus a number or symbol — or use a 28+ character passphrase."
+        )
 
     if User.query.filter_by(email=email).first():
         return None, "Email already registered."
@@ -435,7 +438,10 @@ def reset_password_with_token(token: str, new_password: str) -> Optional[str]:
         database so stolen rows remain unusable.
     """
     if not is_valid_password(new_password):
-        return "Password does not meet complexity requirements."
+        return (
+            "Password must be at least 12 characters with upper- and lower-case "
+            "letters plus a number or symbol — or use a 28+ character passphrase."
+        )
     reset = PasswordResetToken.query.filter_by(
         token=hash_reset_token(token), used=False
     ).first()

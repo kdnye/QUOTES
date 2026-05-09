@@ -580,7 +580,7 @@ def register() -> Union[str, Response]:
             return redirect(url_for("auth.register"))
 
         if not is_valid_password(password):
-            flash("Password does not meet complexity requirements.", "warning")
+            flash(PASSWORD_REQUIREMENTS_HELP, "warning")
             return redirect(url_for("auth.register"))
 
         if User.query.filter_by(email=email).first():
