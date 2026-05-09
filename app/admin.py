@@ -272,7 +272,7 @@ class AirCostZoneForm(FlaskForm):
             self.rate_set.data = DEFAULT_RATE_SET
 
 
-_SAFE_FILENAME_RE = re.compile(r"^[^/\\\x00.][^/\\\x00]*$")
+_SAFE_FILENAME_RE = re.compile(r"^[a-zA-Z0-9_-][a-zA-Z0-9._ -]*$")
 
 
 class RateSetLogoForm(FlaskForm):
