@@ -893,4 +893,13 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         return redirect(url_for("index"))
 
+    @app.errorhandler(413)
+    def handle_too_large(e):
+        flash(
+            f"Uploaded file is too large. Maximum allowed size is "
+            f"{app.config.get('MAX_UPLOAD_MB', 20)} MB.",
+            "danger",
+        )
+        return redirect(url_for("admin.dashboard"))
+
     return app
