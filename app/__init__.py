@@ -893,6 +893,14 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         return redirect(url_for("index"))
 
+    @app.errorhandler(404)
+    def handle_not_found(e):
+        return render_template("404.html"), 404
+
+    @app.errorhandler(500)
+    def handle_server_error(e):
+        return render_template("500.html"), 500
+
     @app.errorhandler(413)
     def handle_too_large(e):
         flash(
