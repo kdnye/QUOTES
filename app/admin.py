@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import re
 import secrets
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -41,7 +42,7 @@ from wtforms import (
     StringField,
     TextAreaField,
 )
-from wtforms.validators import DataRequired, Optional
+from wtforms.validators import DataRequired, Optional, Regexp
 
 from scripts.import_air_rates import save_unique
 from .models import (
@@ -271,6 +272,9 @@ class AirCostZoneForm(FlaskForm):
             self.rate_set.data = DEFAULT_RATE_SET
 
 
+_SAFE_FILENAME_RE = re.compile(r"^[^/\\\x00.][^/\\\x00]*$")
+
+
 class RateSetLogoForm(FlaskForm):
     """Form for assigning a customer logo file to a rate set.
 
@@ -289,7 +293,14 @@ class RateSetLogoForm(FlaskForm):
 
     rate_set = SelectField("Rate Set", validators=[DataRequired()])
     filename = StringField(
-        "Filename (e.g., 'AGR Logo.png')", validators=[DataRequired()]
+        "Filename (e.g., 'AGR Logo.png')",
+        validators=[
+            DataRequired(),
+            Regexp(
+                _SAFE_FILENAME_RE,
+                message="Filename must not contain path separators, null bytes, or start with a dot.",
+            ),
+        ],
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:

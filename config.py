@@ -714,4 +714,7 @@ class Config:
     OIDC_ALLOWED_DOMAIN = _resolve_oidc_allowed_domain()
     OIDC_END_SESSION_ENDPOINT = os.getenv("OIDC_END_SESSION_ENDPOINT")
 
+    MAX_UPLOAD_MB = int(os.getenv("MAX_UPLOAD_MB", "20"))
+    MAX_CONTENT_LENGTH = MAX_UPLOAD_MB * 1024 * 1024
+
     CONFIG_ERRORS = list(_CONFIG_ERRORS)
