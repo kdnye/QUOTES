@@ -17,6 +17,10 @@ from limits.limits import RateLimitItem
 
 EMPLOYEE_EMAIL_DOMAIN = "@freightservices.net"
 DEFAULT_RESET_TOKEN_RATE_LIMIT = "1 per 15 minutes"
+PASSWORD_REQUIREMENTS_HELP = (
+    "Use at least 12 characters with upper- and lower-case letters, a number or "
+    "symbol — or supply a 28+ character passphrase."
+)
 
 
 def hash_reset_token(token: str) -> str:
@@ -182,10 +186,7 @@ def register_user(
 
     password = data.get("password") or ""
     if not is_valid_password(password):
-        return None, (
-            "Password must be at least 12 characters with upper- and lower-case "
-            "letters plus a number or symbol — or use a 28+ character passphrase."
-        )
+        return None, PASSWORD_REQUIREMENTS_HELP
 
     if User.query.filter_by(email=email).first():
         return None, "Email already registered."
@@ -438,10 +439,7 @@ def reset_password_with_token(token: str, new_password: str) -> Optional[str]:
         database so stolen rows remain unusable.
     """
     if not is_valid_password(new_password):
-        return (
-            "Password must be at least 12 characters with upper- and lower-case "
-            "letters plus a number or symbol — or use a 28+ character passphrase."
-        )
+        return PASSWORD_REQUIREMENTS_HELP
     reset = PasswordResetToken.query.filter_by(
         token=hash_reset_token(token), used=False
     ).first()
