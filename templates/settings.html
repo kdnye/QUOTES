@@ -139,33 +139,51 @@
       <div class="row g-3">
         <div class="col-12">
           <label class="form-label" for="current_password">Current password</label>
-          <input
-            type="password"
-            class="form-control"
-            id="current_password"
-            name="current_password"
-            autocomplete="current-password"
-          />
+          <div class="input-group">
+            <input
+              type="password"
+              class="form-control"
+              id="current_password"
+              name="current_password"
+              autocomplete="current-password"
+            />
+            <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                    onclick="togglePwVis('current_password','current_password_eye')" aria-label="Show password">
+              <i class="bi bi-eye" id="current_password_eye"></i>
+            </button>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label" for="new_password">New password</label>
-          <input
-            type="password"
-            class="form-control"
-            id="new_password"
-            name="new_password"
-            autocomplete="new-password"
-          />
+          <div class="input-group">
+            <input
+              type="password"
+              class="form-control"
+              id="new_password"
+              name="new_password"
+              autocomplete="new-password"
+            />
+            <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                    onclick="togglePwVis('new_password','new_password_eye')" aria-label="Show password">
+              <i class="bi bi-eye" id="new_password_eye"></i>
+            </button>
+          </div>
         </div>
         <div class="col-md-6">
           <label class="form-label" for="confirm_password">Confirm new password</label>
-          <input
-            type="password"
-            class="form-control"
-            id="confirm_password"
-            name="confirm_password"
-            autocomplete="new-password"
-          />
+          <div class="input-group">
+            <input
+              type="password"
+              class="form-control"
+              id="confirm_password"
+              name="confirm_password"
+              autocomplete="new-password"
+            />
+            <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                    onclick="togglePwVis('confirm_password','confirm_password_eye')" aria-label="Show password">
+              <i class="bi bi-eye" id="confirm_password_eye"></i>
+            </button>
+          </div>
         </div>
         <div class="col-12">
           {{ password_strength_ui("new_password", "confirm_password") }}
@@ -180,4 +198,12 @@
     </form>
   </div>
 </div>
+<script>
+function togglePwVis(inputId, eyeId) {
+  const inp = document.getElementById(inputId);
+  const eye = document.getElementById(eyeId);
+  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'bi bi-eye-slash'; }
+  else { inp.type = 'password'; eye.className = 'bi bi-eye'; }
+}
+</script>
 {% endblock %}

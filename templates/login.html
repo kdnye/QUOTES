@@ -30,14 +30,20 @@
             </div>
             <div class="mb-3">
               <label class="form-label" for="password">Password</label>
-              <input
-                class="form-control"
-                type="password"
-                id="password"
-                name="password"
-                autocomplete="current-password"
-                required
-              />
+              <div class="input-group">
+                <input
+                  class="form-control"
+                  type="password"
+                  id="password"
+                  name="password"
+                  autocomplete="current-password"
+                  required
+                />
+                <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                        onclick="togglePwVis('password','password_eye')" aria-label="Show password">
+                  <i class="bi bi-eye" id="password_eye"></i>
+                </button>
+              </div>
             </div>
             <div class="d-flex justify-content-between align-items-center">
               <a class="small" href="{{ url_for('auth.reset_request') }}">Forgot your password?</a>
@@ -52,4 +58,12 @@
       </p>
     </div>
   </div>
+<script>
+function togglePwVis(inputId, eyeId) {
+  const inp = document.getElementById(inputId);
+  const eye = document.getElementById(eyeId);
+  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'bi bi-eye-slash'; }
+  else { inp.type = 'password'; eye.className = 'bi bi-eye'; }
+}
+</script>
 {% endblock %}
