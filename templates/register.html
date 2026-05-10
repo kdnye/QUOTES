@@ -140,14 +140,20 @@
                     title="28+ character passphrase, or 12+ chars with upper, lower, and a number/symbol.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
                   ></i>
                 </label>
-                <input
-                  class="form-control"
-                  type="password"
-                  id="password"
-                  name="password"
-                  autocomplete="new-password"
-                  required
-                />
+                <div class="input-group">
+                  <input
+                    class="form-control"
+                    type="password"
+                    id="password"
+                    name="password"
+                    autocomplete="new-password"
+                    required
+                  />
+                  <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                          onclick="togglePwVis('password','password_eye')" aria-label="Show password">
+                    <i class="bi bi-eye" id="password_eye"></i>
+                  </button>
+                </div>
               </div>
               <div class="col-md-6">
                 <label class="form-label" for="confirm_password">
@@ -159,14 +165,20 @@
                     title="Re-enter the same password to confirm.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
                   ></i>
                 </label>
-                <input
-                  class="form-control"
-                  type="password"
-                  id="confirm_password"
-                  name="confirm_password"
-                  autocomplete="new-password"
-                  required
-                />
+                <div class="input-group">
+                  <input
+                    class="form-control"
+                    type="password"
+                    id="confirm_password"
+                    name="confirm_password"
+                    autocomplete="new-password"
+                    required
+                  />
+                  <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                          onclick="togglePwVis('confirm_password','confirm_password_eye')" aria-label="Show password">
+                    <i class="bi bi-eye" id="confirm_password_eye"></i>
+                  </button>
+                </div>
               </div>
               <div class="col-12">
                 {{ password_strength_ui("password", "confirm_password") }}
@@ -207,4 +219,12 @@
       </p>
     </div>
   </div>
+<script>
+function togglePwVis(inputId, eyeId) {
+  const inp = document.getElementById(inputId);
+  const eye = document.getElementById(eyeId);
+  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'bi bi-eye-slash'; }
+  else { inp.type = 'password'; eye.className = 'bi bi-eye'; }
+}
+</script>
 {% endblock %}
