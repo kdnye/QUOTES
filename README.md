@@ -363,6 +363,9 @@ SECRET_KEY=super_secret_value
 API_AUTH_TOKEN=replace_with_api_token
 # Optional: override the default API rate limit (e.g., "30 per minute")
 API_QUOTE_RATE_LIMIT=30 per minute
+# Optional: enable Google reCAPTCHA for /auth/register
+RECAPTCHA_SITE_KEY=your_public_site_key
+RECAPTCHA_SECRET_KEY=your_private_secret_key
 ```
 
 When targeting an external PostgreSQL instance (for example, Google Cloud SQL)

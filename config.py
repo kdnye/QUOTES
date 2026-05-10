@@ -699,6 +699,11 @@ class Config:
     }
     AUTH_LOGIN_RATE_LIMIT = os.getenv("AUTH_LOGIN_RATE_LIMIT", "5 per minute")
     AUTH_REGISTER_RATE_LIMIT = os.getenv("AUTH_REGISTER_RATE_LIMIT", "5 per minute")
+    RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "").strip()
+    RECAPTCHA_SECRET_KEY = os.getenv("RECAPTCHA_SECRET_KEY", "").strip()
+    RECAPTCHA_VERIFY_URL = os.getenv(
+        "RECAPTCHA_VERIFY_URL", "https://www.google.com/recaptcha/api/siteverify"
+    ).strip()
     AUTH_RESET_RATE_LIMIT = os.getenv("AUTH_RESET_RATE_LIMIT", "5 per minute")
     AUTH_RESET_TOKEN_RATE_LIMIT = os.getenv(
         "AUTH_RESET_TOKEN_RATE_LIMIT", "1 per 15 minutes"
