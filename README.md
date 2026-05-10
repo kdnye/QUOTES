@@ -20,7 +20,7 @@ Services portal.
 - Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
 - Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
 - Theme now supports dark mode and automatically follows each user's system color-scheme preference
-- Dynamic fuel surcharges (VSC) are calculated per destination zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to Hotshot quotes (Air quotes apply a fixed 31.5% base surcharge; dynamic EIA-based VSC for Air is not yet implemented)
+- Dynamic fuel surcharges (VSC) are calculated per destination zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to both Hotshot and Air quotes
 
 ## Feature status
 
@@ -31,8 +31,8 @@ Services portal.
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
-| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component is a stub (`get_dynamic_vsc_pct` returns `0.0`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
-| Microsoft Excel (Power Query) integration | ✅ Stable | POST quotes from Excel via `Web.Contents` with `ManualStatusHandling`. Set data source privacy to **Organizational** or **Public** — the default "Private" level blocks requests to external hosts. Use `&` for string concatenation and `Text.Proper` to normalize `quote_type`. See [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) for a complete M-code example. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable | EIA-backed dynamic VSC is fully wired for both Hotshot and Air quotes. Surcharge percentages are looked up from a tiered zone matrix and applied automatically. Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
+| Microsoft Excel (Power Query) integration | ✅ Stable | POST quotes from Excel via `Web.Contents` with `ManualStatusHandling`. Set data source privacy to **Organizational** or **Public** — the default “Private” level blocks requests to external hosts. Use `&` for string concatenation and `Text.Proper` to normalize `quote_type`. See [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) for a complete M-code example. |
 | Google Sheets (Apps Script) integration | ✅ Stable | POST quotes via `UrlFetchApp.fetch`. Store the API key in script properties, not worksheet cells. |
 
 Operator note: Air quotes enforce per-piece limits using billable weight (the greater of actual or dimensional weight).
@@ -355,12 +355,12 @@ service configuration:
 
 ```dotenv
 FLASK_DEBUG=false
-GOOGLE_MAPS_API_KEY=your_google_key
-DATABASE_URL=postgresql+psycopg2://user:password@db/quote_tool
+GOOGLE_MAPS_API_KEY=<your-google-maps-api-key>
+DATABASE_URL=postgresql+psycopg2://<db-user>:<db-pass>@<db-host>/quote_tool
 # Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'
-SECRET_KEY=super_secret_value
+SECRET_KEY=<generate-and-store-in-secret-manager>
 # Generate with: python -c 'import secrets; print(secrets.token_urlsafe(32))'
-API_AUTH_TOKEN=replace_with_api_token
+API_AUTH_TOKEN=<generate-and-store-in-secret-manager>
 # Optional: override the default API rate limit (e.g., "30 per minute")
 API_QUOTE_RATE_LIMIT=30 per minute
 ```
@@ -368,23 +368,19 @@ API_QUOTE_RATE_LIMIT=30 per minute
 When targeting an external PostgreSQL instance (for example, Google Cloud SQL)
 leave ``DATABASE_URL`` unset and provide the individual ``POSTGRES_*`` values
 instead. The configuration helper automatically percent-encodes credentials so
-passwords containing characters such as ``?`` or ``@`` do not break the
-connection string. Optional ``POSTGRES_OPTIONS`` accepts a query-string-style
-value that is appended to the generated URI, enabling flags like
-``sslmode=require`` without manually editing the DSN:
+special characters such as ``?`` or ``@`` do not break the connection string.
+Optional ``POSTGRES_OPTIONS`` accepts a query-string-style value that is
+appended to the generated URI, enabling flags like ``sslmode=require`` without
+manually editing the DSN:
 
 ```dotenv
 POSTGRES_USER=quote_tool
-POSTGRES_PASSWORD=ChangeMeSuperSecret!
 POSTGRES_DB=quote_tool
-POSTGRES_HOST=34.132.95.126
+POSTGRES_HOST=<cloud-sql-ip-or-socket-host>
 POSTGRES_PORT=5432
 POSTGRES_OPTIONS=sslmode=require&application_name=quote-tool
+# Store POSTGRES_PASSWORD in Secret Manager; wire it via --set-secrets in Cloud Run
 ```
-
-> Replace the example password with your real secret. Because
-> ``POSTGRES_PASSWORD`` is encoded automatically, special characters do not need
-> manual escaping.
 
 PostgreSQL configuration is required in all environments. If no PostgreSQL
 settings are supplied, the application starts in maintenance mode and surfaces
