@@ -20,7 +20,6 @@ import json
 import secrets
 import smtplib
 from urllib.error import URLError
-from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 from datetime import datetime
 from typing import Dict, Optional, Union, cast
