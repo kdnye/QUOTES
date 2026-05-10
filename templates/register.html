@@ -149,7 +149,7 @@
                     autocomplete="new-password"
                     required
                   />
-                  <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                  <button class="btn btn-outline-secondary" type="button"
                           onclick="togglePwVis('password','password_eye')" aria-label="Show password">
                     <i class="bi bi-eye" id="password_eye"></i>
                   </button>
@@ -174,7 +174,7 @@
                     autocomplete="new-password"
                     required
                   />
-                  <button class="btn btn-outline-secondary" type="button" tabindex="-1"
+                  <button class="btn btn-outline-secondary" type="button"
                           onclick="togglePwVis('confirm_password','confirm_password_eye')" aria-label="Show password">
                     <i class="bi bi-eye" id="confirm_password_eye"></i>
                   </button>
@@ -223,8 +223,16 @@
 function togglePwVis(inputId, eyeId) {
   const inp = document.getElementById(inputId);
   const eye = document.getElementById(eyeId);
-  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'bi bi-eye-slash'; }
-  else { inp.type = 'password'; eye.className = 'bi bi-eye'; }
+  const btn = eye.closest('button');
+  if (inp.type === 'password') {
+    inp.type = 'text';
+    eye.className = 'bi bi-eye-slash';
+    if (btn) btn.setAttribute('aria-label', 'Hide password');
+  } else {
+    inp.type = 'password';
+    eye.className = 'bi bi-eye';
+    if (btn) btn.setAttribute('aria-label', 'Show password');
+  }
 }
 </script>
 {% endblock %}
