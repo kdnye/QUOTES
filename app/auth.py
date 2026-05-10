@@ -234,7 +234,7 @@ def _verify_recaptcha_response(token: str, remote_ip: str) -> bool:
         return False
     try:
         data = json.loads(verification)
-    except Exception:
+    except ValueError:
         return False
     return bool(data.get("success"))
 
