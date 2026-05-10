@@ -16,8 +16,11 @@ The blueprint wraps the authentication lifecycle for the quote tool:
   authentication and continue through the reset link securely.
 """
 
+import json
 import secrets
 import smtplib
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 from datetime import datetime
 from typing import Dict, Optional, Union, cast
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
@@ -179,6 +182,63 @@ def _issue_registration_challenge() -> str:
     return f"What is {first_term} + {second_term}?"
 
 
+def _is_recaptcha_enabled() -> bool:
+    """Return whether registration should enforce Google reCAPTCHA.
+
+    Inputs:
+        None. Reads Flask configuration values from ``current_app.config``.
+
+    Outputs:
+        ``True`` when both ``RECAPTCHA_SITE_KEY`` and ``RECAPTCHA_SECRET_KEY``
+        are configured; otherwise ``False``.
+
+    External dependencies:
+        * Reads :data:`flask.current_app.config` keys populated by
+          :mod:`config`.
+    """
+
+    site_key = str(current_app.config.get("RECAPTCHA_SITE_KEY") or "").strip()
+    secret_key = str(current_app.config.get("RECAPTCHA_SECRET_KEY") or "").strip()
+    return bool(site_key and secret_key)
+
+
+def _verify_recaptcha_response(token: str, remote_ip: str) -> bool:
+    """Validate a reCAPTCHA token with Google's verification endpoint.
+
+    Inputs:
+        token: Value posted from ``g-recaptcha-response`` in the register form.
+        remote_ip: Client IP address from ``flask.request.remote_addr``.
+
+    Outputs:
+        ``True`` when Google reports ``success=true``; otherwise ``False``.
+
+    External dependencies:
+        * Calls Google reCAPTCHA ``siteverify`` using :func:`urllib.request.urlopen`.
+        * Parses JSON via :meth:`http.client.HTTPResponse.read` and
+          :func:`flask.jsonify`-compatible ``Response.get_json`` semantics.
+    """
+
+    secret = str(current_app.config.get("RECAPTCHA_SECRET_KEY") or "").strip()
+    verify_url = str(current_app.config.get("RECAPTCHA_VERIFY_URL") or "").strip()
+    payload = urlencode({"secret": secret, "response": token, "remoteip": remote_ip})
+    request_obj = Request(
+        verify_url,
+        data=payload.encode("utf-8"),
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with urlopen(request_obj, timeout=5) as response:
+            verification = response.read().decode("utf-8")
+    except URLError:
+        return False
+    try:
+        data = json.loads(verification)
+    except ValueError:
+        return False
+    return bool(data.get("success"))
+
+
 def _sanitize_theme_preference(raw_value: Optional[str]) -> str:
     """Return a safe theme preference value for persisted account settings.
 
@@ -197,7 +257,6 @@ def _sanitize_theme_preference(raw_value: Optional[str]) -> str:
     if normalized in {"auto", "light", "dark"}:
         return normalized
     return "auto"
-
 
 
 def _account_settings_form_state(user: User) -> Dict[str, Union[str, bool]]:
@@ -526,6 +585,7 @@ def register() -> Union[str, Response]:
         company_phone = (request.form.get("company_phone") or "").strip()
         password = request.form.get("password", "")
         confirm_password = request.form.get("confirm_password", "")
+        recaptcha_token = (request.form.get("g-recaptcha-response") or "").strip()
         human_verification = (request.form.get("human_verification") or "").strip()
 
         missing_fields = [
@@ -539,7 +599,9 @@ def register() -> Union[str, Response]:
                 "company phone number": company_phone,
                 "password": password,
                 "password confirmation": confirm_password,
-                "human verification answer": human_verification,
+                "human verification": (
+                    recaptcha_token if _is_recaptcha_enabled() else human_verification
+                ),
             }.items()
             if not value
         ]
@@ -548,14 +610,20 @@ def register() -> Union[str, Response]:
             flash(f"Please provide: {field_list}.", "warning")
             return redirect(url_for("auth.register"))
 
-        expected_answer = session.get("registration_challenge_answer")
-        if not expected_answer:
-            flash("Human verification expired. Please try again.", "warning")
-            return redirect(url_for("auth.register"))
+        if _is_recaptcha_enabled():
+            remote_ip = request.remote_addr or ""
+            if not _verify_recaptcha_response(recaptcha_token, remote_ip):
+                flash("Human verification failed. Please try again.", "warning")
+                return redirect(url_for("auth.register"))
+        else:
+            expected_answer = session.get("registration_challenge_answer")
+            if not expected_answer:
+                flash("Human verification expired. Please try again.", "warning")
+                return redirect(url_for("auth.register"))
 
-        if human_verification != expected_answer:
-            flash("Incorrect human verification answer.", "warning")
-            return redirect(url_for("auth.register"))
+            if human_verification != expected_answer:
+                flash("Incorrect human verification answer.", "warning")
+                return redirect(url_for("auth.register"))
 
         if not is_valid_phone(phone):
             flash("Enter a valid phone number.", "warning")
@@ -606,8 +674,14 @@ def register() -> Union[str, Response]:
         session.pop("registration_challenge_answer", None)
         flash("Registered. Please log in.", "success")
         return redirect(url_for("auth.login"))
-    challenge_prompt = _issue_registration_challenge()
-    return render_template("register.html", challenge_prompt=challenge_prompt)
+    recaptcha_enabled = _is_recaptcha_enabled()
+    challenge_prompt = _issue_registration_challenge() if not recaptcha_enabled else ""
+    return render_template(
+        "register.html",
+        challenge_prompt=challenge_prompt,
+        recaptcha_enabled=recaptcha_enabled,
+        recaptcha_site_key=current_app.config.get("RECAPTCHA_SITE_KEY", ""),
+    )
 
 
 @auth_bp.route("/settings", methods=["GET", "POST"])

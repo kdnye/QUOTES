@@ -188,27 +188,26 @@
               <div class="col-12">
                 <label class="form-label" for="human_verification">
                   Human verification
-                  <i
-                    class="bi bi-question-circle ms-1 text-secondary"
-                    data-bs-toggle="tooltip"
-                    data-bs-html="true"
-                    title="Answer the math prompt to prove you're human.<br /><a class='text-white text-decoration-underline' href='{{ url_for('help.account_setup_guide') }}'>Account setup guide</a>"
-                  ></i>
                 </label>
-                {% if challenge_prompt %}
-                  <div class="form-text text-muted pb-1" id="human_verification_help">
-                    Human Verification: {{ challenge_prompt }}
-                  </div>
+                {% if recaptcha_enabled %}
+                  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+                  <div class="g-recaptcha" data-sitekey="{{ recaptcha_site_key }}"></div>
+                {% else %}
+                  {% if challenge_prompt %}
+                    <div class="form-text text-muted pb-1" id="human_verification_help">
+                      Human Verification: {{ challenge_prompt }}
+                    </div>
+                  {% endif %}
+                  <input
+                    class="form-control"
+                    type="text"
+                    id="human_verification"
+                    name="human_verification"
+                    value="{{ request.form.get('human_verification', '') }}"
+                    {% if challenge_prompt %}aria-describedby="human_verification_help"{% endif %}
+                    required
+                  />
                 {% endif %}
-                <input
-                  class="form-control"
-                  type="text"
-                  id="human_verification"
-                  name="human_verification"
-                  value="{{ request.form.get('human_verification', '') }}"
-                  {% if challenge_prompt %}aria-describedby="human_verification_help"{% endif %}
-                  required
-                />
               </div>
             </div>
             <button class="btn btn-primary w-100 mt-4" type="submit">Register</button>
