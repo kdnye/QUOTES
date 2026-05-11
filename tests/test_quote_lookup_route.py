@@ -130,6 +130,41 @@ def test_lookup_quote_get_renders_lookup_template(
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
 
 
+def test_lookup_quote_get_with_quote_id_renders_result_context(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resolve a quote directly from a GET query-string quote ID."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    quote = Quote(
+        quote_id="Q-TYUIOP23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=120.0,
+        total=310.0,
+        quote_metadata="{}",
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.get(f"/quotes/lookup?quote_id={quote.quote_id}")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
 def test_lookup_quote_post_invalid_readable_quote_id_renders_lookup_with_flash(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
