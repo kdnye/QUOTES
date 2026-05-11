@@ -82,7 +82,7 @@ def _normalize_client_reference(raw_reference: object) -> tuple[str | None, str 
 
     Inputs:
         raw_reference: Value from request data, usually
-            ``request.form.get("client_reference")`` or
+            ``request.values.get("client_reference")`` or
             ``request.json.get("client_reference")``.
 
     Outputs:
