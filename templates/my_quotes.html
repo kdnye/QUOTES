@@ -23,7 +23,7 @@
             {% set summary = quote_summaries.get(quote.id, {}) %}
             <tr>
               <td>{{ quote.created_at.strftime('%Y-%m-%d %H:%M') if quote.created_at else '—' }}</td>
-              <td><a href="{{ url_for('quotes.lookup_quote') }}">{{ quote.quote_id }}</a></td>
+              <td><a href="{{ url_for('quotes.lookup_quote', quote_id=quote.quote_id) }}">{{ quote.quote_id }}</a></td>
               <td>{{ summary.get('client_reference', '—') }}</td>
               <td>{{ quote.origin or '—' }} → {{ quote.destination or '—' }}</td>
               <td>${{ '%.2f'|format(quote.total or 0) }}</td>

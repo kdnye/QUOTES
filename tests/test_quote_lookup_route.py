@@ -130,6 +130,115 @@ def test_lookup_quote_get_renders_lookup_template(
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
 
 
+def test_lookup_quote_get_with_quote_id_renders_result_context(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resolve a quote directly from a GET query-string quote ID."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    quote = Quote(
+        quote_id="Q-TYUIOP23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=120.0,
+        total=310.0,
+        quote_metadata="{}",
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.get(f"/quotes/lookup?quote_id={quote.quote_id}")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
+def test_lookup_quote_get_with_client_reference_renders_result_context(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Resolve a quote from GET query-string client reference lookups."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    quote = Quote(
+        quote_id="Q-RTYUJK23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=110.0,
+        total=290.0,
+        client_reference="ACME-REF-1",
+        quote_metadata="{}",
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.get(
+        "/quotes/lookup?lookup_mode=client_reference&client_reference=acme-ref-1"
+    )
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
+def test_lookup_quote_get_client_reference_without_lookup_mode_defaults_correctly(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Infer client-reference mode on GET when only client_reference is provided."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    quote = Quote(
+        quote_id="Q-ASDFGH23",
+        quote_type="Air",
+        origin="10001",
+        destination="94105",
+        weight=95.0,
+        total=250.0,
+        client_reference="REF-ONLY-LINK",
+        quote_metadata="{}",
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+
+    monkeypatch.setattr(
+        "app.quotes.routes.render_template",
+        lambda template_name, **_: f"template={template_name}",
+    )
+    monkeypatch.setattr("app.quotes.routes.is_quote_email_smtp_enabled", lambda: True)
+    monkeypatch.setattr("app.quotes.routes.user_has_mail_privileges", lambda _: True)
+
+    response = client.get("/quotes/lookup?client_reference=ref-only-link")
+
+    assert response.status_code == 200
+    assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
 def test_lookup_quote_post_invalid_readable_quote_id_renders_lookup_with_flash(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -172,7 +281,10 @@ def test_lookup_quote_post_missing_quote_renders_lookup_with_not_found_flash(
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=lookup_quote.html"
     with client.session_transaction() as session:
-        assert ("danger", "We could not find a matching quote for that lookup.") in session["_flashes"]
+        assert (
+            "danger",
+            "We could not find a matching quote for that lookup.",
+        ) in session["_flashes"]
 
 
 def test_lookup_quote_post_found_quote_renders_result_context(
