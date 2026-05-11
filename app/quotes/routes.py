@@ -701,10 +701,19 @@ def lookup_quote():
         permission flags expected by the result template.
     """
 
-    if request.method == "GET" and not request.args.get("quote_id"):
+    if request.method == "GET" and not (
+        request.args.get("quote_id") or request.args.get("client_reference")
+    ):
         return render_template("lookup_quote.html")
 
     lookup_mode = (request.values.get("lookup_mode") or "quote_id").strip().lower()
+    if (
+        request.method == "GET"
+        and lookup_mode == "quote_id"
+        and request.args.get("client_reference")
+        and not request.args.get("quote_id")
+    ):
+        lookup_mode = "client_reference"
     scoped_query = _quote_lookup_query_for_user(current_user)
 
     quote = None
@@ -717,9 +726,7 @@ def lookup_quote():
             return render_template("lookup_quote.html")
 
         matching_quotes = (
-            scoped_query.filter(
-                Quote.client_reference == normalized_client_reference
-            )
+            scoped_query.filter(Quote.client_reference == normalized_client_reference)
             .order_by(Quote.created_at.desc(), Quote.id.desc())
             .all()
         )
@@ -890,15 +897,17 @@ def _format_quote_copy_email_body(
     ]
     if quote.client_reference:
         lines.append(f"Client Reference #: {quote.client_reference}")
-    lines.extend([
-        "",
-        "SHIPMENT SPECIFICATIONS",
-        "------------------------------------------",
-        f"Origin ZIP: {quote.origin}"
-        + (f" (Note: {origin_notes})" if origin_notes else ""),
-        f"Destination ZIP: {quote.destination}"
-        + (f" (Note: {dest_notes})" if dest_notes else ""),
-    ])
+    lines.extend(
+        [
+            "",
+            "SHIPMENT SPECIFICATIONS",
+            "------------------------------------------",
+            f"Origin ZIP: {quote.origin}"
+            + (f" (Note: {origin_notes})" if origin_notes else ""),
+            f"Destination ZIP: {quote.destination}"
+            + (f" (Note: {dest_notes})" if dest_notes else ""),
+        ]
+    )
 
     if (quote.quote_type or "").strip().lower() == "hotshot":
         lines.append(f"Mileage: {mileage_text}")
