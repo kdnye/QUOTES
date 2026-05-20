@@ -229,7 +229,7 @@ def create_quote(
             weight=billable_weight,
             weight_method=weight_method,
             actual_weight=actual_weight,
-            dim_weight=dim_weight,
+            dim_weight=dim_weight_val,
             pieces=pieces,
             length=length,
             width=width,
