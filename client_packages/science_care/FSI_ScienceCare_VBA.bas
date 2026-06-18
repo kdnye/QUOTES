@@ -115,7 +115,10 @@ Public Sub RunScienceCareQuote()
 
     ' --- International guard: API is domestic-only for now ---
     Dim intlCountry As String
-    intlCountry = Trim(CStr(ws.Range(CELL_INTL_COUNTRY).Value))
+    Dim intlVal As Variant
+    intlVal = ws.Range(CELL_INTL_COUNTRY).Value
+    If IsError(intlVal) Then intlVal = ""
+    intlCountry = Trim(CStr(intlVal))
     If Len(intlCountry) > 0 Then
         SetStatus ws, "Air", "Skipped: international (B7 = " & intlCountry & ")"
         SetStatus ws, "Hotshot", "Skipped: international"
@@ -127,7 +130,10 @@ Public Sub RunScienceCareQuote()
 
     ' --- Origin ZIP: look up B4 (lab code) in "Drop downs OTH - SC" ---
     Dim labCode As String
-    labCode = Trim(CStr(ws.Range(CELL_LAB_CODE).Value))
+    Dim labVal As Variant
+    labVal = ws.Range(CELL_LAB_CODE).Value
+    If IsError(labVal) Then labVal = ""
+    labCode = Trim(CStr(labVal))
     If Len(labCode) = 0 Then
         SetStatus ws, "Air", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
         SetStatus ws, "Hotshot", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
@@ -145,11 +151,26 @@ Public Sub RunScienceCareQuote()
         MsgBox msg, vbExclamation, "FSI Quote"
         Exit Sub
     End If
+    ' Reject "00000" too: FormatZip pads a blank/zero result up to 5 digits.
+    If Not originZip Like "#####" Or originZip = "00000" Then
+        Dim invalidMsg As String
+        invalidMsg = "Resolved origin ZIP """ & originZip & """ for lab """ & labCode & """ is invalid."
+        SetStatus ws, "Air", "Error: " & invalidMsg
+        SetStatus ws, "Hotshot", "Error: " & invalidMsg
+        MsgBox invalidMsg, vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
 
     ' --- Destination ZIP ---
     Dim destZip As String
     Dim destRaw As Variant
     destRaw = ws.Range(CELL_DEST_ZIP).Value
+    If IsError(destRaw) Then
+        SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " contains a worksheet error."
+        SetStatus ws, "Hotshot", "Error: Destination ZIP contains a worksheet error."
+        MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
     If IsEmpty(destRaw) Or CStr(destRaw) = "" Then
         SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " is empty."
         SetStatus ws, "Hotshot", "Error: Destination ZIP empty."
@@ -261,7 +282,13 @@ Private Function LookupLabZip(labCode As String) As String
     End If
     On Error GoTo 0
 
-    LookupLabZip = FormatZip(result)
+    ' VLookup itself can succeed while returning an Error variant if the
+    ' matched cell holds #N/A / #REF! etc. Don't pass that into FormatZip.
+    If IsError(result) Then
+        LookupLabZip = ""
+    Else
+        LookupLabZip = FormatZip(result)
+    End If
 End Function
 
 
@@ -284,11 +311,13 @@ Private Function CalcTotalDimWeight(ws As Worksheet) As Double
     For i = 0 To 3
         Dim v As Variant
         v = ws.Range(qtyCells(i)).Value
-        If Not (IsEmpty(v) Or CStr(v) = "") And IsNumeric(v) Then
-            Dim qty As Long
-            qty = CLng(v)
-            If qty > 0 Then
-                total = total + (L(i) * H(i) * W(i) * qty) / DIM_DIVISOR
+        If Not IsError(v) Then
+            If Not (IsEmpty(v) Or CStr(v) = "") And IsNumeric(v) Then
+                Dim qty As Long
+                qty = CLng(v)
+                If qty > 0 Then
+                    total = total + (L(i) * H(i) * W(i) * qty) / DIM_DIVISOR
+                End If
             End If
         End If
     Next i
@@ -312,12 +341,16 @@ Private Function BuildAccessorialsJson(ws As Worksheet) As String
     result = ""
     Dim i As Long
     For i = 0 To 4
-        If UCase(Trim(CStr(ws.Range(cells(i)).Value))) = "Y" Then
-            Dim accStr As String
-            accStr = AccName(cells(i))
-            If Len(accStr) > 0 Then
-                If Len(result) > 0 Then result = result & ", "
-                result = result & """" & EscapeJson(accStr) & """"
+        Dim v As Variant
+        v = ws.Range(cells(i)).Value
+        If Not IsError(v) Then
+            If UCase(Trim(CStr(v))) = "Y" Then
+                Dim accStr As String
+                accStr = AccName(cells(i))
+                If Len(accStr) > 0 Then
+                    If Len(result) > 0 Then result = result & ", "
+                    result = result & """" & EscapeJson(accStr) & """"
+                End If
             End If
         End If
     Next i
