@@ -331,23 +331,25 @@ End Function
 ' BuildAccessorialsJson - JSON string-array body from Y markers in J3-J8.
 ' -----------------------------------------------------------------------
 Private Function BuildAccessorialsJson(ws As Worksheet) As String
-    Dim cells(4) As String
-    cells(0) = CELL_ACC_4HR_WINDOW
-    cells(1) = CELL_ACC_SPECIAL_TIME
-    cells(2) = CELL_ACC_AFTERHOURS
-    cells(3) = CELL_ACC_TWO_MAN
-    cells(4) = CELL_ACC_LIFTGATE
+    ' Note: not named "cells" — that shadows the Cells property on
+    ' Worksheet/Range and trips VBA's "Ambiguous name" check on some setups.
+    Dim accCells(4) As String
+    accCells(0) = CELL_ACC_4HR_WINDOW
+    accCells(1) = CELL_ACC_SPECIAL_TIME
+    accCells(2) = CELL_ACC_AFTERHOURS
+    accCells(3) = CELL_ACC_TWO_MAN
+    accCells(4) = CELL_ACC_LIFTGATE
 
     Dim result As String
     result = ""
     Dim i As Long
     For i = 0 To 4
         Dim v As Variant
-        v = ws.Range(cells(i)).Value
+        v = ws.Range(accCells(i)).Value
         If Not IsError(v) Then
             If UCase(Trim(CStr(v))) = "Y" Then
                 Dim accStr As String
-                accStr = AccName(cells(i))
+                accStr = AccName(accCells(i))
                 If Len(accStr) > 0 Then
                     If Len(result) > 0 Then result = result & ", "
                     result = result & """" & EscapeJson(accStr) & """"
@@ -442,11 +444,11 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
         SetStatus ws, quoteType, "Success"
     Else
         rx.Pattern = """remediation"":\s*""([^""]+)"""
-        Dim mE As Object
-        Set mE = rx.Execute(resp)
+        Dim mErr As Object
+        Set mErr = rx.Execute(resp)
         Dim errText As String
-        If mE.Count > 0 Then
-            errText = "Error: " & mE(0).SubMatches(0)
+        If mErr.Count > 0 Then
+            errText = "Error: " & mErr(0).SubMatches(0)
         Else
             errText = "HTTP " & httpCode
         End If
