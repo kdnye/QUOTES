@@ -1,4 +1,3 @@
-Attribute VB_Name = "FSI_ScienceCare"
 ' FSI Quote Tool - Science Care 3_MASTER Integration
 ' -----------------------------------------------------------------------
 ' Wires the SHIPMENT tabs in 3_MASTER_TOOL to the FSI Quote API.
