@@ -23,12 +23,12 @@ This module replaces the in-sheet VLOOKUPs against `Domestic Charts - FS`, `Inte
 2. **Alt+F11** to open the VBA editor.
 3. **Insert > Module**.
 4. With the new `Module1` selected, press **F4** to open the Properties pane and change `(Name)` to `FSI_ScienceCare`.
-5. Paste the contents of `FSI_ScienceCare_VBA.bas` into the module's code window. *(Don't paste an `Attribute VB_Name = "..."` line — that only works via File > Import, and VBA reports a syntax error on it when pasted.)*
+5. Paste the contents of `FSI_ScienceCare_VBA.bas` into the module's code window.
 6. Set `API_KEY` in **SECTION 1**.
 7. (Optional) Verify cell addresses in **SECTION 2** against SHIPMENT 1.
 8. **Alt+Q** to close. On each SHIPMENT tab: **Insert > Shapes**, draw a button, right-click > **Assign Macro > `RunScienceCareQuote`**.
 
-> **Prefer importing?** Use **File > Import File…** and pick the `.bas` directly — the module name is set automatically. The paste flow above is what the rest of this README assumes.
+> **Prefer importing?** Use **File > Import File…** and pick `FSI_ScienceCare_VBA.bas` directly. The file no longer carries an `Attribute VB_Name` header, so VBA names the module after the file's base name (`FSI_ScienceCare_VBA`) — rename it to `FSI_ScienceCare` in the Properties pane (F4) after the import.
 
 The macro always operates on the **active sheet**, so the same button code works on every SHIPMENT tab.
 
