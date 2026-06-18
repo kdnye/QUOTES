@@ -1,12 +1,10 @@
-# FSI Quote Tool — Science Care Integration
+# FSI Quote Tool — Science Care 3_MASTER Integration
 
-Reads the **FREIGHT SERVICES SHIPPING AND HANDLING QUOTE SUMMARY** workbook and calls the FSI Quote API for **Air and Hotshot simultaneously**, writing both results back to the sheet in a single button press.
+Wires each `SHIPMENT` tab in `3_MASTER_TOOL_2026` to the FSI Quote API. One button press calls the API twice (Air, then Hotshot) and writes both totals into the `FS by Air` and `FS by Hot Shot` rows.
 
----
+This module replaces the in-sheet VLOOKUPs against `Domestic Charts - FS`, `International Chart - FS`, and `HOTSHOT Pricing` for domestic shipments. International shipments are skipped until the API supports them.
 
-## Multi-sheet workbook support
-
-The workbook has one sheet per Science Care lab. The macros always operate on the **currently focused sheet** — click the lab tab you want to quote, then press the button. No configuration change is needed between labs.
+> **SHIPMENT 1 is the source of truth.** Cell addresses in the module match the SHIPMENT 1 layout. The other SHIPMENT tabs are being brought into the same layout — once aligned, the same macro works on every tab.
 
 ---
 
@@ -15,106 +13,99 @@ The workbook has one sheet per Science Care lab. The macros always operate on th
 | Environment | File |
 |---|---|
 | Excel (.xlsm) | `FSI_ScienceCare_VBA.bas` |
-| Google Sheets | `FSI_ScienceCare_AppsScript.gs` |
-
-> **Parallelism note:** The VBA version sends Air then Hotshot back-to-back (VBA is single-threaded). The Apps Script version uses `UrlFetchApp.fetchAll()` to fire both requests at the exact same time.
+| Google Sheets | `FSI_ScienceCare_AppsScript.gs` *(uses older form layout — needs the same update before use)* |
 
 ---
 
 ## Excel — VBA setup
 
-1. Save the workbook as `.xlsm` if not already.
+1. Save `3_MASTER_TOOL_2026.xlsm` as `.xlsm` if it isn't already.
 2. **Alt+F11 > Insert > Module** — paste `FSI_ScienceCare_VBA.bas`.
 3. Set `API_KEY` in **SECTION 1**.
-4. Verify cell addresses in **SECTION 2** against your actual layout.
-5. Fill in the `LabToZip` function in **SECTION 3** with your lab codes and confirmed ZIP codes.
-6. **Alt+Q** to close. Add a button: **Insert > Shapes**, draw it, right-click > **Assign Macro > RunScienceCareQuote**.
+4. (Optional) Verify cell addresses in **SECTION 2** against SHIPMENT 1.
+5. **Alt+Q** to close. On each SHIPMENT tab: **Insert > Shapes**, draw a button, right-click > **Assign Macro > `RunScienceCareQuote`**.
+
+The macro always operates on the **active sheet**, so the same button code works on every SHIPMENT tab.
 
 ---
 
-## Google Sheets — Apps Script setup
+## Origin ZIP — resolved from the workbook's own lookup
 
-1. Open your Google Sheets copy.
-2. **Extensions > Apps Script** — paste `FSI_ScienceCare_AppsScript.gs`.
-3. Save and refresh the sheet.
-4. **FSI Quotes (Science Care) > Set API key** — paste your key.
-5. Verify row/column numbers in `CONFIG`.
-6. Fill in the `LAB_ZIP` object with your confirmed lab codes and ZIPs.
+The lab code in **B4** (e.g. `SCCA`) is translated to a 5-digit origin ZIP by looking it up in **`Drop downs OTH - SC`** column A → column B. This is the same table the existing in-sheet formula at row 67 uses, so no separate VBA mapping is maintained — add a new lab by adding a row to that sheet.
+
+If the lookup sheet is missing or the lab code is not in the table, the macro writes an error to the status cell and exits cleanly.
 
 ---
 
-## Inputs read from the sheet
+## Inputs read from the active SHIPMENT tab
 
-| Field | Cell (default) | Notes |
+| Field | Cell | Notes |
 |---|---|---|
-| SC Lab code | B3 | Looked up in LabToZip / LAB_ZIP |
-| US Zip Code | B5 | Destination ZIP |
-| Accessorial Y markers | H2–H9 | "Y" in the cell activates that service |
-| Box quantities | A38–A44 | One row per box type |
-| Total Shipment Weight | M47 | Lbs — used as actual weight |
-| Total Boxes | A45 | Used as piece count |
+| SC Lab code | **B4** | Looked up in `Drop downs OTH - SC` → origin ZIP |
+| Destination ZIP | **B5** | 5-digit US ZIP |
+| International country | **B7** | If filled, macro skips with a warning (API is domestic-only) |
+| Total shipment weight (lbs) | **I37** | Used as `weight` |
+| Total boxes | **A30** | Used as `pieces` (defaults to 1 if empty) |
+| Box quantities (for dim weight) | **A26 / A27 / A28 / A29** | Medium / Large / X-Large / Airtray |
+| Accessorials (Y/N markers) | **J3, J4, J5, J7, J8** | See mapping below |
 
----
-
-## Dimensional weight
-
-The macro calculates a combined dim weight from all box types that have a quantity:
-
-```
-dim_weight = sum of (L × H × W × qty) / 139  for each box type
-```
-
-Dimensions (Length × Height × Width, inches) are hard-coded from the form header:
-
-| Box type | L | H | W |
-|---|---|---|---|
-| Medium | 20 | 15 | 18 |
-| Large | 32 | 18 | 20 |
-| X-Large | 52 | 20 | 15 |
-| Small Airtray | 60 | 21 | 12 |
-| Airtray | 79 | 24 | 15 |
-| Wide Airtray | — | — | — | *(dims not on form; excluded from calc)* |
-| Wide Airtray Small | 60 | 31 | 19 |
-
-The API compares this dim weight against actual weight and uses whichever is higher. `weight_method` in the response confirms which was used.
+`J6` (Weekend) and `J9` (VSC) are intentionally not sent: VSC is computed server-side from the lane zone, and Weekend has no current API equivalent.
 
 ---
 
 ## Accessorial mapping
 
-| Form label | API string sent |
-|---|---|
-| 4 Hour Delivery/Pick-Up Window | `4 Hour Window` |
-| Afterhours Delivery | `Afterhours Delivery` |
-| Weekend Delivery | `Weekend Delivery` |
-| Special Pickup or Delivery Time | `Special Delivery Time` |
-| Afterhours Pickup (Returns Only) | `Afterhours Pickup` |
-| Weekend Pickup (Returns Only) | `Weekend Pickup` |
-| Two-Man Team Required | `Two-Man Team` |
-| Liftgate Required | `Liftgate` |
+| Form label | Cell | API string sent |
+|---|---|---|
+| 4 Hour Delivery/Pick-Up Window | J3 | `PickUp 4 Hour Window (e.g 10:00-14:00)` |
+| Special Pickup or Delivery Time | J4 | `Specific PickUp Time (e.g. Deliver at 9:30am)` |
+| Afterhours Delivery/Pickup | J5 | `Delivery After Hours (17:01-07:59)` |
+| Two-Man Team Required | J7 | `Two Man Delivery` |
+| Liftgate Required | J8 | `Liftgate Delivery` |
 
-Confirm accepted names with your FSI representative — the API silently ignores names it does not recognise.
+A cell is treated as active when it contains the letter `Y` (case-insensitive).
+
+---
+
+## Dimensional weight
+
+Combined dim weight is calculated across all four box types with a quantity:
+
+```
+dim_weight = Σ (L × H × W × qty) / 166   for each box type
+```
+
+| Box type | Qty cell | L | H | W |
+|---|---|---|---|---|
+| Medium  | A26 | 20 | 15 | 18 |
+| Large   | A27 | 32 | 18 | 20 |
+| X-Large | A28 | 52 | 20 | 15 |
+| Airtray | A29 | 79 | 24 | 15 |
+
+The API compares the dim weight against the actual weight in `I37` and prices on whichever is greater. The response's `weight_method` confirms which was used. (Not surfaced on the sheet today — can be added on request.)
 
 ---
 
 ## Outputs written to the sheet
 
-| Cell (default) | Content |
+| Cell | Content |
 |---|---|
-| B53 | FS by Air — total price ($) |
-| C53 | Air status: `Success` or error detail |
-| B54 | FS by Hot Shot — total price ($) |
-| G54 | Hot Shot Miles |
-| C54 | Hotshot status: `Success` or error detail |
+| **C40** | FS by Air — total price ($) |
+| **B40** | Air status: `Success`, `Skipped: ...`, or error detail |
+| **C41** | FS by Hot Shot — total price ($) |
+| **E41** | Hot Shot Miles (returned by API) |
+| **B41** | Hotshot status: `Success` or error detail |
+
+> Writing to **C40 / C41 overwrites the existing in-sheet formulas** that compute the totals from the static rate charts. That is intentional — once the API parity is confirmed, the `Domestic Charts - FS`, `International Chart - FS`, and `HOTSHOT Pricing` tabs (and their hidden duplicates) can be removed.
 
 ---
 
-## Lab-to-ZIP table
+## International shipments
 
-The `LabToZip` / `LAB_ZIP` entries are **examples only** — verify every ZIP before use. Add new lab codes as needed; unknown codes abort the run with a descriptive message so no silent failures occur.
+If **B7** is non-empty, the macro writes `Skipped: international` to both status cells and shows a one-line dialog. The current FSI API endpoint is domestic-only. This guard will be removed once the API supports international Air.
 
 ---
 
-## Adjusting cell references
+## Customising cell references
 
-All cell references are defined in a single `CONFIGURATION` block near the top of each file. If Science Care updates the form layout, update only that block — no hunting through the code.
+All cell addresses live in `SECTION 2` of the `.bas` file. If the SHIPMENT 1 layout changes, update only that block — no hunting through the code.
