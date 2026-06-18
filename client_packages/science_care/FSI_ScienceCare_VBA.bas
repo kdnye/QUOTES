@@ -218,26 +218,28 @@ Public Sub RunScienceCareQuote()
     accJson = BuildAccessorialsJson(ws)
 
     ' --- Shared payload fragment ---
-    Dim shared As String
-    shared = """origin"": """ & originZip & """, " & _
-             """destination"": """ & destZip & """, " & _
-             """weight"": " & Trim(Str(totalWeight)) & ", " & _
-             """pieces"": " & totalBoxes
+    ' Note: not named "shared" — that's a reserved word in VBA and triggers
+    ' a compile-time syntax error on the Dim line.
+    Dim payloadBase As String
+    payloadBase = """origin"": """ & originZip & """, " & _
+                  """destination"": """ & destZip & """, " & _
+                  """weight"": " & Trim(Str(totalWeight)) & ", " & _
+                  """pieces"": " & totalBoxes
     If dimWeight > 0 Then
-        shared = shared & ", ""dim_weight"": " & Trim(Str(dimWeight))
+        payloadBase = payloadBase & ", ""dim_weight"": " & Trim(Str(dimWeight))
     End If
     If Len(accJson) > 0 Then
-        shared = shared & ", ""accessorials"": [" & accJson & "]"
+        payloadBase = payloadBase & ", ""accessorials"": [" & accJson & "]"
     End If
 
     ' --- Air quote ---
     Dim airResp As String
-    airResp = PostQuote("{""quote_type"": ""Air"", " & shared & "}")
+    airResp = PostQuote("{""quote_type"": ""Air"", " & payloadBase & "}")
     ParseAndWrite ws, airResp, "Air"
 
     ' --- Hotshot quote ---
     Dim hotResp As String
-    hotResp = PostQuote("{""quote_type"": ""Hotshot"", " & shared & "}")
+    hotResp = PostQuote("{""quote_type"": ""Hotshot"", " & payloadBase & "}")
     ParseAndWrite ws, hotResp, "Hotshot"
 
     MsgBox "Done. Air -> " & CELL_OUT_AIR_TOTAL & ", Hotshot -> " & CELL_OUT_HOT_TOTAL & ".", _
