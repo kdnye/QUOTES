@@ -1,121 +1,100 @@
 Attribute VB_Name = "FSI_ScienceCare"
-' FSI Quote Tool — Science Care Integration
+' FSI Quote Tool - Science Care 3_MASTER Integration
 ' -----------------------------------------------------------------------
-' Reads the "FREIGHT SERVICES SHIPPING AND HANDLING QUOTE SUMMARY" workbook
-' and calls the FSI Quote API for both Air and Hotshot service types,
-' writing the live results back to the FS by Air and FS by Hot Shot cells.
+' Wires the SHIPMENT tabs in 3_MASTER_TOOL to the FSI Quote API.
+' For each press, calls the API twice (Air, Hotshot) and writes the totals
+' into the "FS by Air" and "FS by Hot Shot" cells. Origin ZIP is resolved
+' from the lab code in B4 via the workbook's existing
+' "Drop downs OTH - SC" lookup table.
 '
-' SETUP (10 minutes):
-'   1. Save the Science Care workbook as .xlsm if not already.
+' International shipments (B7 filled) are skipped for now - the API
+' currently supports domestic Air and Hotshot only.
+'
+' SETUP:
+'   1. Save the workbook as .xlsm.
 '   2. Alt+F11 > Insert > Module > paste this entire file.
-'   3. Replace YOUR_API_KEY_HERE in SECTION 1 with your FSI API key.
-'   4. Verify every cell address in SECTION 2 against your actual sheet.
-'      (Click each target cell; the address shows in the Name Box top-left.)
-'   5. Fill in the LabToZip function in SECTION 3 with your lab codes/ZIPs.
-'   6. Alt+Q to close. Optional: Insert > Shapes > draw a button >
+'   3. Replace YOUR_API_KEY_HERE in SECTION 1 with the FSI API key.
+'   4. Confirm cell addresses in SECTION 2 match the SHIPMENT 1 layout
+'      (SHIPMENT 1 is the source of truth; the other SHIPMENT tabs are
+'      being brought into line with it).
+'   5. Alt+Q to close.
+'   6. Insert > Shapes > draw a button on each SHIPMENT tab,
 '      right-click > Assign Macro > RunScienceCareQuote.
-'
-' NOTE ON "PARALLEL" EXECUTION:
-'   VBA is single-threaded. Air and Hotshot calls run back-to-back (usually
-'   under two seconds combined). For true simultaneous dispatch use the
-'   Google Sheets version (FSI_ScienceCare_AppsScript.gs), which uses
-'   UrlFetchApp.fetchAll() to fire both requests at the same time.
 ' -----------------------------------------------------------------------
 
 Option Explicit
 
 ' ==========================================================================
-' SECTION 1 — API CREDENTIALS
+' SECTION 1 - API CREDENTIALS
 ' ==========================================================================
 Private Const API_KEY As String = "YOUR_API_KEY_HERE"
 Private Const API_URL As String = "https://quote.freightservices.net/api/quote"
 
-' Standard US domestic dimensional weight divisor (lbs per cubic inch).
-' Change only if FSI has confirmed a different divisor for your account.
-Private Const DIM_DIVISOR As Long = 139
+' Standard FSI dimensional weight divisor (cubic inches per lb).
+Private Const DIM_DIVISOR As Long = 166
+
+' Name of the hidden lookup sheet that maps SC Lab code (col A) -> ZIP (col B).
+Private Const LAB_LOOKUP_SHEET As String = "Drop downs OTH - SC"
+Private Const LAB_LOOKUP_RANGE As String = "A2:B100"
 
 ' ==========================================================================
-' SECTION 2 — CELL REFERENCES
-' Adjust each address to match your workbook. Click the target cell and
-' read its address from the Name Box (top-left of Excel) to confirm.
+' SECTION 2 - SHIPMENT TAB CELL REFERENCES
+' Defaults match the SHIPMENT 1 layout in 3_MASTER_TOOL_2026. Click each
+' target cell on your sheet and read its address in the Name Box (top-left)
+' to verify before running.
 ' ==========================================================================
 
-' Header inputs
-Private Const CELL_SC_LAB   As String = "B3"   ' SC Lab code, e.g. "SCIL"
-Private Const CELL_DEST_ZIP As String = "B5"   ' US Zip Code (destination)
+' Header inputs - defaults match the SHIPMENT 1 layout in 3_MASTER_TOOL.
+Private Const CELL_LAB_CODE       As String = "B4"   ' SC Lab abbreviation (e.g. "SCCA"). VLOOKUP'd against "Drop downs OTH - SC" to get origin ZIP.
+Private Const CELL_DEST_ZIP       As String = "B5"   ' US destination ZIP (5 digits)
+Private Const CELL_INTL_COUNTRY   As String = "B7"   ' International country - if filled, macro skips (API is domestic-only)
 
-' Accessorial Y/N markers — cell contains "Y" when that service is selected.
-Private Const CELL_ACC_4HR_WINDOW    As String = "H2"   ' 4 Hour Delivery/Pick-Up Window ($50)
-Private Const CELL_ACC_AFTERHOURS_DL As String = "H3"   ' Afterhours Delivery 4:31pm-7:59am (+$110)
-Private Const CELL_ACC_WEEKEND_DL    As String = "H4"   ' Weekend Delivery (+$125)
-Private Const CELL_ACC_SPECIAL_TIME  As String = "H5"   ' Special Pickup or Delivery Time (+$95)
-Private Const CELL_ACC_AFTERHOURS_PU As String = "H6"   ' Afterhours Pickup — Returns Only (+$110)
-Private Const CELL_ACC_WEEKEND_PU    As String = "H7"   ' Weekend Pickup — Returns Only (+$125)
-Private Const CELL_ACC_TWO_MAN       As String = "H8"   ' Two-Man Team Required (+$125)
-Private Const CELL_ACC_LIFTGATE      As String = "H9"   ' Liftgate Required (+$75)
+' Accessorial Y/N markers - cell holds "Y" when that service is selected.
+' Cells without an API equivalent (Weekend J6, VSC J9) are intentionally not
+' sent: VSC is computed server-side from zone; Weekend has no API name.
+Private Const CELL_ACC_4HR_WINDOW   As String = "J3"  ' 4 Hour Delivery/Pick-Up Window ($50)
+Private Const CELL_ACC_SPECIAL_TIME As String = "J4"  ' Special Pickup or Delivery Time (+$95)
+Private Const CELL_ACC_AFTERHOURS   As String = "J5"  ' Afterhours Delivery/Pickup (+$110)
+Private Const CELL_ACC_TWO_MAN      As String = "J7"  ' Two-Man Team Required (+$125)
+Private Const CELL_ACC_LIFTGATE     As String = "J8"  ' Liftgate Required (+$75)
 
-' Box-type quantity cells in the TOTAL FEES section.
-' These are the Qty values to the LEFT of each box-type label row.
-Private Const CELL_QTY_MEDIUM       As String = "A38"  ' Medium          20"x15"x18" (L x H x W)
-Private Const CELL_QTY_LARGE        As String = "A39"  ' Large           32"x18"x20"
-Private Const CELL_QTY_XLARGE       As String = "A40"  ' X-Large         52"x20"x15"
-Private Const CELL_QTY_SM_AIRTRAY   As String = "A41"  ' Small Airtray   60"x21"x12"
-Private Const CELL_QTY_AIRTRAY      As String = "A42"  ' Airtray         79"x24"x15"
-Private Const CELL_QTY_WIDE_AIRTRAY As String = "A43"  ' Wide Airtray    (dims not printed; excluded from dim-weight calc)
-Private Const CELL_QTY_WIDE_SM      As String = "A44"  ' Wide Airtray Sm 60"x31"x19"
+' Box-type quantity cells (one row per box type).
+Private Const CELL_QTY_MEDIUM   As String = "A26"  ' Medium    20"x15"x18"
+Private Const CELL_QTY_LARGE    As String = "A27"  ' Large     32"x18"x20"
+Private Const CELL_QTY_XLARGE   As String = "A28"  ' X-Large   52"x20"x15"
+Private Const CELL_QTY_AIRTRAY  As String = "A29"  ' Airtray   79"x24"x15"
 
-' Shipment totals (from the TOTAL FEES summary rows)
-Private Const CELL_TOTAL_WEIGHT As String = "M47"  ' TOTAL SHIPMENT WEIGHT (lbs)
-Private Const CELL_TOTAL_BOXES  As String = "A45"  ' Total Boxes count
+' Shipment totals
+Private Const CELL_TOTAL_WEIGHT As String = "I37"  ' TOTAL SHIPMENT WEIGHT (lbs)
+Private Const CELL_TOTAL_BOXES  As String = "A30"  ' Total Boxes count
 
-' Output cells — results are written here after both API calls complete.
-Private Const CELL_OUT_AIR_TOTAL  As String = "B53"  ' FS by Air: total price ($)
-Private Const CELL_OUT_AIR_STATUS As String = "C53"  ' Air: "Success" or error detail
-Private Const CELL_OUT_HOT_TOTAL  As String = "B54"  ' FS by Hot Shot: total price ($)
-Private Const CELL_OUT_HOT_MILES  As String = "G54"  ' Hot Shot Miles
-Private Const CELL_OUT_HOT_STATUS As String = "C54"  ' Hotshot: "Success" or error detail
+' Output cells - results are written here after both API calls complete.
+Private Const CELL_OUT_AIR_TOTAL  As String = "C40"  ' FS by Air: total price ($)
+Private Const CELL_OUT_AIR_STATUS As String = "B40"  ' Air status: "Success" or error detail
+Private Const CELL_OUT_HOT_TOTAL  As String = "C41"  ' FS by Hot Shot: total price ($)
+Private Const CELL_OUT_HOT_MILES  As String = "E41"  ' Hot Shot Miles
+Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success" or error detail
 
 ' ==========================================================================
-' SECTION 3 — LAB-TO-ZIP LOOKUP
-' Add one Case per lab code. Right-hand value is the 5-digit origin ZIP.
-' Verify every ZIP — the example values below may not match your facilities.
-' ==========================================================================
-Private Function LabToZip(labCode As String) As String
-    Select Case UCase(Trim(labCode))
-        Case "SCIL":  LabToZip = "92618"   ' Irvine, CA         — VERIFY
-        Case "SCAZ":  LabToZip = "85040"   ' Phoenix, AZ        — VERIFY
-        Case "SCFL":  LabToZip = "32256"   ' Jacksonville, FL   — VERIFY
-        Case "SCGA":  LabToZip = "30349"   ' Atlanta, GA        — VERIFY
-        Case "SCMD":  LabToZip = "21042"   ' Columbia, MD       — VERIFY
-        Case "SCNJ":  LabToZip = "08816"   ' East Brunswick, NJ — VERIFY
-        Case "SCTX":  LabToZip = "77032"   ' Houston, TX        — VERIFY
-        Case "SCWA":  LabToZip = "98188"   ' Seattle, WA        — VERIFY
-        Case Else:    LabToZip = ""        ' Unknown → abort with message
-    End Select
-End Function
-
-' ==========================================================================
-' SECTION 4 — ACCESSORIAL NAME MAPPING
+' SECTION 3 - ACCESSORIAL NAME MAPPING
 ' Maps each form label to the FSI API accessorial string. The API ignores
-' names it does not recognise. Confirm accepted names with your FSI rep.
+' names it does not recognise.
 ' ==========================================================================
 Private Function AccName(cellAddr As String) As String
     Select Case cellAddr
-        Case CELL_ACC_4HR_WINDOW:    AccName = "4 Hour Window"
-        Case CELL_ACC_AFTERHOURS_DL: AccName = "Afterhours Delivery"
-        Case CELL_ACC_WEEKEND_DL:    AccName = "Weekend Delivery"
-        Case CELL_ACC_SPECIAL_TIME:  AccName = "Special Delivery Time"
-        Case CELL_ACC_AFTERHOURS_PU: AccName = "Afterhours Pickup"
-        Case CELL_ACC_WEEKEND_PU:    AccName = "Weekend Pickup"
-        Case CELL_ACC_TWO_MAN:       AccName = "Two-Man Team"
-        Case CELL_ACC_LIFTGATE:      AccName = "Liftgate"
-        Case Else:                   AccName = ""
+        Case CELL_ACC_4HR_WINDOW:   AccName = "PickUp 4 Hour Window (e.g 10:00-14:00)"
+        Case CELL_ACC_SPECIAL_TIME: AccName = "Specific PickUp Time (e.g. Deliver at 9:30am)"
+        Case CELL_ACC_AFTERHOURS:   AccName = "Delivery After Hours (17:01-07:59)"
+        Case CELL_ACC_TWO_MAN:      AccName = "Two Man Delivery"
+        Case CELL_ACC_LIFTGATE:     AccName = "Liftgate Delivery"
+        Case Else:                  AccName = ""
     End Select
 End Function
 
 
 ' -----------------------------------------------------------------------
-' PUBLIC ENTRY POINT — assign this macro to your quote button.
+' PUBLIC ENTRY POINT - assign this macro to your quote button.
+' Runs on whichever sheet is currently active.
 ' -----------------------------------------------------------------------
 Public Sub RunScienceCareQuote()
     If API_KEY = "YOUR_API_KEY_HERE" Or Len(Trim(API_KEY)) = 0 Then
@@ -134,19 +113,51 @@ Public Sub RunScienceCareQuote()
     ws.Range(CELL_OUT_HOT_MILES).ClearContents
     ws.Range(CELL_OUT_HOT_STATUS).ClearContents
 
-    ' --- Origin ZIP ---
-    Dim labCode As String
-    labCode = Trim(CStr(ws.Range(CELL_SC_LAB).Value))
-    If Len(labCode) = 0 Then
-        MsgBox "SC Lab cell (" & CELL_SC_LAB & ") is empty.", vbExclamation, "FSI Quote"
+    ' --- International guard: API is domestic-only for now ---
+    Dim intlCountry As String
+    Dim intlVal As Variant
+    intlVal = ws.Range(CELL_INTL_COUNTRY).Value
+    If IsError(intlVal) Then intlVal = ""
+    intlCountry = Trim(CStr(intlVal))
+    If Len(intlCountry) > 0 Then
+        SetStatus ws, "Air", "Skipped: international (B7 = " & intlCountry & ")"
+        SetStatus ws, "Hotshot", "Skipped: international"
+        MsgBox "International shipment detected in " & CELL_INTL_COUNTRY & " (" & intlCountry & ")." & vbLf & _
+               "The FSI Quote API currently supports domestic Air and Hotshot only.", _
+               vbInformation, "FSI Quote"
         Exit Sub
     End If
+
+    ' --- Origin ZIP: look up B4 (lab code) in "Drop downs OTH - SC" ---
+    Dim labCode As String
+    Dim labVal As Variant
+    labVal = ws.Range(CELL_LAB_CODE).Value
+    If IsError(labVal) Then labVal = ""
+    labCode = Trim(CStr(labVal))
+    If Len(labCode) = 0 Then
+        SetStatus ws, "Air", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
+        SetStatus ws, "Hotshot", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
+        MsgBox "SC Lab cell (" & CELL_LAB_CODE & ") is empty.", vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
+
     Dim originZip As String
-    originZip = LabToZip(labCode)
+    originZip = LookupLabZip(labCode)
     If Len(originZip) = 0 Then
-        MsgBox "No ZIP mapping found for lab code """ & labCode & """." & vbLf & _
-               "Add it to the LabToZip function in SECTION 3.", _
-               vbExclamation, "FSI Quote"
+        Dim msg As String
+        msg = "Lab code """ & labCode & """ not found in '" & LAB_LOOKUP_SHEET & "'!" & LAB_LOOKUP_RANGE & "."
+        SetStatus ws, "Air", "Error: " & msg
+        SetStatus ws, "Hotshot", "Error: " & msg
+        MsgBox msg, vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
+    ' Reject "00000" too: FormatZip pads a blank/zero result up to 5 digits.
+    If Not originZip Like "#####" Or originZip = "00000" Then
+        Dim invalidMsg As String
+        invalidMsg = "Resolved origin ZIP """ & originZip & """ for lab """ & labCode & """ is invalid."
+        SetStatus ws, "Air", "Error: " & invalidMsg
+        SetStatus ws, "Hotshot", "Error: " & invalidMsg
+        MsgBox invalidMsg, vbExclamation, "FSI Quote"
         Exit Sub
     End If
 
@@ -154,15 +165,23 @@ Public Sub RunScienceCareQuote()
     Dim destZip As String
     Dim destRaw As Variant
     destRaw = ws.Range(CELL_DEST_ZIP).Value
+    If IsError(destRaw) Then
+        SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " contains a worksheet error."
+        SetStatus ws, "Hotshot", "Error: Destination ZIP contains a worksheet error."
+        MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
     If IsEmpty(destRaw) Or CStr(destRaw) = "" Then
-        MsgBox "US Zip Code cell (" & CELL_DEST_ZIP & ") is empty.", _
-               vbExclamation, "FSI Quote"
+        SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " is empty."
+        SetStatus ws, "Hotshot", "Error: Destination ZIP empty."
+        MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
         Exit Sub
     End If
     destZip = FormatZip(destRaw)
     If Not destZip Like "#####" Then
-        MsgBox "US Zip Code """ & destZip & """ is invalid — must be 5 digits.", _
-               vbExclamation, "FSI Quote"
+        SetStatus ws, "Air", "Error: Destination ZIP invalid (" & destZip & ")"
+        SetStatus ws, "Hotshot", "Error: Destination ZIP invalid"
+        MsgBox "Destination ZIP """ & destZip & """ must be 5 digits.", vbExclamation, "FSI Quote"
         Exit Sub
     End If
 
@@ -183,12 +202,14 @@ Public Sub RunScienceCareQuote()
     On Error GoTo 0
 
     If totalWeight <= 0 Then
+        SetStatus ws, "Air", "Error: Total weight " & CELL_TOTAL_WEIGHT & " <= 0"
+        SetStatus ws, "Hotshot", "Error: Total weight <= 0"
         MsgBox "Total Shipment Weight cell (" & CELL_TOTAL_WEIGHT & ") must be greater than 0.", _
                vbExclamation, "FSI Quote"
         Exit Sub
     End If
 
-    ' --- Dimensional weight (sum across all box types with known dims) ---
+    ' --- Dimensional weight (sum across all box types with quantity) ---
     Dim dimWeight As Double
     dimWeight = CalcTotalDimWeight(ws)
 
@@ -196,7 +217,7 @@ Public Sub RunScienceCareQuote()
     Dim accJson As String
     accJson = BuildAccessorialsJson(ws)
 
-    ' --- Shared payload fragment (everything except quote_type) ---
+    ' --- Shared payload fragment ---
     Dim shared As String
     shared = """origin"": """ & originZip & """, " & _
              """destination"": """ & destZip & """, " & _
@@ -219,10 +240,13 @@ Public Sub RunScienceCareQuote()
     hotResp = PostQuote("{""quote_type"": ""Hotshot"", " & shared & "}")
     ParseAndWrite ws, hotResp, "Hotshot"
 
-    MsgBox "Done. Air and Hotshot quotes written to the sheet.", vbInformation, "FSI Quote"
+    MsgBox "Done. Air -> " & CELL_OUT_AIR_TOTAL & ", Hotshot -> " & CELL_OUT_HOT_TOTAL & ".", _
+           vbInformation, "FSI Quote"
     Exit Sub
 
 InputError:
+    SetStatus ws, "Air", "Error: could not read " & CELL_TOTAL_WEIGHT & " / " & CELL_TOTAL_BOXES
+    SetStatus ws, "Hotshot", "Error: could not read weight / boxes"
     MsgBox "Could not read Weight or Boxes. Check cells " & _
            CELL_TOTAL_WEIGHT & " and " & CELL_TOTAL_BOXES & ".", _
            vbExclamation, "FSI Quote"
@@ -230,32 +254,64 @@ End Sub
 
 
 ' -----------------------------------------------------------------------
-' CalcTotalDimWeight — returns sum of (L × H × W × qty) / DIM_DIVISOR
-' across every box type that has a quantity and known dimensions.
-' Returns 0 when no boxes are filled in (API will use actual weight only).
+' LookupLabZip - resolves SC Lab code (B4) -> 5-digit origin ZIP using
+' the workbook's existing "Drop downs OTH - SC" sheet so adding new labs
+' is a sheet edit, never a VBA edit.
+' Returns "" when the code is not found.
+' -----------------------------------------------------------------------
+Private Function LookupLabZip(labCode As String) As String
+    Dim lookupSheet As Worksheet
+    On Error Resume Next
+    Set lookupSheet = ThisWorkbook.Sheets(LAB_LOOKUP_SHEET)
+    On Error GoTo 0
+    If lookupSheet Is Nothing Then
+        LookupLabZip = ""
+        Exit Function
+    End If
+
+    Dim result As Variant
+    On Error Resume Next
+    result = Application.WorksheetFunction.VLookup( _
+                UCase(Trim(labCode)), _
+                lookupSheet.Range(LAB_LOOKUP_RANGE), _
+                2, False)
+    If Err.Number <> 0 Then
+        Err.Clear
+        LookupLabZip = ""
+        Exit Function
+    End If
+    On Error GoTo 0
+
+    ' VLookup itself can succeed while returning an Error variant if the
+    ' matched cell holds #N/A / #REF! etc. Don't pass that into FormatZip.
+    If IsError(result) Then
+        LookupLabZip = ""
+    Else
+        LookupLabZip = FormatZip(result)
+    End If
+End Function
+
+
+' -----------------------------------------------------------------------
+' CalcTotalDimWeight - sum of (L x H x W x qty) / DIM_DIVISOR across all
+' box types with a positive quantity. Returns 0 when no boxes are filled
+' in (API will then use actual weight only).
 ' -----------------------------------------------------------------------
 Private Function CalcTotalDimWeight(ws As Worksheet) As Double
-    ' Box type data: qty cell, length, height, width (inches)
-    ' Dimensions sourced from the Science Care form header.
-    ' Wide Airtray dims are not printed on the form; it is excluded.
-    Dim qtyCells(6) As String
-    Dim L(6) As Double, H(6) As Double, W(6) As Double
+    Dim qtyCells(3) As String
+    Dim L(3) As Double, H(3) As Double, W(3) As Double
 
-    qtyCells(0) = CELL_QTY_MEDIUM:       L(0) = 20: H(0) = 15: W(0) = 18
-    qtyCells(1) = CELL_QTY_LARGE:        L(1) = 32: H(1) = 18: W(1) = 20
-    qtyCells(2) = CELL_QTY_XLARGE:       L(2) = 52: H(2) = 20: W(2) = 15
-    qtyCells(3) = CELL_QTY_SM_AIRTRAY:   L(3) = 60: H(3) = 21: W(3) = 12
-    qtyCells(4) = CELL_QTY_AIRTRAY:      L(4) = 79: H(4) = 24: W(4) = 15
-    qtyCells(5) = CELL_QTY_WIDE_AIRTRAY: L(5) = 0:  H(5) = 0:  W(5) = 0   ' dims unknown
-    qtyCells(6) = CELL_QTY_WIDE_SM:      L(6) = 60: H(6) = 31: W(6) = 19
+    qtyCells(0) = CELL_QTY_MEDIUM:  L(0) = 20: H(0) = 15: W(0) = 18
+    qtyCells(1) = CELL_QTY_LARGE:   L(1) = 32: H(1) = 18: W(1) = 20
+    qtyCells(2) = CELL_QTY_XLARGE:  L(2) = 52: H(2) = 20: W(2) = 15
+    qtyCells(3) = CELL_QTY_AIRTRAY: L(3) = 79: H(3) = 24: W(3) = 15
 
-    Dim total As Double
+    Dim total As Double, i As Long
     total = 0
-    Dim i As Long
-    For i = 0 To 6
-        If L(i) > 0 Then
-            Dim v As Variant
-            v = ws.Range(qtyCells(i)).Value
+    For i = 0 To 3
+        Dim v As Variant
+        v = ws.Range(qtyCells(i)).Value
+        If Not IsError(v) Then
             If Not (IsEmpty(v) Or CStr(v) = "") And IsNumeric(v) Then
                 Dim qty As Long
                 qty = CLng(v)
@@ -271,29 +327,30 @@ End Function
 
 
 ' -----------------------------------------------------------------------
-' BuildAccessorialsJson — return a JSON string-array body from Y markers.
+' BuildAccessorialsJson - JSON string-array body from Y markers in J3-J8.
 ' -----------------------------------------------------------------------
 Private Function BuildAccessorialsJson(ws As Worksheet) As String
-    Dim cells(7) As String
+    Dim cells(4) As String
     cells(0) = CELL_ACC_4HR_WINDOW
-    cells(1) = CELL_ACC_AFTERHOURS_DL
-    cells(2) = CELL_ACC_WEEKEND_DL
-    cells(3) = CELL_ACC_SPECIAL_TIME
-    cells(4) = CELL_ACC_AFTERHOURS_PU
-    cells(5) = CELL_ACC_WEEKEND_PU
-    cells(6) = CELL_ACC_TWO_MAN
-    cells(7) = CELL_ACC_LIFTGATE
+    cells(1) = CELL_ACC_SPECIAL_TIME
+    cells(2) = CELL_ACC_AFTERHOURS
+    cells(3) = CELL_ACC_TWO_MAN
+    cells(4) = CELL_ACC_LIFTGATE
 
     Dim result As String
     result = ""
     Dim i As Long
-    For i = 0 To 7
-        If UCase(Trim(CStr(ws.Range(cells(i)).Value))) = "Y" Then
-            Dim name As String
-            name = AccName(cells(i))
-            If Len(name) > 0 Then
-                If Len(result) > 0 Then result = result & ", "
-                result = result & """" & EscapeJson(name) & """"
+    For i = 0 To 4
+        Dim v As Variant
+        v = ws.Range(cells(i)).Value
+        If Not IsError(v) Then
+            If UCase(Trim(CStr(v))) = "Y" Then
+                Dim accStr As String
+                accStr = AccName(cells(i))
+                If Len(accStr) > 0 Then
+                    If Len(result) > 0 Then result = result & ", "
+                    result = result & """" & EscapeJson(accStr) & """"
+                End If
             End If
         End If
     Next i
@@ -303,7 +360,7 @@ End Function
 
 
 ' -----------------------------------------------------------------------
-' PostQuote — HTTP POST; returns responseText & "|~|" & HTTP status code.
+' PostQuote - HTTP POST; returns responseText & "|~|" & HTTP status code.
 ' -----------------------------------------------------------------------
 Private Function PostQuote(payload As String) As String
     Dim http As Object
@@ -325,7 +382,7 @@ End Function
 
 
 ' -----------------------------------------------------------------------
-' ParseAndWrite — extract fields from the API response and write to sheet.
+' ParseAndWrite - extract fields from the API response and write to sheet.
 ' -----------------------------------------------------------------------
 Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As String)
     Dim parts() As String
@@ -336,14 +393,14 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
     Dim connErrMsg As String
 
     Select Case UBound(parts)
-        Case 1  ' Normal response: resp + status code
+        Case 1
             resp = parts(0)
             If IsNumeric(parts(1)) Then
                 httpCode = CLng(parts(1))
             Else
-                connErrMsg = "Unexpected format"
+                connErrMsg = "Unexpected response format"
             End If
-        Case 2  ' Connection-level error: empty + "0" + description
+        Case 2
             connErrMsg = "Connection failed: " & parts(2)
         Case Else
             connErrMsg = "Unexpected response"
@@ -359,7 +416,6 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
     rx.Global = True
 
     If httpCode = 201 Then
-        ' Extract total
         rx.Pattern = """total"":\s*([\d\.]+)"
         Dim mT As Object
         Set mT = rx.Execute(resp)
@@ -373,7 +429,6 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
             End If
         End If
 
-        ' Hotshot: also extract miles from metadata
         If quoteType = "Hotshot" Then
             rx.Pattern = """miles"":\s*([\d\.]+)"
             Dim mM As Object
