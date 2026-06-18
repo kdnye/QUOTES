@@ -299,8 +299,8 @@ End Function
 ' in (API will then use actual weight only).
 ' -----------------------------------------------------------------------
 Private Function CalcTotalDimWeight(ws As Worksheet) As Double
-    Dim qtyCells(3) As String
-    Dim L(3) As Double, H(3) As Double, W(3) As Double
+    Dim qtyCells(0 To 3) As String
+    Dim L(0 To 3) As Double, H(0 To 3) As Double, W(0 To 3) As Double
 
     qtyCells(0) = CELL_QTY_MEDIUM:  L(0) = 20: H(0) = 15: W(0) = 18
     qtyCells(1) = CELL_QTY_LARGE:   L(1) = 32: H(1) = 18: W(1) = 20
@@ -333,7 +333,7 @@ End Function
 Private Function BuildAccessorialsJson(ws As Worksheet) As String
     ' Note: not named "cells" — that shadows the Cells property on
     ' Worksheet/Range and trips VBA's "Ambiguous name" check on some setups.
-    Dim accCells(4) As String
+    Dim accCells(0 To 4) As String
     accCells(0) = CELL_ACC_4HR_WINDOW
     accCells(1) = CELL_ACC_SPECIAL_TIME
     accCells(2) = CELL_ACC_AFTERHOURS
