@@ -11,6 +11,7 @@ from app.services.rate_sets import (
     DEFAULT_RATE_SET,
     _call_with_rate_set,
     normalize_rate_set,
+    query_with_rate_set_fallback,
 )
 
 
@@ -72,17 +73,9 @@ def get_vsc_zone_for_zip(
     try:
         normalized_rate_set = normalize_rate_set(rate_set)
         with Session() as db:
-            record = (
-                db.query(VscZone)
-                .filter_by(zipcode=lookup_key, rate_set=normalized_rate_set)
-                .first()
+            record = query_with_rate_set_fallback(
+                db, VscZone, normalized_rate_set, zipcode=lookup_key
             )
-            if record is None and normalized_rate_set != DEFAULT_RATE_SET:
-                record = (
-                    db.query(VscZone)
-                    .filter_by(zipcode=lookup_key, rate_set=DEFAULT_RATE_SET)
-                    .first()
-                )
             if record is None or record.vsc_zone is None:
                 return None
             if not 1 <= int(record.vsc_zone) <= 10:
@@ -106,17 +99,8 @@ def get_zip_zone(
     try:
         normalized_rate_set = normalize_rate_set(rate_set)
         with Session() as db:
-            record = (
-                db.query(ZipZone)
-                .filter_by(zipcode=lookup_key, rate_set=normalized_rate_set)
-                .first()
-            )
-            if record or normalized_rate_set == DEFAULT_RATE_SET:
-                return record
-            return (
-                db.query(ZipZone)
-                .filter_by(zipcode=lookup_key, rate_set=DEFAULT_RATE_SET)
-                .first()
+            return query_with_rate_set_fallback(
+                db, ZipZone, normalized_rate_set, zipcode=lookup_key
             )
     except OperationalError:
         return None
@@ -132,17 +116,8 @@ def get_cost_zone(
     try:
         normalized_rate_set = normalize_rate_set(rate_set)
         with Session() as db:
-            record = (
-                db.query(CostZone)
-                .filter_by(concat=str(concat), rate_set=normalized_rate_set)
-                .first()
-            )
-            if record or normalized_rate_set == DEFAULT_RATE_SET:
-                return record
-            return (
-                db.query(CostZone)
-                .filter_by(concat=str(concat), rate_set=DEFAULT_RATE_SET)
-                .first()
+            return query_with_rate_set_fallback(
+                db, CostZone, normalized_rate_set, concat=str(concat)
             )
     except OperationalError:
         return None
@@ -158,17 +133,8 @@ def get_air_cost_zone(
     try:
         normalized_rate_set = normalize_rate_set(rate_set)
         with Session() as db:
-            record = (
-                db.query(AirCostZone)
-                .filter_by(zone=str(zone), rate_set=normalized_rate_set)
-                .first()
-            )
-            if record or normalized_rate_set == DEFAULT_RATE_SET:
-                return record
-            return (
-                db.query(AirCostZone)
-                .filter_by(zone=str(zone), rate_set=DEFAULT_RATE_SET)
-                .first()
+            return query_with_rate_set_fallback(
+                db, AirCostZone, normalized_rate_set, zone=str(zone)
             )
     except OperationalError:
         return None
@@ -185,17 +151,9 @@ def get_beyond_rate(zone: Optional[str], *, rate_set: str = DEFAULT_RATE_SET) ->
     try:
         normalized_rate_set = normalize_rate_set(rate_set)
         with Session() as db:
-            record = (
-                db.query(BeyondRate)
-                .filter_by(zone=str(zone), rate_set=normalized_rate_set)
-                .first()
+            record = query_with_rate_set_fallback(
+                db, BeyondRate, normalized_rate_set, zone=str(zone)
             )
-            if record is None and normalized_rate_set != DEFAULT_RATE_SET:
-                record = (
-                    db.query(BeyondRate)
-                    .filter_by(zone=str(zone), rate_set=DEFAULT_RATE_SET)
-                    .first()
-                )
             return float(record.rate) if record else 0.0
     except OperationalError:
         return 0.0
