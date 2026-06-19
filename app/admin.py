@@ -44,7 +44,7 @@ from wtforms import (
 )
 from wtforms.validators import DataRequired, Optional, Regexp
 
-from scripts.import_air_rates import save_unique
+from app.services.bulk_import import record_rate_upload, save_unique
 from .models import (
     Accessorial,
     AppSetting,
@@ -53,7 +53,6 @@ from .models import (
     CostZone,
     HotshotRate,
     RateSetLogo,
-    RateUpload,
     FuelSurcharge,
     User,
     ZipZone,
@@ -2181,7 +2180,7 @@ def upload_csv(table: str) -> Union[str, Response]:
                         f"({skipped} duplicate row(s) skipped)."
                     )
 
-            db.session.add(RateUpload(table_name=table, filename=file_storage.filename))
+            record_rate_upload(db.session, table, file_storage.filename)
             db.session.commit()
             flash(message, "success")
             return redirect(url_for(spec.list_endpoint))
