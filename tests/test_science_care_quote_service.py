@@ -359,6 +359,48 @@ def test_established_lane_respects_effective_dates(
     assert leg.winner_mode == "Established"
 
 
+def test_unknown_tissue_code_skips_leg(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A typo in any tissue row must NOT silently undercount the leg.
+    _seed_reference(app)
+    user = _make_user()
+    calls = _stub_create_quote(monkeypatch, {})
+    form = ImmutableMultiDict(
+        {
+            "lab_code_1": "SCCA",
+            "dest_zip_1": "98101",
+            "routing_type_1": "Outbound",
+            "temp_mode_1": "frozen",
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "1",
+            "tissue_code_1_2": "TYPO",
+            "qty_1_2": "1",
+        }.items()
+    )
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.skip_reason is not None
+    assert "unknown tissue code" in leg.skip_reason.lower()
+    # No quote calls fire when the leg is rejected.
+    assert calls == []
+
+
+def test_quote_source_fits_column(app: Flask) -> None:
+    # Quote.quote_source is db.String(20). If QUOTE_SOURCE ever grows
+    # past that limit, every SC leg insert will fail on PostgreSQL.
+    assert len(svc.QUOTE_SOURCE) <= 20
+
+
+def test_long_error_truncated_to_skip_reason_column(app: Flask) -> None:
+    # SCQuoteSessionLeg.skip_reason is db.String(60). Verify the helper
+    # truncates anything longer so the final session commit succeeds.
+    long_err = "x" * 500
+    out = svc._short_reason(long_err)
+    assert out is not None
+    assert len(out) <= 60
+
+
 def test_missing_lab_code_skips_leg(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

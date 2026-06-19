@@ -52,6 +52,25 @@ DIM_DIVISOR = 166
 # Routing-mode literal that activates the established-lane override.
 ROUTING_SC_TO_SC = "sc to sc"
 
+# Quote.quote_source must fit in a db.String(20) column - keep this
+# constant short or change models.py + a migration first.
+QUOTE_SOURCE = "sc_multileg"
+
+# SCQuoteSessionLeg.skip_reason maxes out at 60 characters. Long
+# error messages from create_quote get truncated by _short_reason()
+# before they hit the row so the final session commit doesn't fail
+# with a value-too-long error.
+_SKIP_REASON_MAX_LEN = 60
+
+
+def _short_reason(reason: str | None) -> str | None:
+    if reason is None:
+        return None
+    text = str(reason)
+    if len(text) <= _SKIP_REASON_MAX_LEN:
+        return text
+    return text[: _SKIP_REASON_MAX_LEN - 1] + "…"
+
 
 # --- data shapes -------------------------------------------------------------
 
@@ -155,11 +174,12 @@ def allocate_boxes(
     tissue_rows: list[TissueRow],
     tissue_index: dict[str, SCTissueCode],
     box_index: dict[str, SCBoxType],
-) -> tuple[float, int, dict[str, int], float]:
+) -> tuple[float, int, dict[str, int], float, list[str]]:
     """Resolve tissue rows into total weight, box counts, and dim weight.
 
     Returns:
-        ``(total_weight_lb, total_boxes, boxes_by_type, dim_weight_lb)``.
+        ``(total_weight_lb, total_boxes, boxes_by_type, dim_weight_lb,
+        unknown_codes)``.
 
     * ``total_weight_lb`` is the sum of (qty × unit weight) for every
       tissue plus the tare weight of every allocated box (consumables
@@ -168,13 +188,18 @@ def allocate_boxes(
       seeds the consumable lookup and the rollup display.
     * ``dim_weight_lb`` is the sum across box-type groups of
       ``L × W × H × count / DIM_DIVISOR``.
+    * ``unknown_codes`` lists tissue codes the user submitted that are
+      not in ``tissue_index``. The caller skips the whole leg when this
+      list is non-empty so a single typo can't undercount the freight.
     """
 
     total_weight = 0.0
     boxes_by_type: dict[str, int] = {}
+    unknown_codes: list[str] = []
     for row in tissue_rows:
         tissue = tissue_index.get(row.tissue_code)
         if tissue is None:
+            unknown_codes.append(row.tissue_code)
             continue
         row.unit_weight_lb = float(tissue.unit_weight_lb or 0.0)
         row.box_type_code = tissue.default_box_type_code or ""
@@ -212,7 +237,7 @@ def allocate_boxes(
         ) / DIM_DIVISOR
 
     total_boxes = sum(boxes_by_type.values())
-    return total_weight, total_boxes, boxes_by_type, dim_weight
+    return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
 def _consumable_weight(
@@ -439,9 +464,24 @@ def compute_sc_multileg(
             legs.append(result)
             continue
 
-        total_weight, total_boxes, boxes_by_type, dim_weight = allocate_boxes(
-            tissue_rows, tissue_index, box_index
-        )
+        (
+            total_weight,
+            total_boxes,
+            boxes_by_type,
+            dim_weight,
+            unknown_codes,
+        ) = allocate_boxes(tissue_rows, tissue_index, box_index)
+        if unknown_codes:
+            # Refuse the leg rather than silently undercount weight on
+            # what may be a typo. The form already shows unknown codes
+            # with Bootstrap's invalid styling so the user has a clear
+            # cue where to look.
+            result.skip_reason = (
+                "unknown tissue code(s): "
+                + ", ".join(sorted(set(unknown_codes))[:4])
+            )
+            legs.append(result)
+            continue
 
         scope = "intl" if result.intl_country else "domestic"
         total_weight += _consumable_weight(
@@ -470,7 +510,7 @@ def compute_sc_multileg(
             dim_weight=dim_weight,
             accessorials=result.accessorial_labels,
             rate_set=RATE_SET_SCIENCE_CARE,
-            quote_source="science_care_multileg",
+            quote_source=QUOTE_SOURCE,
             request_ip=request_ip,
         )
 
@@ -545,7 +585,9 @@ def compute_sc_multileg(
                 winner_mode=result.winner_mode
                 or ("Skipped" if result.skip_reason else None),
                 winner_total=result.winner_total,
-                skip_reason=result.skip_reason or result.error,
+                skip_reason=_short_reason(
+                    result.skip_reason or result.error
+                ),
             )
         )
     db.session.commit()
