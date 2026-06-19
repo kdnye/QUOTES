@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from pathlib import Path
 from typing import Optional
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import scoped_session, sessionmaker
+
+logger = logging.getLogger(__name__)
+
+# Stable signed 64-bit key for the Postgres advisory lock that serializes
+# Alembic upgrades across gunicorn workers. Derived from a constant
+# string so the value never drifts between deploys; different apps
+# sharing a Postgres instance should pick distinct strings to avoid
+# colliding on the lock.
+_ALEMBIC_ADVISORY_LOCK_KEY = int.from_bytes(
+    hashlib.sha256(b"fsi-quote-tool:alembic").digest()[:8],
+    "big",
+    signed=True,
+)
 
 from config import Config
 from app.models import (
@@ -122,6 +137,48 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
 
     # Escape '%' so ConfigParser treats URL-encoded values literally.
     config.set_main_option("sqlalchemy.url", _escape_alembic_url(rendered_url))
+
+    if _is_postgres(active_engine):
+        # Serialize concurrent gunicorn workers. The first worker to
+        # acquire the advisory lock runs the upgrade; others block at
+        # pg_advisory_lock() until it releases, then call upgrade(head)
+        # which is a no-op because alembic_version is already at head.
+        # Session-level locks auto-release if the connection closes
+        # mid-upgrade, so a crash can't leave the lock orphaned.
+        with active_engine.connect() as lock_conn:
+            lock_conn.execute(
+                text("SELECT pg_advisory_lock(:key)"),
+                {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
+            )
+            try:
+                _stamp_and_upgrade(config, active_engine)
+            finally:
+                lock_conn.execute(
+                    text("SELECT pg_advisory_unlock(:key)"),
+                    {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
+                )
+                lock_conn.commit()
+    else:
+        _stamp_and_upgrade(config, active_engine)
+
+
+def _is_postgres(active_engine: Engine) -> bool:
+    """Return ``True`` when ``active_engine`` is bound to a Postgres dialect."""
+
+    return active_engine.dialect.name.startswith("postgres")
+
+
+def _stamp_and_upgrade(
+    config: AlembicConfig, active_engine: Engine
+) -> None:
+    """Run Alembic's stamp-if-bare + upgrade-to-head sequence.
+
+    Extracted out of :func:`_run_alembic_upgrade` so the Postgres path
+    can wrap it in an advisory lock without duplicating the logic for
+    other dialects (SQLite, etc.). All schema inspection happens after
+    the lock is held so a worker that wins the race for the lock sees
+    an up-to-date view of ``alembic_version``.
+    """
 
     inspector = inspect(active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]
