@@ -282,6 +282,112 @@ def test_quote_form_renders_tissue_datalist(app: Flask) -> None:
 # --- HTMX OOB winner spans ---------------------------------------------
 
 
+def test_quote_form_post_preserves_cleared_lab(app: Flask) -> None:
+    # Regression: clearing a lab on a re-rendered POST must not
+    # resurface the user's saved default in the input/header.
+    user = _make_user()
+    _seed_labs("SCCA")
+    db.session.add(
+        SCUserLabSlot(user_id=user.id, leg_index=1, lab_code="SCCA")
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    # The user POSTs with lab_code_1 explicitly cleared.
+    response = client.post(
+        "/sc/quote",
+        data={
+            "lab_code_1": "",
+            "dest_zip_1": "98101",
+            "routing_type_1": "Outbound",
+            "temp_mode_1": "frozen",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Lab input rendered empty, not back-filled to "SCCA".
+    assert 'name="lab_code_1" value=""' in html
+    # Header span shows the placeholder, not "SCCA".
+    assert 'data-placeholder="Lab">Lab</span>' in html
+
+
+def test_full_page_fallback_hides_oob_winner_spans(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: the OOB winner spans must NOT render as visible text
+    # when sc_quote_submit embeds the results partial in the full
+    # page. hx-swap-oob is only processed on HTMX responses.
+    from app.models import Quote
+    from app.services import science_care_quote as svc
+
+    user = _make_user()
+    _seed_labs("SCCA")
+    db.session.add_all(
+        [
+            __import__(
+                "app.models", fromlist=["SCBoxType"]
+            ).SCBoxType(
+                code="MED",
+                length_in=20,
+                width_in=15,
+                height_in=18,
+                tare_weight_lb=4,
+            ),
+            SCTissueCode(
+                tissue_code="MED01",
+                description="M",
+                unit_weight_lb=10.0,
+                default_box_type_code="MED",
+                pieces_per_box=2,
+            ),
+        ]
+    )
+    db.session.commit()
+
+    def fake_create_quote(**kwargs):
+        q = Quote(
+            user_id=kwargs.get("user_id"),
+            user_email=kwargs.get("user_email"),
+            quote_type=kwargs["quote_type"],
+            origin=kwargs["origin"],
+            destination=kwargs["destination"],
+            weight=kwargs["weight"],
+            pieces=kwargs.get("pieces", 1),
+            zone="X",
+            total=80.0,
+            quote_metadata="{}",
+            rate_set=kwargs.get("rate_set"),
+        )
+        db.session.add(q)
+        db.session.commit()
+        db.session.refresh(q)
+        return q, {"total": q.total, "details": {}}
+
+    monkeypatch.setattr(svc, "create_quote", fake_create_quote)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote",
+        data={
+            "lab_code_1": "SCCA",
+            "dest_zip_1": "98101",
+            "routing_type_1": "Outbound",
+            "temp_mode_1": "frozen",
+            "tissue_code_1_1": "MED01",
+            "qty_1_1": "2",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # OOB spans suppressed - the only winner-summary references should
+    # be the empty placeholder spans inside the accordion headers, not
+    # the duplicate inline spans the OOB block emits.
+    assert "hx-swap-oob" not in html
+    # Sanity: the in-card results table still renders.
+    assert "Multi-leg quote summary" in html
+
+
 def test_results_partial_emits_oob_winner_spans(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
