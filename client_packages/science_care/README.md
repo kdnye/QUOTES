@@ -106,6 +106,10 @@ Per-tab outputs (each SHIPMENT N):
 | **C41** | FS by Hot Shot — total price ($) |
 | **H41** | Hot Shot Miles (returned by API) |
 | **B41** | Hotshot status: `Success` or error detail |
+| **A53** | Origin ZIP shipment note (from `metadata.origin_notes`); empty when the ZIP has no configured note |
+| **B53** | Destination ZIP shipment note (from `metadata.dest_notes`) |
+
+> The notes match what the FSI web UI surfaces under "QUOTE RESULT". Row 53 can be hidden — the user typically exposes both notes via a concatenated formula in another cell (e.g. `A43`) so the notes display next to the shipment header while the source cells stay out of sight.
 
 Summary rollup on **SHIPMENT 1** (rewritten by the macro after every quote):
 
