@@ -1,9 +1,10 @@
 {# Tiny partial swapped into the lab's origin readout under the form
-   input. Expected context: leg (int), lab (SCLab | None) #}
+   input. Expected context: leg (int), lab (SCLab | None),
+   code (str — what the user typed, already uppercased). #}
 {% if lab %}
 <span class="text-success">{{ lab.lab_code }} → origin {{ lab.origin_zip }}{% if lab.lab_name %} · {{ lab.lab_name }}{% endif %}</span>
-{% elif request.args.get('code') %}
-<span class="text-danger">No active lab found for "{{ request.args.get('code') }}"</span>
+{% elif code %}
+<span class="text-danger">No active lab found for "{{ code }}"</span>
 {% else %}
 <span></span>
 {% endif %}

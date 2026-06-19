@@ -1,11 +1,13 @@
 {# Single tissue row used both inline (initial state) and as the HTMX
    partial returned by /sc/quote/tissue-row and /sc/quote/tissue-lookup.
-   Expected context: leg (int), i (int), prefill (SCTissueCode | None) #}
+   Expected context: leg (int), i (int), prefill (SCTissueCode | None),
+   code (str — what the user typed; preserved on unknown-code so the
+   input doesn't silently clear out from under them). #}
 <tr>
   <td>
-    <input class="form-control form-control-sm"
+    <input class="form-control form-control-sm {% if code and not prefill %}is-invalid{% endif %}"
            name="tissue_code_{{ leg }}_{{ i }}"
-           value="{{ prefill.tissue_code if prefill else '' }}"
+           value="{{ prefill.tissue_code if prefill else (code or '') }}"
            hx-get="{{ url_for('science_care.sc_tissue_lookup_partial') }}"
            hx-trigger="change delay:250ms"
            hx-target="closest tr"
@@ -13,6 +15,9 @@
            hx-vals='{"leg": {{ leg }}, "i": {{ i }} }'
            placeholder="e.g. PELV03"
            autocomplete="off" />
+    {% if code and not prefill %}
+    <div class="invalid-feedback">Unknown tissue code.</div>
+    {% endif %}
   </td>
   <td>
     <input class="form-control form-control-sm bg-body-tertiary"

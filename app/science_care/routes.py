@@ -120,21 +120,30 @@ def sc_tissue_row_partial() -> str:
         i:   row index within the leg's tissue table (clamped to >= 1).
     """
 
-    try:
-        leg = int(request.args.get("leg", 1))
-    except (TypeError, ValueError):
-        leg = 1
-    try:
-        row_index = int(request.args.get("i", 1))
-    except (TypeError, ValueError):
-        row_index = 1
-
-    leg = max(1, min(SC_LEG_COUNT, leg))
-    row_index = max(1, row_index)
+    leg = max(1, min(SC_LEG_COUNT, _safe_int(request.args.get("leg"), 1)))
+    row_index = max(1, _safe_int(request.args.get("i"), 1))
 
     return render_template(
-        "sc/_tissue_row.html", leg=leg, i=row_index, prefill=None
+        "sc/_tissue_row.html",
+        leg=leg,
+        i=row_index,
+        prefill=None,
+        code="",
     )
+
+
+def _safe_int(value: object, default: int) -> int:
+    """Coerce ``value`` to int, falling back to ``default`` on any error.
+
+    Keeps the tissue / lab partial endpoints from raising a 500 when a
+    user hand-edits the query string (``?leg=abc``) or when HTMX races
+    a request with a partially typed value.
+    """
+
+    try:
+        return int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return default
 
 
 @science_care_bp.get("/quote/tissue-lookup")
@@ -146,12 +155,19 @@ def sc_tissue_lookup_partial() -> str:
     Query parameters:
         leg: 1-based leg index.
         i:   row index within the leg's tissue table.
-        code: SC tissue code (case-insensitive lookup).
+        code: SC tissue code (case-insensitive lookup). HTMX sends the
+            input's ``name`` (e.g. ``tissue_code_3_2``) rather than
+            ``code``, so the dynamic name is checked as a fallback.
     """
 
-    leg = max(1, min(SC_LEG_COUNT, int(request.args.get("leg", 1) or 1)))
-    row_index = max(1, int(request.args.get("i", 1) or 1))
-    code = (request.args.get("code") or "").strip().upper()
+    leg = max(1, min(SC_LEG_COUNT, _safe_int(request.args.get("leg"), 1)))
+    row_index = max(1, _safe_int(request.args.get("i"), 1))
+
+    code = request.args.get("code")
+    if not code:
+        code = request.args.get(f"tissue_code_{leg}_{row_index}")
+    code = (code or "").strip().upper()
+
     prefill: SCTissueCode | None = None
     if code:
         prefill = (
@@ -161,7 +177,11 @@ def sc_tissue_lookup_partial() -> str:
         )
 
     return render_template(
-        "sc/_tissue_row.html", leg=leg, i=row_index, prefill=prefill
+        "sc/_tissue_row.html",
+        leg=leg,
+        i=row_index,
+        prefill=prefill,
+        code=code,
     )
 
 
@@ -173,11 +193,18 @@ def sc_lab_lookup_partial() -> str:
 
     Query parameters:
         leg:  1-based leg index (used to scope the swap target).
-        code: SC lab code (case-insensitive lookup).
+        code: SC lab code (case-insensitive lookup). HTMX sends the
+            input's ``name`` (``lab_code_<leg>``) rather than ``code``,
+            so the dynamic name is checked as a fallback.
     """
 
-    leg = max(1, min(SC_LEG_COUNT, int(request.args.get("leg", 1) or 1)))
-    code = (request.args.get("code") or "").strip().upper()
+    leg = max(1, min(SC_LEG_COUNT, _safe_int(request.args.get("leg"), 1)))
+
+    code = request.args.get("code")
+    if not code:
+        code = request.args.get(f"lab_code_{leg}")
+    code = (code or "").strip().upper()
+
     lab: SCLab | None = None
     if code:
         lab = (
@@ -187,7 +214,9 @@ def sc_lab_lookup_partial() -> str:
                 is_active=True,
             ).first()
         )
-    return render_template("sc/_lab_lookup.html", leg=leg, lab=lab)
+    return render_template(
+        "sc/_lab_lookup.html", leg=leg, lab=lab, code=code
+    )
 
 
 @science_care_bp.get("/reference")

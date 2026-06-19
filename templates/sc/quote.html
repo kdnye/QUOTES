@@ -25,7 +25,8 @@
   {% endfor %}
 </datalist>
 
-<form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_form') }}">
+<form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_form') }}"
+      onsubmit="event.preventDefault();">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
   <div class="accordion mb-4" id="sc-shipments">

@@ -183,6 +183,82 @@ def test_sc_tissue_lookup_prefills_known_code(app: Flask) -> None:
     assert "XL" in html
 
 
+def test_sc_tissue_lookup_unknown_code_preserves_input(app: Flask) -> None:
+    user = _make_user(
+        "tissue3@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=NOPE"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Bootstrap invalid styling + the typed code preserved.
+    assert "is-invalid" in html
+    assert 'value="NOPE"' in html
+    assert "Unknown tissue code" in html
+
+
+def test_sc_tissue_lookup_accepts_dynamic_param_name(app: Flask) -> None:
+    # HTMX sends the input's `name` (tissue_code_<leg>_<i>) as the query
+    # parameter, not `code`. Verify the fallback resolves it.
+    user = _make_user(
+        "tissue4@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    db.session.add(
+        SCTissueCode(
+            tissue_code="PELV03",
+            description="Pelvis to Toe",
+            unit_weight_lb=79.0,
+            default_box_type_code="XL",
+        )
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=2&i=3&tissue_code_2_3=PELV03"
+    )
+    assert response.status_code == 200
+    assert "Pelvis to Toe" in response.get_data(as_text=True)
+
+
+def test_sc_lab_lookup_accepts_dynamic_param_name(app: Flask) -> None:
+    user = _make_user("lab3@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    db.session.add(
+        SCLab(
+            lab_code="SCAZ",
+            lab_name="Phoenix",
+            origin_zip="85040",
+            is_active=True,
+        )
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/lab-lookup?leg=5&lab_code_5=SCAZ"
+    )
+    assert response.status_code == 200
+    assert "85040" in response.get_data(as_text=True)
+
+
+def test_sc_lookup_endpoints_survive_garbage_query_params(app: Flask) -> None:
+    user = _make_user(
+        "garbage@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    for path in (
+        "/sc/quote/lab-lookup?leg=abc",
+        "/sc/quote/tissue-row?leg=NaN&i=oops",
+        "/sc/quote/tissue-lookup?leg=&i=&code=",
+    ):
+        response = client.get(path)
+        assert response.status_code == 200, path
+
+
 def test_base_template_loads_htmx() -> None:
     # Path-based check so the regression doesn't depend on rendering a
     # full request - the htmx script tag is mandatory for the SC page to
