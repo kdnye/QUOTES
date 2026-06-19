@@ -47,6 +47,11 @@ def save_unique(
 
     attrs = (unique_attr,) if isinstance(unique_attr, str) else tuple(unique_attr)
     objs = list(objects)
+    if not objs:
+        # Skip the existing-keys SELECT when there's nothing to insert -
+        # callers feeding the helper a filtered-empty iterable would
+        # otherwise pay a full table scan for no work.
+        return 0, 0
     query_columns = [getattr(model, attr) for attr in attrs]
     rows = session.query(*query_columns).all()
     existing_keys = {
@@ -58,7 +63,11 @@ def save_unique(
     for obj in objs:
         values = tuple(getattr(obj, attr) for attr in attrs)
         key = values if len(attrs) > 1 else values[0]
-        key_display = key[0] if isinstance(key, tuple) else key
+        # Join compound-key tuples so the log line distinguishes between
+        # different rows that share their first element (e.g. every row
+        # with rate_set="default" was logging the same key_display
+        # before).
+        key_display = "-".join(map(str, key)) if isinstance(key, tuple) else key
         if key in existing_keys:
             logger.info("Skipped existing %s: %s", model.__name__, key_display)
             skipped += 1

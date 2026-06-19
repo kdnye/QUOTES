@@ -107,6 +107,52 @@ def test_save_unique_compound_key(app: Flask) -> None:
     assert skipped == 0
 
 
+def test_save_unique_empty_input_skips_query(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # When there's nothing to insert, the helper must not issue the
+    # existing-keys SELECT - that's a needless full-table read for
+    # callers who happened to feed in a filtered-empty iterable.
+    called = {"queries": 0}
+    original_query = db.session.query
+
+    def counting_query(*args, **kwargs):
+        called["queries"] += 1
+        return original_query(*args, **kwargs)
+
+    monkeypatch.setattr(db.session, "query", counting_query)
+
+    inserted, skipped = save_unique(
+        db.session, ZipZone, [], unique_attr="zipcode"
+    )
+
+    assert (inserted, skipped) == (0, 0)
+    assert called["queries"] == 0
+
+
+def test_save_unique_compound_key_log_includes_all_parts(
+    app: Flask, caplog: pytest.LogCaptureFixture
+) -> None:
+    # The compound-key log line must distinguish between rows that
+    # share their first attribute (e.g. multiple rate_set="default"
+    # rows would otherwise all log the same key_display).
+    with caplog.at_level("INFO", logger="app.services.bulk_import"):
+        save_unique(
+            db.session,
+            ZipZone,
+            [
+                ZipZone(zipcode="85705", dest_zone=1, rate_set="default"),
+                ZipZone(zipcode="60601", dest_zone=2, rate_set="default"),
+            ],
+            unique_attr=("rate_set", "zipcode"),
+        )
+        db.session.commit()
+
+    messages = [r.getMessage() for r in caplog.records]
+    assert any("default-85705" in m for m in messages), messages
+    assert any("default-60601" in m for m in messages), messages
+
+
 def test_record_rate_upload_adds_row(app: Flask) -> None:
     row = record_rate_upload(
         db.session, table_name="zip_zones", filename="zips_2026_06.csv"
