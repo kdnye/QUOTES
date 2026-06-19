@@ -436,3 +436,94 @@ def test_dim_weight_pre_summed_from_boxes(
     assert "length" not in air_call
     assert "width" not in air_call
     assert "height" not in air_call
+
+
+def test_consumable_picks_drive_weight(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The user's explicit per-consumable Qty should drive the leg's
+    # consumable weight - not the temp_mode/scope auto formula.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    # Look up the seeded "dry_ice/frozen/domestic" row's id.
+    from app.models import RATE_SET_SCIENCE_CARE, SCConsumable
+
+    dry_ice = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+    ).one()
+
+    form = _form(**{f"cons_qty_1_{dry_ice.id}": "2"})
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    # 79 lb tissue + 14 lb tare + (2 * 25 lb dry ice) = 143 lb.
+    assert leg.total_weight_lb == pytest.approx(143.0)
+    assert leg.consumable_picks == {dry_ice.id: 2}
+
+
+def test_blank_picks_fall_back_to_auto_consumable_weight(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: every leg submitted before this feature shipped (and
+    # any leg where the user left every consumable Qty blank) must
+    # continue to receive the pre-feature auto weight, not zero.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    leg = result["legs"][0]
+    # 79 + 14 + auto (1 box * 25 lb dry ice domestic frozen) = 118 lb.
+    # Matches test_full_orchestration_persists_session_and_picks_winner.
+    assert leg.total_weight_lb == pytest.approx(118.0)
+    assert leg.consumable_picks == {}
+
+
+def test_consumable_picks_persisted_on_leg(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    from app.models import (
+        RATE_SET_SCIENCE_CARE,
+        SCConsumable,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+    )
+
+    gel_pack = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="gel_pack",
+        temp_mode="rtu",
+        scope="domestic",
+    ).one()
+    form = _form(
+        temp_mode_1="rtu",
+        **{f"cons_qty_1_{gel_pack.id}": "3"},
+    )
+    svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+
+    session = SCQuoteSession.query.filter_by(user_id=user.id).one()
+    leg_row = (
+        SCQuoteSessionLeg.query.filter_by(
+            session_id=session.id, leg_index=1
+        ).one()
+    )
+    assert leg_row.consumables_json is not None
+    decoded = json.loads(leg_row.consumables_json)
+    assert decoded == {str(gel_pack.id): 3}

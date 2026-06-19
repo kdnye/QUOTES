@@ -151,6 +151,36 @@
             </div>
           </fieldset>
 
+          <fieldset class="mb-3">
+            <legend class="h6">Consumables</legend>
+            <p class="small text-body-secondary mb-2">
+              Enter the number of consumable units for this leg. Leave
+              everything blank to fall back to the automatic estimate
+              based on the leg's mode and box count.
+            </p>
+            <div class="row g-2">
+              {% for cons in consumables %}
+              <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label small" for="cons_qty_{{ leg }}_{{ cons.id }}">
+                  {{ cons.consumable_type|replace("_", " ")|title }}
+                  <span class="text-body-secondary">
+                    · {{ cons.temp_mode|title }} · {{ cons.scope|title }}
+                    ({{ cons.weight_lb_per_box }} lb/box)
+                  </span>
+                </label>
+                <input class="form-control form-control-sm"
+                       type="number"
+                       min="0"
+                       step="1"
+                       id="cons_qty_{{ leg }}_{{ cons.id }}"
+                       name="cons_qty_{{ leg }}_{{ cons.id }}"
+                       value="{{ request.form.get('cons_qty_' ~ leg ~ '_' ~ cons.id, '') }}"
+                       placeholder="0" />
+              </div>
+              {% endfor %}
+            </div>
+          </fieldset>
+
           <div class="mb-2 d-flex justify-content-between align-items-center">
             <h3 class="h6 mb-0">Tissue items</h3>
             <button type="button"

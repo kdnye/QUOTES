@@ -236,3 +236,50 @@ def test_sc_quote_session_and_legs_round_trip(app: Flask) -> None:
     with pytest.raises(IntegrityError):
         db.session.commit()
     db.session.rollback()
+
+
+def test_sc_quote_session_leg_consumables_json_round_trip(app: Flask) -> None:
+    import json
+
+    user = User(
+        email="sc-cons@example.com",
+        name="SC Cons",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(user)
+    db.session.commit()
+
+    session = SCQuoteSession(user_id=user.id, grand_total=100.0)
+    db.session.add(session)
+    db.session.flush()
+
+    # consumables_json round-trips JSON intact.
+    db.session.add(
+        SCQuoteSessionLeg(
+            session_id=session.id,
+            leg_index=1,
+            winner_mode="Air",
+            winner_total=100.0,
+            consumables_json=json.dumps({"1": 2, "3": 5}),
+        )
+    )
+    # NULL consumables_json is still allowed for legs that pre-date
+    # the per-leg consumables feature.
+    db.session.add(
+        SCQuoteSessionLeg(
+            session_id=session.id,
+            leg_index=2,
+            winner_mode="Hotshot",
+            winner_total=80.0,
+        )
+    )
+    db.session.commit()
+
+    rows = (
+        SCQuoteSessionLeg.query.filter_by(session_id=session.id)
+        .order_by(SCQuoteSessionLeg.leg_index)
+        .all()
+    )
+    assert json.loads(rows[0].consumables_json) == {"1": 2, "3": 5}
+    assert rows[1].consumables_json is None

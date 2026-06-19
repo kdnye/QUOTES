@@ -42,6 +42,7 @@ from app.models import (
     RATE_SET_SCIENCE_CARE,
     SCAccessorialMap,
     SCBoxType,
+    SCConsumable,
     SCLab,
     SCTissueCode,
     SCUserLabSlot,
@@ -116,6 +117,20 @@ def _box_type_choices() -> list[SCBoxType]:
     )
 
 
+def _consumable_choices() -> list[SCConsumable]:
+    """All SC consumables ordered for per-leg Qty inputs."""
+
+    return (
+        SCConsumable.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .order_by(
+            SCConsumable.temp_mode,
+            SCConsumable.scope,
+            SCConsumable.consumable_type,
+        )
+        .all()
+    )
+
+
 def _tissue_code_choices() -> list[SCTissueCode]:
     """All SC tissue codes ordered by ``tissue_code`` for the page datalist."""
 
@@ -166,6 +181,7 @@ def sc_quote_form() -> str:
         labs=_lab_choices(),
         box_types=_box_type_choices(),
         tissue_codes=_tissue_code_choices(),
+        consumables=_consumable_choices(),
         default_labs_by_leg=_default_lab_slots(current_user.id),
     )
 
@@ -209,6 +225,7 @@ def sc_quote_submit():
         labs=_lab_choices(),
         box_types=_box_type_choices(),
         tissue_codes=_tissue_code_choices(),
+        consumables=_consumable_choices(),
         default_labs_by_leg=_default_lab_slots(current_user.id),
         results=context,
     )

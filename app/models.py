@@ -788,6 +788,9 @@ class SCQuoteSessionLeg(db.Model):
     winner_mode = db.Column(db.String(20))
     winner_total = db.Column(db.Float, default=0.0, server_default="0")
     skip_reason = db.Column(db.String(60))
+    # JSON map of {consumable_id: qty} the user picked on the form. NULL
+    # for legs submitted before the per-leg consumables feature shipped.
+    consumables_json = db.Column(db.Text)
 
 
 class SCUserLabSlot(db.Model):

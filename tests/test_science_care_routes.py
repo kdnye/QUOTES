@@ -334,6 +334,33 @@ def test_sc_quote_calculate_renders_results(
     assert "Total S&amp;H" in html or "Total S&H" in html
 
 
+def test_sc_quote_form_renders_consumable_inputs(app: Flask) -> None:
+    # The new per-leg Consumables section must surface one numeric
+    # input per SCConsumable row, named cons_qty_<leg>_<id>.
+    from app.models import SCConsumable
+
+    user = _make_user("cons-form@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    cons = SCConsumable(
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    db.session.add(cons)
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Section header is present.
+    assert ">Consumables<" in html
+    # Each leg renders a Qty input keyed on the consumable's id.
+    for leg in range(1, 8):
+        assert f'name="cons_qty_{leg}_{cons.id}"' in html
+
+
 def test_base_template_loads_htmx() -> None:
     # Path-based check so the regression doesn't depend on rendering a
     # full request - the htmx script tag is mandatory for the SC page to
