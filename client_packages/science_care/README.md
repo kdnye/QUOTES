@@ -117,6 +117,8 @@ Summary rollup on **SHIPMENT 1** (rewritten by the macro after every quote):
 
 `CheapestFreight` skips zero, blank, error, `"N/A"`, and non-numeric values — so a skipped international shipment or a missing established-lane row contributes 0 instead of breaking the row. The macro overwrites the legacy in-sheet formulas that broke when the static rate-chart tabs were removed.
 
+**SC-to-SC routing** (mirrors 3_MASTER's pre-API branch): when a SHIPMENT tab's `B9` ("SHIPMENT TYPE") reads `SC to SC`, the rollup uses that tab's **Established Lane (C42)** price instead of cheapest-of-three — because SC-to-SC moves are pre-negotiated lab-to-lab lanes. If `C42` is `"N/A"` for that tab, the row falls back to cheapest of `{Air, Hotshot}` so it still contributes something to the total. Any other value in `B9` (blank, `Outbound`, `Inbound`) uses the standard cheapest-of-three logic. SHIPMENT 1 leaves `B9` blank, so the SC-to-SC branch never fires on row C44.
+
 > Writing to **C40 / C41 overwrites the existing in-sheet formulas** that compute the totals from the static rate charts. That is intentional — once the API parity is confirmed, the `Domestic Charts - FS`, `International Chart - FS`, and `HOTSHOT Pricing` tabs (and their hidden duplicates) can be removed.
 
 ---

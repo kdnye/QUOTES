@@ -96,6 +96,15 @@ Private Const SUMMARY_COL       As String = "C"
 ' calc that drives the summary table.
 Private Const CELL_ESTABLISHED_LANE As String = "C42"
 
+' Routing-mode cell on each SHIPMENT N tab (rows 2-7 only - SHIPMENT 1
+' leaves this blank). When it reads "SC to SC", the rollup picks that
+' shipment's Established Lane price (C42) instead of cheapest-of-three,
+' mirroring 3_MASTER's pre-API "SC to SC -> pre-negotiated lab lane"
+' branch. Empty / "Outbound" / "Inbound" follow the standard cheapest-of
+' logic.
+Private Const CELL_ROUTING_MODE As String = "B9"
+Private Const SC_TO_SC_LABEL    As String = "SC to SC"
+
 ' ==========================================================================
 ' SECTION 3 - ACCESSORIAL NAME MAPPING
 ' Maps each form label to the FSI API accessorial string. The API ignores
@@ -675,16 +684,31 @@ End Sub
 
 
 ' -----------------------------------------------------------------------
-' CheapestFreight - returns the lowest non-zero freight cost found on
-' a SHIPMENT tab across {Air C40, Hotshot C41, Established Lane C42}.
-' Skips zero, blank, error-value, "N/A", and other non-numeric cells.
-' Returns 0 when no quote is available (skipped international, etc.).
+' CheapestFreight - freight cost for one SHIPMENT tab.
+'   * Standard mode (B9 blank / "Outbound" / "Inbound"): returns the
+'     lowest non-zero value across {Air C40, Hotshot C41, Established
+'     Lane C42}.
+'   * SC-to-SC mode (B9 = "SC to SC"): returns the Established Lane
+'     price - pre-negotiated lab-to-lab rate. Falls back to cheapest of
+'     {Air, Hotshot} if Established Lane is "N/A" so the row isn't 0.
+' Returns 0 when no usable price is available (skipped international,
+' all inputs blank, etc.).
 ' -----------------------------------------------------------------------
 Private Function CheapestFreight(ws As Worksheet) As Double
     Dim air As Double, hot As Double, est As Double
     air = SafeNum(ws.Range(CELL_OUT_AIR_TOTAL).Value)
     hot = SafeNum(ws.Range(CELL_OUT_HOT_TOTAL).Value)
     est = SafeNum(ws.Range(CELL_ESTABLISHED_LANE).Value)
+
+    If IsScToSc(ws) Then
+        If est > 0 Then
+            CheapestFreight = est
+            Exit Function
+        End If
+        ' Established Lane = "N/A" even though B9 = "SC to SC".
+        ' Fall through to standard cheapest-of-{Air, Hotshot} so the row
+        ' still contributes a freight cost instead of reporting 0.
+    End If
 
     Dim cheapest As Double
     cheapest = 0
@@ -693,6 +717,22 @@ Private Function CheapestFreight(ws As Worksheet) As Double
     If est > 0 And (cheapest = 0 Or est < cheapest) Then cheapest = est
 
     CheapestFreight = cheapest
+End Function
+
+
+' -----------------------------------------------------------------------
+' IsScToSc - True when the tab's routing-mode cell (B9) reads
+' "SC to SC" (case-insensitive, leading/trailing whitespace trimmed).
+' Errors and blank cells return False without raising.
+' -----------------------------------------------------------------------
+Private Function IsScToSc(ws As Worksheet) As Boolean
+    Dim v As Variant
+    v = ws.Range(CELL_ROUTING_MODE).Value
+    If IsError(v) Then Exit Function
+    ' "v & """" coerces Null / Empty to "" without the Error 94 that CStr
+    ' would raise on Null. StrComp with vbTextCompare is the idiomatic
+    ' VBA case-insensitive compare.
+    IsScToSc = (StrComp(Trim(v & ""), SC_TO_SC_LABEL, vbTextCompare) = 0)
 End Function
 
 
