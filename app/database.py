@@ -2,15 +2,30 @@
 
 from __future__ import annotations
 
+import hashlib
+import logging
 from pathlib import Path
 from typing import Optional
 
 from alembic import command
 from alembic.config import Config as AlembicConfig
 from alembic.script import ScriptDirectory
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import scoped_session, sessionmaker
+
+logger = logging.getLogger(__name__)
+
+# Stable signed 64-bit key for the Postgres advisory lock that serializes
+# Alembic upgrades across gunicorn workers. Derived from a constant
+# string so the value never drifts between deploys; different apps
+# sharing a Postgres instance should pick distinct strings to avoid
+# colliding on the lock.
+_ALEMBIC_ADVISORY_LOCK_KEY = int.from_bytes(
+    hashlib.sha256(b"fsi-quote-tool:alembic").digest()[:8],
+    "big",
+    signed=True,
+)
 
 from config import Config
 from app.models import (
@@ -123,7 +138,60 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
     # Escape '%' so ConfigParser treats URL-encoded values literally.
     config.set_main_option("sqlalchemy.url", _escape_alembic_url(rendered_url))
 
-    inspector = inspect(active_engine)
+    if _is_postgres(active_engine):
+        # Serialize concurrent gunicorn workers via a transaction-scoped
+        # Postgres advisory lock. The first worker to enter the
+        # `engine.begin()` block runs the upgrade; others block at
+        # pg_advisory_xact_lock() until the transaction releases, then
+        # call upgrade(head) which is a no-op because alembic_version is
+        # already at head. Transaction-level locks auto-release on
+        # commit OR rollback, so a crash mid-upgrade can't orphan the
+        # lock and a `finally`-based unlock can't mask the original
+        # exception by raising during cleanup on a dead connection.
+        #
+        # We pass `lock_conn` into _stamp_and_upgrade so its inspector
+        # reuses our held connection instead of borrowing a second one
+        # from the pool - critical when DB_POOL_SIZE=1 and overflow=0,
+        # where the inspector's checkout would deadlock against our
+        # held lock connection. Alembic's command.upgrade() builds its
+        # own engine from the URL, so it's not affected by the app's
+        # pool.
+        with active_engine.begin() as lock_conn:
+            lock_conn.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
+            )
+            _stamp_and_upgrade(config, active_engine, inspect_conn=lock_conn)
+    else:
+        _stamp_and_upgrade(config, active_engine)
+
+
+def _is_postgres(active_engine: Engine) -> bool:
+    """Return ``True`` when ``active_engine`` is bound to a Postgres dialect."""
+
+    return active_engine.dialect.name.startswith("postgres")
+
+
+def _stamp_and_upgrade(
+    config: AlembicConfig,
+    active_engine: Engine,
+    inspect_conn=None,
+) -> None:
+    """Run Alembic's stamp-if-bare + upgrade-to-head sequence.
+
+    Extracted out of :func:`_run_alembic_upgrade` so the Postgres path
+    can wrap it in an advisory lock without duplicating the logic for
+    other dialects (SQLite, etc.). All schema inspection happens after
+    the lock is held so a worker that wins the race for the lock sees
+    an up-to-date view of ``alembic_version``.
+
+    When ``inspect_conn`` is supplied (the Postgres lock path), the
+    inspector reuses that connection so we don't borrow a second one
+    from the pool while the advisory lock is held. A single-slot pool
+    (``DB_POOL_SIZE=1``, no overflow) would otherwise deadlock here.
+    """
+
+    inspector = inspect(inspect_conn if inspect_conn is not None else active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]
     has_version_table = "alembic_version" in existing_tables
 
