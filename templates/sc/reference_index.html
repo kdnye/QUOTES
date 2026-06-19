@@ -17,6 +17,16 @@
   </a>
 </div>
 
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category if category in ['success','warning','danger','info'] else 'info' }}" role="alert">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
 <div class="row g-3">
   {% for table_key, table_label, description in tables %}
   <div class="col-12 col-md-6 col-lg-4">
@@ -25,14 +35,15 @@
         <h2 class="h6 card-title">{{ table_label }}</h2>
         <p class="card-text small text-body-secondary flex-grow-1">{{ description }}</p>
         <div class="d-flex gap-2 mt-2">
-          <button class="btn btn-sm btn-outline-primary" type="button" disabled>
+          <a class="btn btn-sm btn-outline-primary"
+             href="{{ url_for('science_care.sc_download_csv', table=table_key) }}">
             Download CSV
-          </button>
-          <button class="btn btn-sm btn-outline-secondary" type="button" disabled>
+          </a>
+          <a class="btn btn-sm btn-outline-secondary"
+             href="{{ url_for('science_care.sc_upload_csv', table=table_key) }}">
             Upload CSV
-          </button>
+          </a>
         </div>
-        <small class="text-body-secondary mt-2">Endpoints land in the next PR.</small>
       </div>
     </div>
   </div>
