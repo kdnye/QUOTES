@@ -79,6 +79,23 @@ Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success"
 ' counted as "missing" in the summary; bump this if you add tabs.
 Private Const SHIPMENT_TAB_COUNT As Long = 7
 
+' "Total S&H" summary table - lives on SHIPMENT 1. Row N picks the
+' cheapest of {Air, Hotshot, Established Lane} for SHIPMENT N; the grand
+' total cell sums those rows.
+'   SUMMARY_FIRST_ROW = 44   -> SHIPMENT 1 lands in C44, SHIPMENT 2 in C45, ...
+'   SUMMARY_COL       = "C"
+' The grand-total row is computed at runtime as
+' SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT, so bumping SHIPMENT_TAB_COUNT
+' shifts the total down instead of overwriting the last shipment row.
+Private Const SUMMARY_SHEET     As String = "SHIPMENT 1"
+Private Const SUMMARY_FIRST_ROW As Long   = 44
+Private Const SUMMARY_COL       As String = "C"
+
+' Established-lane VLOOKUP cell on each SHIPMENT tab. Holds either the
+' numeric lane price or the string "N/A". Folded into the cheapest-freight
+' calc that drives the summary table.
+Private Const CELL_ESTABLISHED_LANE As String = "C42"
+
 ' ==========================================================================
 ' SECTION 3 - ACCESSORIAL NAME MAPPING
 ' Maps each form label to the FSI API accessorial string. The API ignores
@@ -109,6 +126,7 @@ Public Sub RunScienceCareQuote()
 
     Dim outcome As String
     outcome = QuoteShipment(ActiveSheet, False)
+    UpdateSummaryTable
 End Sub
 
 
@@ -176,6 +194,8 @@ Public Sub RunAllShipmentQuotes()
 
         DoEvents
     Next n
+
+    UpdateSummaryTable
 
     Application.Calculation = prevCalc
     Application.EnableEvents = True
@@ -589,6 +609,104 @@ Private Sub SetStatus(ws As Worksheet, quoteType As String, msg As String)
         ws.Range(CELL_OUT_HOT_STATUS).Value = msg
     End If
 End Sub
+
+
+' -----------------------------------------------------------------------
+' UpdateSummaryTable - rebuilds the SHIPMENT 1 "Total S&H" rollup.
+' For each SHIPMENT N tab, writes the cheapest available freight cost
+' (min of Air / Hotshot / Established Lane) into the matching row of
+' the summary column, then writes the sum into the grand-total cell.
+' Replaces the in-sheet formulas that broke when the legacy rate-chart
+' tabs were removed (Domestic Charts - FS, Int'l Chart - FS, HOTSHOT
+' Pricing). Cheap to call from both entry points so the summary stays
+' in sync after any quote run.
+' -----------------------------------------------------------------------
+Private Sub UpdateSummaryTable()
+    Dim summarySheet As Worksheet
+    On Error Resume Next
+    Set summarySheet = ThisWorkbook.Sheets(SUMMARY_SHEET)
+    On Error GoTo 0
+    If summarySheet Is Nothing Then Exit Sub
+
+    ' Capture Application state and suppress redraws/events/auto-calc for
+    ' the duration of the writes - matters most in the single-tab code
+    ' path, where the parent macro hasn't already done so. CleanUp always
+    ' restores, even if a runtime error fires mid-write (e.g. protected
+    ' summary sheet).
+    Dim prevScreen As Boolean, prevEvents As Boolean, prevCalc As Long
+    prevScreen = Application.ScreenUpdating
+    prevEvents = Application.EnableEvents
+    prevCalc = Application.Calculation
+
+    On Error GoTo CleanUp
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
+    Dim grandTotal As Double
+    grandTotal = 0
+
+    Dim n As Long
+    For n = 1 To SHIPMENT_TAB_COUNT
+        Dim ws As Worksheet
+        Set ws = Nothing
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets("SHIPMENT " & n)
+        On Error GoTo CleanUp
+
+        Dim cheapest As Double
+        cheapest = 0
+        If Not ws Is Nothing Then cheapest = CheapestFreight(ws)
+
+        summarySheet.Range(SUMMARY_COL & (SUMMARY_FIRST_ROW + n - 1)).Value = cheapest
+        grandTotal = grandTotal + cheapest
+    Next n
+
+    ' Total row sits immediately after the last shipment row, so growing
+    ' SHIPMENT_TAB_COUNT shifts it down rather than colliding with the
+    ' last per-shipment row.
+    summarySheet.Range(SUMMARY_COL & (SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT)).Value = grandTotal
+
+CleanUp:
+    Application.ScreenUpdating = prevScreen
+    Application.EnableEvents = prevEvents
+    Application.Calculation = prevCalc
+End Sub
+
+
+' -----------------------------------------------------------------------
+' CheapestFreight - returns the lowest non-zero freight cost found on
+' a SHIPMENT tab across {Air C40, Hotshot C41, Established Lane C42}.
+' Skips zero, blank, error-value, "N/A", and other non-numeric cells.
+' Returns 0 when no quote is available (skipped international, etc.).
+' -----------------------------------------------------------------------
+Private Function CheapestFreight(ws As Worksheet) As Double
+    Dim air As Double, hot As Double, est As Double
+    air = SafeNum(ws.Range(CELL_OUT_AIR_TOTAL).Value)
+    hot = SafeNum(ws.Range(CELL_OUT_HOT_TOTAL).Value)
+    est = SafeNum(ws.Range(CELL_ESTABLISHED_LANE).Value)
+
+    Dim cheapest As Double
+    cheapest = 0
+    If air > 0 Then cheapest = air
+    If hot > 0 And (cheapest = 0 Or hot < cheapest) Then cheapest = hot
+    If est > 0 And (cheapest = 0 Or est < cheapest) Then cheapest = est
+
+    CheapestFreight = cheapest
+End Function
+
+
+' -----------------------------------------------------------------------
+' SafeNum - returns CDbl(v) for a numeric Variant, 0 otherwise. Treats
+' Empty, "", "N/A", #N/A / #VALUE! / #REF! and anything non-numeric as 0
+' so the cheapest-of calculation can ignore them without a Type Mismatch.
+' -----------------------------------------------------------------------
+Private Function SafeNum(v As Variant) As Double
+    If IsError(v) Then Exit Function
+    If IsEmpty(v) Then Exit Function
+    If Not IsNumeric(v) Then Exit Function
+    SafeNum = CDbl(v)
+End Function
 
 
 ' -----------------------------------------------------------------------

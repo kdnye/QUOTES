@@ -97,13 +97,25 @@ The API compares the dim weight against the actual weight in `I37` and prices on
 
 ## Outputs written to the sheet
 
+Per-tab outputs (each SHIPMENT N):
+
 | Cell | Content |
 |---|---|
 | **C40** | FS by Air — total price ($) |
 | **B40** | Air status: `Success`, `Skipped: ...`, or error detail |
 | **C41** | FS by Hot Shot — total price ($) |
-| **E41** | Hot Shot Miles (returned by API) |
+| **H41** | Hot Shot Miles (returned by API) |
 | **B41** | Hotshot status: `Success` or error detail |
+
+Summary rollup on **SHIPMENT 1** (rewritten by the macro after every quote):
+
+| Cell | Content |
+|---|---|
+| **C44** | Cheapest of SHIPMENT 1's `{C40 Air, C41 Hotshot, C42 Established Lane}` |
+| **C45–C50** | Same calculation for SHIPMENT 2 through SHIPMENT 7 |
+| **C51** | Grand total — sum of `C44:C50` (row computed dynamically as `SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT`, so bumping the tab count shifts the total down rather than overwriting the last shipment row) |
+
+`CheapestFreight` skips zero, blank, error, `"N/A"`, and non-numeric values — so a skipped international shipment or a missing established-lane row contributes 0 instead of breaking the row. The macro overwrites the legacy in-sheet formulas that broke when the static rate-chart tabs were removed.
 
 > Writing to **C40 / C41 overwrites the existing in-sheet formulas** that compute the totals from the static rate charts. That is intentional — once the API parity is confirmed, the `Domestic Charts - FS`, `International Chart - FS`, and `HOTSHOT Pricing` tabs (and their hidden duplicates) can be removed.
 
