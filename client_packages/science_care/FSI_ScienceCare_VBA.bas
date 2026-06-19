@@ -729,7 +729,10 @@ Private Function IsScToSc(ws As Worksheet) As Boolean
     Dim v As Variant
     v = ws.Range(CELL_ROUTING_MODE).Value
     If IsError(v) Then Exit Function
-    IsScToSc = (UCase(Trim(CStr(v))) = UCase(SC_TO_SC_LABEL))
+    ' "v & """" coerces Null / Empty to "" without the Error 94 that CStr
+    ' would raise on Null. StrComp with vbTextCompare is the idiomatic
+    ' VBA case-insensitive compare.
+    IsScToSc = (StrComp(Trim(v & ""), SC_TO_SC_LABEL, vbTextCompare) = 0)
 End Function
 
 
