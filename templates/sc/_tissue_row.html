@@ -6,6 +6,7 @@
 <tr>
   <td>
     <input class="form-control form-control-sm {% if code and not prefill %}is-invalid{% endif %}"
+           list="sc-tissue-codes"
            name="tissue_code_{{ leg }}_{{ i }}"
            value="{{ prefill.tissue_code if prefill else (code or '') }}"
            hx-get="{{ url_for('science_care.sc_tissue_lookup_partial') }}"
@@ -13,7 +14,7 @@
            hx-target="closest tr"
            hx-swap="outerHTML"
            hx-vals='{"leg": {{ leg }}, "i": {{ i }} }'
-           placeholder="e.g. PELV03"
+           placeholder="Pick or type a code…"
            autocomplete="off" />
     {% if code and not prefill %}
     <div class="invalid-feedback">Unknown tissue code.</div>

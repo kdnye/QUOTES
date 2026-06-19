@@ -12,16 +12,27 @@
       rate (with the SC-to-SC routing override).
     </p>
   </div>
-  {% if current_user.is_sc_admin or current_user.is_admin %}
-  <a class="btn btn-outline-secondary" href="{{ url_for('science_care.sc_reference_index') }}">
-    Manage reference data
-  </a>
-  {% endif %}
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('science_care.sc_lab_defaults_form') }}">
+      Set default labs
+    </a>
+    {% if current_user.is_sc_admin or current_user.is_admin %}
+    <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('science_care.sc_reference_index') }}">
+      Manage reference data
+    </a>
+    {% endif %}
+  </div>
 </div>
 
 <datalist id="sc-lab-codes">
   {% for lab in labs %}
   <option value="{{ lab.lab_code }}" label="{{ lab.lab_name or '' }}"></option>
+  {% endfor %}
+</datalist>
+
+<datalist id="sc-tissue-codes">
+  {% for tissue in tissue_codes %}
+  <option value="{{ tissue.tissue_code }}" label="{{ tissue.description or '' }}"></option>
   {% endfor %}
 </datalist>
 
@@ -39,7 +50,14 @@
                 aria-controls="sc-leg-{{ leg }}">
           <span class="me-3 fw-semibold">SHIPMENT {{ leg }}</span>
           <span id="sc-leg-summary-{{ leg }}" class="small text-body-secondary">
-            Lab — Destination — Winner
+            <span id="sc-leg-summary-lab-{{ leg }}"
+                  data-placeholder="Lab">{{ default_labs_by_leg.get(leg) or 'Lab' }}</span>
+            <span class="mx-1">—</span>
+            <span id="sc-leg-summary-dest-{{ leg }}"
+                  data-placeholder="Destination">Destination</span>
+            <span class="mx-1">—</span>
+            <span id="sc-leg-summary-winner-{{ leg }}"
+                  data-placeholder="Winner">Winner</span>
           </span>
         </button>
       </h2>
@@ -54,6 +72,8 @@
                      list="sc-lab-codes"
                      id="lab_code_{{ leg }}"
                      name="lab_code_{{ leg }}"
+                     value="{{ request.form.get('lab_code_' ~ leg) or default_labs_by_leg.get(leg) or '' }}"
+                     data-mirror-target="#sc-leg-summary-lab-{{ leg }}"
                      hx-get="{{ url_for('science_care.sc_lab_lookup_partial') }}"
                      hx-trigger="change delay:200ms"
                      hx-target="#sc-lab-origin-{{ leg }}"
@@ -67,6 +87,8 @@
               <input class="form-control"
                      id="dest_zip_{{ leg }}"
                      name="dest_zip_{{ leg }}"
+                     value="{{ request.form.get('dest_zip_' ~ leg) or '' }}"
+                     data-mirror-target="#sc-leg-summary-dest-{{ leg }}"
                      inputmode="numeric"
                      pattern="\d{5}"
                      maxlength="5" />
@@ -199,6 +221,21 @@
       event.detail.parameters.leg = leg;
       event.detail.parameters.i = nextIndex;
     });
+  });
+
+  // Live-mirror lab + dest inputs into the accordion header summary.
+  // Each input declares its target via data-mirror-target. Empty values
+  // fall back to data-placeholder on the target span.
+  document.querySelectorAll("[data-mirror-target]").forEach((input) => {
+    const target = document.querySelector(input.dataset.mirrorTarget);
+    if (!target) return;
+    const placeholder = target.dataset.placeholder || target.textContent;
+    const sync = () => {
+      const value = input.value.trim();
+      target.textContent = value || placeholder;
+    };
+    input.addEventListener("input", sync);
+    sync(); // paint once at page load so prefills show immediately.
   });
 </script>
 {% endblock %}

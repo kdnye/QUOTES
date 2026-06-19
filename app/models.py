@@ -46,6 +46,7 @@ SC_ESTABLISHED_LANES_TABLE = "sc_established_lanes"
 SC_ACCESSORIAL_MAP_TABLE = "sc_accessorial_map"
 SC_QUOTE_SESSIONS_TABLE = "sc_quote_sessions"
 SC_QUOTE_SESSION_LEGS_TABLE = "sc_quote_session_legs"
+SC_USER_LAB_SLOTS_TABLE = "sc_user_lab_slots"
 
 RATE_SET_DEFAULT = "default"
 RATE_SET_SCIENCE_CARE = "science_care"
@@ -787,3 +788,41 @@ class SCQuoteSessionLeg(db.Model):
     winner_mode = db.Column(db.String(20))
     winner_total = db.Column(db.Float, default=0.0, server_default="0")
     skip_reason = db.Column(db.String(60))
+
+
+class SCUserLabSlot(db.Model):
+    """Per-user default lab assigned to each shipment slot on the SC form.
+
+    Stores up to ``SC_LEG_COUNT`` rows per user. When the SC quote page
+    renders, the seven ``lab_code_<n>`` inputs are prefilled from these
+    rows so the user does not have to retype the same labs on every
+    visit. The user can still override any slot per submission - this
+    table is the *default*, not a hard constraint.
+    """
+
+    __tablename__ = SC_USER_LAB_SLOTS_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "user_id",
+            "leg_index",
+            name="uq_sc_user_lab_slots_rate_set_user_leg",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{USERS_TABLE}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    leg_index = db.Column(db.Integer, nullable=False)
+    lab_code = db.Column(db.String(20), nullable=False)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )

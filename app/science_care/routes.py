@@ -45,6 +45,7 @@ from app.models import (
     SCBoxType,
     SCLab,
     SCTissueCode,
+    SCUserLabSlot,
     db,
 )
 from app.policies import sc_admin_required, sc_user_required
@@ -116,11 +117,49 @@ def _box_type_choices() -> list[SCBoxType]:
     )
 
 
+def _tissue_code_choices() -> list[SCTissueCode]:
+    """All SC tissue codes ordered by ``tissue_code`` for the page datalist."""
+
+    return (
+        SCTissueCode.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .order_by(SCTissueCode.tissue_code)
+        .all()
+    )
+
+
+def _default_lab_slots(user_id: int) -> dict[int, str]:
+    """Return ``{leg_index: lab_code}`` of the user's saved default labs.
+
+    Filters out slots whose ``lab_code`` no longer matches an active
+    :class:`SCLab`, so a deactivated lab silently disappears from the
+    prefill (the DB row stays - it'll reappear if the lab is
+    re-activated).
+    """
+
+    rows = (
+        db.session.query(SCUserLabSlot, SCLab)
+        .join(
+            SCLab,
+            (SCLab.lab_code == SCUserLabSlot.lab_code)
+            & (SCLab.rate_set == RATE_SET_SCIENCE_CARE)
+            & (SCLab.is_active.is_(True)),
+        )
+        .filter(
+            SCUserLabSlot.user_id == user_id,
+            SCUserLabSlot.rate_set == RATE_SET_SCIENCE_CARE,
+        )
+        .all()
+    )
+    return {slot.leg_index: slot.lab_code for slot, _lab in rows}
+
+
 @science_care_bp.get("/quote")
 @login_required
 @sc_user_required
 def sc_quote_form() -> str:
     """Render the empty seven-leg multi-lab quote form."""
+
+    from flask_login import current_user
 
     return render_template(
         "sc/quote.html",
@@ -129,6 +168,8 @@ def sc_quote_form() -> str:
         accessorials=_accessorial_labels(),
         labs=_lab_choices(),
         box_types=_box_type_choices(),
+        tissue_codes=_tissue_code_choices(),
+        default_labs_by_leg=_default_lab_slots(current_user.id),
     )
 
 
@@ -174,6 +215,8 @@ def sc_quote_submit():
         accessorials=_accessorial_labels(),
         labs=_lab_choices(),
         box_types=_box_type_choices(),
+        tissue_codes=_tissue_code_choices(),
+        default_labs_by_leg=_default_lab_slots(current_user.id),
         results=context,
     )
 
@@ -286,6 +329,77 @@ def sc_lab_lookup_partial() -> str:
     return render_template(
         "sc/_lab_lookup.html", leg=leg, lab=lab, code=code
     )
+
+
+@science_care_bp.get("/quote/defaults")
+@login_required
+@sc_user_required
+def sc_lab_defaults_form() -> str:
+    """Render the per-user default-labs management page."""
+
+    from flask_login import current_user
+
+    return render_template(
+        "sc/lab_defaults.html",
+        leg_count=SC_LEG_COUNT,
+        legs=list(range(1, SC_LEG_COUNT + 1)),
+        labs=_lab_choices(),
+        default_labs_by_leg=_default_lab_slots(current_user.id),
+    )
+
+
+@science_care_bp.post("/quote/defaults")
+@login_required
+@sc_user_required
+def sc_lab_defaults_save():
+    """Replace the user's default-lab slots from the submitted form.
+
+    Wipes every existing :class:`SCUserLabSlot` row for the current user
+    in the SC rate-set and inserts one row per non-blank ``lab_code_<n>``
+    field. Wrapped in try/rollback so a constraint failure doesn't leak
+    a half-applied transaction back to the next request.
+    """
+
+    from flask_login import current_user
+
+    valid_lab_codes = {lab.lab_code for lab in _lab_choices()}
+    new_rows: list[SCUserLabSlot] = []
+    for n in range(1, SC_LEG_COUNT + 1):
+        code = (request.form.get(f"lab_code_{n}") or "").strip().upper()
+        if not code:
+            continue
+        if code not in valid_lab_codes:
+            # Silently drop unknown labs - the management form already
+            # constrains the picker via datalist, and bouncing the whole
+            # save for one typo would be hostile.
+            continue
+        new_rows.append(
+            SCUserLabSlot(
+                user_id=current_user.id,
+                leg_index=n,
+                lab_code=code,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            )
+        )
+
+    try:
+        SCUserLabSlot.query.filter_by(
+            user_id=current_user.id,
+            rate_set=RATE_SET_SCIENCE_CARE,
+        ).delete(synchronize_session=False)
+        db.session.flush()
+        if new_rows:
+            db.session.bulk_save_objects(new_rows)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001 - re-surfaced on flash
+        db.session.rollback()
+        flash(f"Could not save defaults: {exc}", "danger")
+        return redirect(url_for("science_care.sc_lab_defaults_form"))
+
+    flash(
+        f"Saved {len(new_rows)} default lab slot(s).", "success"
+    )
+    return redirect(url_for("science_care.sc_quote_form"))
 
 
 # Display order + per-table descriptions for the reference index page.

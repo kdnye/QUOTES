@@ -90,3 +90,18 @@
   </div>
   {% endif %}
 </div>
+
+{# Out-of-band swaps update each accordion header's winner span when
+   HTMX delivers this partial into #sc-results. Refs:
+   https://htmx.org/attributes/hx-swap-oob/ #}
+{% for leg in legs %}
+<span hx-swap-oob="innerHTML:#sc-leg-summary-winner-{{ leg.leg_index }}">
+  {%- if leg.winner_mode and leg.winner_total -%}
+  ${{ '%.2f'|format(leg.winner_total) }} {{ leg.winner_mode }}
+  {%- elif leg.skip_reason -%}
+  Skipped
+  {%- else -%}
+  —
+  {%- endif -%}
+</span>
+{% endfor %}
