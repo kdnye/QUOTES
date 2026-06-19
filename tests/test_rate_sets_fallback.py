@@ -34,7 +34,14 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
     app = create_app(TestRateSetFallbackConfig)
     with app.app_context():
         yield app
+        # Reflect before dropping so the Alembic-managed `alembic_version`
+        # table (created via raw SQL, not in db.Model's metadata) is also
+        # cleaned up. Without this, a reused test DB would carry the
+        # version row forward and subsequent migrations would no-op while
+        # the actual rate tables are gone - leading to ProgrammingError
+        # in unrelated tests.
         db.session.remove()
+        db.metadata.reflect(bind=db.engine)
         db.drop_all()
 
 
