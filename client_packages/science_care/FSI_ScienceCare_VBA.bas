@@ -44,9 +44,9 @@ Private Const LAB_LOOKUP_RANGE As String = "A2:B100"
 ' ==========================================================================
 
 ' Header inputs - defaults match the SHIPMENT 1 layout in 3_MASTER_TOOL.
-Private Const CELL_LAB_CODE       As String = "B4"   ' SC Lab abbreviation (e.g. "SCCA"). VLOOKUP'd against "Drop downs OTH - SC" to get origin ZIP.
-Private Const CELL_DEST_ZIP       As String = "B5"   ' US destination ZIP (5 digits)
-Private Const CELL_INTL_COUNTRY   As String = "B7"   ' International country - if filled, macro skips (API is domestic-only)
+Private Const CELL_LAB_CODE       As String = "B3"   ' SC Lab abbreviation (e.g. "SCCA"). VLOOKUP'd against "Drop downs OTH - SC" to get origin ZIP.
+Private Const CELL_DEST_ZIP       As String = "B4"   ' US destination ZIP (5 digits)
+Private Const CELL_INTL_COUNTRY   As String = "B6"   ' International country - if filled, macro skips (API is domestic-only)
 
 ' Accessorial Y/N markers - cell holds "Y" when that service is selected.
 ' Cells without an API equivalent (Weekend J6, VSC J9) are intentionally not
