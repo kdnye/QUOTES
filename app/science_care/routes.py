@@ -321,43 +321,55 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
             action = form.action.data
             inserted = len(objects)
             skipped = 0
-            if action == "replace":
-                spec.model.query.filter_by(
-                    rate_set=RATE_SET_SCIENCE_CARE
-                ).delete(synchronize_session=False)
-                db.session.flush()
-                db.session.bulk_save_objects(objects)
-                message = (
-                    f"{spec.label} data replaced with {inserted} row(s)."
-                )
-            else:
-                if spec.unique_attr:
-                    inserted, skipped = save_unique(
-                        db.session,
-                        spec.model,
-                        objects,
-                        spec.unique_attr,
+            # Wrap the write block in try/rollback so a unique- or FK-
+            # constraint failure (or anything else SQLAlchemy raises)
+            # doesn't leak an open transaction back to the next request
+            # or 500 in the user's face. The same pattern is used by
+            # other admin upload paths.
+            try:
+                if action == "replace":
+                    spec.model.query.filter_by(
+                        rate_set=RATE_SET_SCIENCE_CARE
+                    ).delete(synchronize_session=False)
+                    db.session.flush()
+                    db.session.bulk_save_objects(objects)
+                    message = (
+                        f"{spec.label} data replaced with "
+                        f"{inserted} row(s)."
                     )
                 else:
-                    db.session.bulk_save_objects(objects)
-                message = (
-                    f"{spec.label} upload added {inserted} row(s)."
-                )
-                if spec.unique_attr and skipped:
+                    if spec.unique_attr:
+                        inserted, skipped = save_unique(
+                            db.session,
+                            spec.model,
+                            objects,
+                            spec.unique_attr,
+                        )
+                    else:
+                        db.session.bulk_save_objects(objects)
                     message = (
-                        f"{spec.label} upload added {inserted} row(s) "
-                        f"({skipped} duplicate row(s) skipped)."
+                        f"{spec.label} upload added {inserted} row(s)."
                     )
+                    if spec.unique_attr and skipped:
+                        message = (
+                            f"{spec.label} upload added {inserted} "
+                            f"row(s) ({skipped} duplicate row(s) "
+                            "skipped)."
+                        )
 
-            db.session.add(
-                RateUpload(
-                    table_name=spec.name,
-                    filename=file_storage.filename,
+                db.session.add(
+                    RateUpload(
+                        table_name=spec.name,
+                        filename=file_storage.filename,
+                    )
                 )
-            )
-            db.session.commit()
-            flash(message, "success")
-            return redirect(url_for(spec.list_endpoint))
+                db.session.commit()
+            except Exception as exc:  # noqa: BLE001 - re-surfaced on form
+                db.session.rollback()
+                form.file.errors.append(f"Database error: {exc}")
+            else:
+                flash(message, "success")
+                return redirect(url_for(spec.list_endpoint))
 
     status = 400 if request.method == "POST" else 200
     return (

@@ -28,6 +28,7 @@ from typing import Any, Dict
 from app.admin import (
     ColumnSpec,
     TableSpec,
+    _is_missing,
     _parse_bool_flag,
     _parse_required_float,
     _parse_required_int,
@@ -48,6 +49,13 @@ from app.models import (
 # --- Custom parsers ----------------------------------------------------------
 
 
+# The four parsers below all defer to `_is_missing` from app.admin. That
+# helper catches pandas' float NaN sentinel (which empty CSV cells
+# decode into) on top of None / blank strings - a plain
+# ``value is None`` check would let NaN through and `str(NaN)` would
+# write the literal "nan" to the database.
+
+
 def _parse_optional_string(value: Any) -> str | None:
     """Return ``value`` as a stripped string, or ``None`` when blank.
 
@@ -55,16 +63,15 @@ def _parse_optional_string(value: Any) -> str | None:
     (e.g. ``SCLab.address``, ``SCTissueCode.notes``).
     """
 
-    if value is None:
+    if _is_missing(value):
         return None
-    text = str(value).strip()
-    return text or None
+    return str(value).strip() or None
 
 
 def _parse_optional_float(value: Any) -> float | None:
     """Return ``value`` as a float, or ``None`` when blank."""
 
-    if value is None or (isinstance(value, str) and not value.strip()):
+    if _is_missing(value):
         return None
     return _parse_required_float(value)
 
@@ -72,7 +79,7 @@ def _parse_optional_float(value: Any) -> float | None:
 def _parse_optional_int(value: Any) -> int | None:
     """Return ``value`` as an int, or ``None`` when blank."""
 
-    if value is None or (isinstance(value, str) and not value.strip()):
+    if _is_missing(value):
         return None
     return _parse_required_int(value)
 
@@ -84,11 +91,9 @@ def _parse_optional_date(value: Any) -> date | None:
     without an end date stays current indefinitely.
     """
 
-    if value is None:
+    if _is_missing(value):
         return None
     text = str(value).strip()
-    if not text:
-        return None
     try:
         return date.fromisoformat(text)
     except ValueError as exc:

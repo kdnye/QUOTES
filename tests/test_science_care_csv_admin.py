@@ -264,6 +264,39 @@ def test_upload_blocked_for_plain_sc_user(app: Flask) -> None:
     assert response.status_code == 403
 
 
+def test_upload_empty_optional_cells_persist_as_null(app: Flask) -> None:
+    # Regression: an empty optional cell in the CSV must land as NULL
+    # in the database, not as the literal string "nan" (pandas decodes
+    # blank cells to float NaN, which slips past `value is None`).
+    user = _make_user(
+        "null-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    csv = _csv_bytes(
+        [
+            "Lab Code,Lab Name,Origin ZIP,Address,Contact Name,Contact Phone,Active",
+            "SCCA,,85705,,,,Y",
+        ]
+    )
+    response = client.post(
+        "/sc/reference/sc_labs/upload",
+        data={"file": (csv, "labs.csv"), "action": "add"},
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    row = SCLab.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, lab_code="SCCA"
+    ).one()
+    assert row.lab_name is None
+    assert row.address is None
+    assert row.contact_name is None
+    assert row.contact_phone is None
+
+
 def test_accessorial_map_csv_round_trip(app: Flask) -> None:
     user = _make_user(
         "acc-admin@example.com",
