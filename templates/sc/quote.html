@@ -51,10 +51,10 @@
           <span class="me-3 fw-semibold">SHIPMENT {{ leg }}</span>
           <span id="sc-leg-summary-{{ leg }}" class="small text-body-secondary">
             <span id="sc-leg-summary-lab-{{ leg }}"
-                  data-placeholder="Lab">{{ default_labs_by_leg.get(leg) or 'Lab' }}</span>
+                  data-placeholder="Lab">{{ request.form.get('lab_code_' ~ leg) or default_labs_by_leg.get(leg) or 'Lab' }}</span>
             <span class="mx-1">—</span>
             <span id="sc-leg-summary-dest-{{ leg }}"
-                  data-placeholder="Destination">Destination</span>
+                  data-placeholder="Destination">{{ request.form.get('dest_zip_' ~ leg) or 'Destination' }}</span>
             <span class="mx-1">—</span>
             <span id="sc-leg-summary-winner-{{ leg }}"
                   data-placeholder="Winner">Winner</span>

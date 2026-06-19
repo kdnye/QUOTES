@@ -141,7 +141,7 @@ def _default_lab_slots(user_id: int) -> dict[int, str]:
         .join(
             SCLab,
             (SCLab.lab_code == SCUserLabSlot.lab_code)
-            & (SCLab.rate_set == RATE_SET_SCIENCE_CARE)
+            & (SCLab.rate_set == SCUserLabSlot.rate_set)
             & (SCLab.is_active.is_(True)),
         )
         .filter(
@@ -389,7 +389,10 @@ def sc_lab_defaults_save():
         ).delete(synchronize_session=False)
         db.session.flush()
         if new_rows:
-            db.session.bulk_save_objects(new_rows)
+            # add_all over bulk_save_objects: we have at most SC_LEG_COUNT
+            # rows, so the unit-of-work overhead is irrelevant and we keep
+            # the standard SQLAlchemy state tracking.
+            db.session.add_all(new_rows)
         db.session.commit()
     except Exception as exc:  # noqa: BLE001 - re-surfaced on flash
         db.session.rollback()

@@ -96,8 +96,8 @@
    https://htmx.org/attributes/hx-swap-oob/ #}
 {% for leg in legs %}
 <span hx-swap-oob="innerHTML:#sc-leg-summary-winner-{{ leg.leg_index }}">
-  {%- if leg.winner_mode and leg.winner_total -%}
-  ${{ '%.2f'|format(leg.winner_total) }} {{ leg.winner_mode }}
+  {%- if leg.winner_mode -%}
+  ${{ '%.2f'|format(leg.winner_total or 0) }} {{ leg.winner_mode }}
   {%- elif leg.skip_reason -%}
   Skipped
   {%- else -%}
