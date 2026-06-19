@@ -55,7 +55,7 @@ def _make_user(
 ) -> User:
     user = User(
         email=email,
-        full_name=email,
+        name=email,
         password_hash="x",
         rate_set=rate_set,
         is_sc_admin=is_sc_admin,

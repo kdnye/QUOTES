@@ -51,7 +51,7 @@ def _make_user(
 ) -> User:
     user = User(
         email=email,
-        full_name=email,
+        name=email,
         password_hash="x",
         rate_set=rate_set,
     )
@@ -219,6 +219,59 @@ def test_defaults_post_wipes_then_inserts(app: Flask) -> None:
     assert [(r.leg_index, r.lab_code) for r in rows] == [
         (1, "SCAZ"),
         (4, "SCIL"),
+    ]
+
+
+def test_defaults_save_preserves_inactive_slot(app: Flask) -> None:
+    # Regression: a slot pointing at a temporarily-deactivated lab
+    # must survive a save that only touches OTHER slots. Without the
+    # active-lab scope on the wipe, the inactive row was permanently
+    # destroyed and could never reappear when the lab was reactivated.
+    user = _make_user()
+    db.session.add_all(
+        [
+            SCLab(
+                lab_code="SCCA",
+                lab_name="Active",
+                origin_zip="85705",
+                is_active=True,
+            ),
+            SCLab(
+                lab_code="SCGONE",
+                lab_name="Deactivated",
+                origin_zip="85705",
+                is_active=False,
+            ),
+        ]
+    )
+    db.session.add_all(
+        [
+            SCUserLabSlot(user_id=user.id, leg_index=1, lab_code="SCCA"),
+            SCUserLabSlot(
+                user_id=user.id, leg_index=2, lab_code="SCGONE"
+            ),
+        ]
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    # User edits only slot 1; slot 2 is rendered blank because SCGONE
+    # is inactive, but the inactive row must survive.
+    response = client.post(
+        "/sc/quote/defaults",
+        data={"lab_code_1": "SCCA", "lab_code_2": ""},
+    )
+    assert response.status_code == 302
+
+    surviving = (
+        SCUserLabSlot.query.filter_by(user_id=user.id)
+        .order_by(SCUserLabSlot.leg_index)
+        .all()
+    )
+    assert [(r.leg_index, r.lab_code) for r in surviving] == [
+        (1, "SCCA"),
+        (2, "SCGONE"),
     ]
 
 
