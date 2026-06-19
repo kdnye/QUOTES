@@ -14,6 +14,7 @@ from app.models import Accessorial
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
+from app.services.constants import DIM_DIVISOR
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 _ACCESSORIAL_CACHE_TTL_SECONDS = 60 * 60 * 24
@@ -64,12 +65,16 @@ def get_accessorial_options(quote_type: str) -> list[str]:
     return names
 
 
-def get_zip_notes(zip_code: str, rate_set: str) -> str | None:
+def get_zip_notes(zip_code: str, rate_set: str | None) -> str | None:
     """Return shipment notes configured for a ZIP code.
 
     Args:
         zip_code: ZIP code used to query :class:`app.models.ZipZone`.
         rate_set: Rate-set identifier associated with the quote workflow.
+            ``None`` falls back to :data:`DEFAULT_RATE_SET`. Any non-None
+            value is normalised via
+            :func:`app.services.rate_sets.normalize_rate_set` so casing /
+            whitespace variations all hit the same row.
 
     Returns:
         Optional shipment notes text when available, otherwise ``None``.
@@ -82,13 +87,14 @@ def get_zip_notes(zip_code: str, rate_set: str) -> str | None:
     if not normalized_zip:
         return None
 
+    normalized_rate_set = normalize_rate_set(rate_set or DEFAULT_RATE_SET)
     with Session() as db:
         zone_entry = (
             db.query(ZipZone)
-            .filter_by(zipcode=normalized_zip, rate_set=rate_set)
+            .filter_by(zipcode=normalized_zip, rate_set=normalized_rate_set)
             .first()
         )
-        if zone_entry is None and rate_set != DEFAULT_RATE_SET:
+        if zone_entry is None and normalized_rate_set != DEFAULT_RATE_SET:
             zone_entry = (
                 db.query(ZipZone)
                 .filter_by(zipcode=normalized_zip, rate_set=DEFAULT_RATE_SET)
@@ -129,7 +135,7 @@ def create_quote(
     if dim_weight and dim_weight > 0:
         dim_weight_val = float(dim_weight)
     elif all(v > 0 for v in [length, width, height]):
-        dim_weight_val = (length * width * height / 166) * pieces
+        dim_weight_val = (length * width * height / DIM_DIVISOR) * pieces
     else:
         dim_weight_val = 0.0
 

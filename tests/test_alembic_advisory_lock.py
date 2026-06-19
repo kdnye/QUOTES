@@ -79,7 +79,12 @@ def test_postgres_path_releases_lock_on_failure(
     engine.begin.return_value.__enter__.return_value = lock_conn
     engine.begin.return_value.__exit__.return_value = False
 
-    def boom(config, active_engine):
+    def boom(config, active_engine, **kwargs):
+        # **kwargs absorbs inspect_conn= that _run_alembic_upgrade now
+        # passes in. Without it the stub would TypeError on the keyword
+        # before the simulated RuntimeError ran, and the test would
+        # pass for the wrong reason (or fail with the wrong exception
+        # type).
         raise RuntimeError("simulated upgrade failure")
 
     monkeypatch.setattr(db_module, "_stamp_and_upgrade", boom)
