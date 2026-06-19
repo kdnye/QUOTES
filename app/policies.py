@@ -139,3 +139,47 @@ def admin_required(view: Callable) -> Callable:
     """
 
     return super_admin_required(view)
+
+
+def sc_user_required(view: Callable) -> Callable:
+    """Restrict access to Science Care users (and FSI super-admins).
+
+    Gates the customer-facing ``/sc/quote`` workflow. Any authenticated user
+    whose :attr:`app.models.User.rate_set` equals ``"science_care"`` may pass.
+    FSI super-admins always pass so they can triage.
+    """
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login", next=request.url))
+        if getattr(current_user, "is_admin", False):
+            return view(*args, **kwargs)
+        if getattr(current_user, "rate_set", None) != "science_care":
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
+
+
+def sc_admin_required(view: Callable) -> Callable:
+    """Restrict access to Science Care reference-table maintenance.
+
+    Gates ``/sc/reference`` endpoints. Requires either a flagged SC admin
+    (``current_user.is_sc_admin``) or an FSI super-admin (``is_admin``).
+    Regular SC users (``rate_set == "science_care"`` without the
+    ``is_sc_admin`` flag) are 403'd so they can quote without editing the
+    underlying reference tables.
+    """
+
+    @wraps(view)
+    def wrapped(*args, **kwargs):
+        if not current_user.is_authenticated:
+            return redirect(url_for("auth.login", next=request.url))
+        if getattr(current_user, "is_admin", False):
+            return view(*args, **kwargs)
+        if not getattr(current_user, "is_sc_admin", False):
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
