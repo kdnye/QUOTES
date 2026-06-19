@@ -1,0 +1,6 @@
+Consumable Type,Temp Mode,Scope,Weight Per Box (lb),Notes
+gel_pack,rtu,domestic,20,RTU - Gel Packs - Domestic (20 lb gel packs/box)
+gel_pack,rtu,intl,36,RTU - Gel Packs - Intl (36 lb gel packs/box)
+dry_ice,frozen,domestic,25,FRZN - Dry Ice - Domestic (2.2kg dry ice + 20 lb gel packs/box)
+dry_ice,frozen,intl,55,FRZN - Dry Ice - Intl (12kg dry ice + 25 lb gel packs/box)
+additional_dry_ice,any,any,13.2277,Additional Dry Ice (6kg)
