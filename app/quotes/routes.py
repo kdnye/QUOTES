@@ -794,8 +794,12 @@ def _quote_template_context(
     threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
     exceeds_threshold = bool(threshold_warning)
 
-    origin_notes = get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     return {
         "quote": quote,
@@ -1032,8 +1036,12 @@ def _render_email_request(
     )
     return_accessorial_options, _ = _get_accessorial_choices()
 
-    origin_notes = get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     return render_template(
         "email_request.html",
@@ -1105,8 +1113,12 @@ def email_quote_to_me(quote_id: str):
         metadata = {}
     metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
 
-    origin_notes = get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     email_body = _format_quote_copy_email_body(
         quote,
