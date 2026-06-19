@@ -806,13 +806,17 @@ Private Function ExtractJsonString(json As String, key As String) As String
 
     Dim raw As String
     raw = m(0).SubMatches(0)
-    ' Unescape the common JSON escapes - keep \\ last so it doesn't
-    ' re-escape characters produced by the earlier passes.
+    ' Unescape JSON. First fold \\ into a placeholder Chr(1) (which can't
+    ' appear in a valid JSON string body) so the other Replace calls
+    ' don't munge an escaped backslash followed by an escape letter
+    ' (e.g. "\\n" must round-trip to "\n", not become "\" + vbLf).
+    ' Restore the placeholder to a single backslash at the end.
+    raw = Replace(raw, "\\", Chr(1))
     raw = Replace(raw, "\""", """")
     raw = Replace(raw, "\/", "/")
     raw = Replace(raw, "\n", vbLf)
     raw = Replace(raw, "\r", vbCr)
     raw = Replace(raw, "\t", vbTab)
-    raw = Replace(raw, "\\", "\")
+    raw = Replace(raw, Chr(1), "\")
     ExtractJsonString = raw
 End Function
