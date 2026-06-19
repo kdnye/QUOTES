@@ -26,11 +26,15 @@ This module replaces the in-sheet VLOOKUPs against `Domestic Charts - FS`, `Inte
 5. Paste the contents of `FSI_ScienceCare_VBA.bas` into the module's code window.
 6. Set `API_KEY` in **SECTION 1**.
 7. (Optional) Verify cell addresses in **SECTION 2** against SHIPMENT 1.
-8. **Alt+Q** to close. On each SHIPMENT tab: **Insert > Shapes**, draw a button, right-click > **Assign Macro > `RunScienceCareQuote`**.
+8. **Alt+Q** to close. Two buttons to wire up:
+   - On each SHIPMENT tab: **Insert > Shapes**, draw a button, right-click > **Assign Macro > `RunScienceCareQuote`** — quotes that single tab.
+   - On any tab (or in the ribbon): another button assigned to **`RunAllShipmentQuotes`** — quotes every SHIPMENT 1–7 in one click and reports a summary at the end.
 
 > **Prefer importing?** Use **File > Import File…** and pick `FSI_ScienceCare_VBA.bas` directly. The file no longer carries an `Attribute VB_Name` header, so VBA names the module after the file's base name (`FSI_ScienceCare_VBA`) — rename it to `FSI_ScienceCare` in the Properties pane (F4) after the import.
 
-The macro always operates on the **active sheet**, so the same button code works on every SHIPMENT tab.
+`RunScienceCareQuote` always operates on the **active sheet**, so the same button code works on every SHIPMENT tab. `RunAllShipmentQuotes` walks `SHIPMENT 1` through `SHIPMENT N` (N = `SHIPMENT_TAB_COUNT` in SECTION 2, default `7`) — it suppresses per-tab popups, disables screen redraws while running, and shows one summary popup at the end listing the outcome for each tab.
+
+> **Why isn't it truly parallel?** VBA is single-threaded; there's no equivalent of Apps Script's `UrlFetchApp.fetchAll()`. The batch runner fires the requests back-to-back as fast as the API responds (typically ~1s each), so seven tabs × two quotes each completes in roughly 10–15 seconds.
 
 ---
 

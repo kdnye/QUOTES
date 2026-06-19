@@ -74,6 +74,11 @@ Private Const CELL_OUT_HOT_TOTAL  As String = "C41"  ' FS by Hot Shot: total pri
 Private Const CELL_OUT_HOT_MILES  As String = "E41"  ' Hot Shot Miles
 Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success" or error detail
 
+' Number of SHIPMENT N tabs in the workbook - RunAllShipmentQuotes loops
+' "SHIPMENT 1" through "SHIPMENT <this>". Tabs that don't exist are
+' counted as "missing" in the summary; bump this if you add tabs.
+Private Const SHIPMENT_TAB_COUNT As Long = 7
+
 ' ==========================================================================
 ' SECTION 3 - ACCESSORIAL NAME MAPPING
 ' Maps each form label to the FSI API accessorial string. The API ignores
@@ -92,8 +97,8 @@ End Function
 
 
 ' -----------------------------------------------------------------------
-' PUBLIC ENTRY POINT - assign this macro to your quote button.
-' Runs on whichever sheet is currently active.
+' PUBLIC ENTRY POINT - assign this macro to your per-tab quote button.
+' Runs on whichever SHIPMENT sheet is currently active.
 ' -----------------------------------------------------------------------
 Public Sub RunScienceCareQuote()
     If API_KEY = "YOUR_API_KEY_HERE" Or Len(Trim(API_KEY)) = 0 Then
@@ -102,9 +107,88 @@ Public Sub RunScienceCareQuote()
         Exit Sub
     End If
 
-    Dim ws As Worksheet
-    Set ws = ActiveSheet
+    Dim outcome As String
+    outcome = QuoteShipment(ActiveSheet, False)
+End Sub
 
+
+' -----------------------------------------------------------------------
+' PUBLIC ENTRY POINT - one-click batch over every SHIPMENT tab.
+' VBA is single-threaded, so the calls are sequential, but with screen
+' updates suppressed and one summary popup the whole pass typically
+' finishes in a few seconds.
+' Assign this macro to a button on any tab (or in the ribbon).
+' -----------------------------------------------------------------------
+Public Sub RunAllShipmentQuotes()
+    If API_KEY = "YOUR_API_KEY_HERE" Or Len(Trim(API_KEY)) = 0 Then
+        MsgBox "API key not configured. Edit SECTION 1 of the FSI_ScienceCare module.", _
+               vbExclamation, "FSI Quote"
+        Exit Sub
+    End If
+
+    Dim prevCalc As Long
+    prevCalc = Application.Calculation
+    Application.ScreenUpdating = False
+    Application.Calculation = xlCalculationManual
+    Application.EnableEvents = False
+
+    Dim succeeded As Long, skipped As Long, failed As Long, missing As Long
+    Dim summary As String
+    summary = ""
+
+    Dim n As Long
+    For n = 1 To SHIPMENT_TAB_COUNT
+        Dim tabName As String
+        tabName = "SHIPMENT " & n
+
+        Dim ws As Worksheet
+        Set ws = Nothing
+        On Error Resume Next
+        Set ws = ThisWorkbook.Sheets(tabName)
+        On Error GoTo 0
+
+        If ws Is Nothing Then
+            missing = missing + 1
+            summary = summary & tabName & ": tab not found" & vbLf
+        Else
+            Dim outcome As String
+            outcome = QuoteShipment(ws, True)
+            Select Case True
+                Case outcome = "Success"
+                    succeeded = succeeded + 1
+                Case Left(outcome, 7) = "Skipped"
+                    skipped = skipped + 1
+                Case Else
+                    failed = failed + 1
+            End Select
+            summary = summary & tabName & ": " & outcome & vbLf
+        End If
+
+        DoEvents
+    Next n
+
+    Application.Calculation = prevCalc
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    Application.Calculate
+
+    MsgBox "Batch quote complete." & vbLf & vbLf & _
+           "Succeeded: " & succeeded & vbLf & _
+           "Skipped:   " & skipped & vbLf & _
+           "Failed:    " & failed & _
+           IIf(missing > 0, vbLf & "Missing tabs: " & missing, "") & vbLf & vbLf & _
+           summary, vbInformation, "FSI Quote"
+End Sub
+
+
+' -----------------------------------------------------------------------
+' QuoteShipment - run Air + Hotshot quotes for one SHIPMENT tab.
+' Returns a short status string: "Success", "Skipped: ...", or "Error: ...".
+' When silent is True, no MsgBox is shown - results still land in the
+' sheet's status / total cells. The batch runner uses silent=True so a
+' single summary popup replaces seven per-sheet popups.
+' -----------------------------------------------------------------------
+Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
     ' Clear previous outputs
     ws.Range(CELL_OUT_AIR_TOTAL).ClearContents
     ws.Range(CELL_OUT_AIR_STATUS).ClearContents
@@ -121,10 +205,13 @@ Public Sub RunScienceCareQuote()
     If Len(intlCountry) > 0 Then
         SetStatus ws, "Air", "Skipped: international (B7 = " & intlCountry & ")"
         SetStatus ws, "Hotshot", "Skipped: international"
-        MsgBox "International shipment detected in " & CELL_INTL_COUNTRY & " (" & intlCountry & ")." & vbLf & _
-               "The FSI Quote API currently supports domestic Air and Hotshot only.", _
-               vbInformation, "FSI Quote"
-        Exit Sub
+        If Not silent Then
+            MsgBox "International shipment detected in " & CELL_INTL_COUNTRY & " (" & intlCountry & ")." & vbLf & _
+                   "The FSI Quote API currently supports domestic Air and Hotshot only.", _
+                   vbInformation, "FSI Quote"
+        End If
+        QuoteShipment = "Skipped: international"
+        Exit Function
     End If
 
     ' --- Origin ZIP: look up B4 (lab code) in "Drop downs OTH - SC" ---
@@ -136,8 +223,9 @@ Public Sub RunScienceCareQuote()
     If Len(labCode) = 0 Then
         SetStatus ws, "Air", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
         SetStatus ws, "Hotshot", "Error: SC Lab cell " & CELL_LAB_CODE & " is empty."
-        MsgBox "SC Lab cell (" & CELL_LAB_CODE & ") is empty.", vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox "SC Lab cell (" & CELL_LAB_CODE & ") is empty.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: SC Lab empty"
+        Exit Function
     End If
 
     Dim originZip As String
@@ -147,8 +235,9 @@ Public Sub RunScienceCareQuote()
         msg = "Lab code """ & labCode & """ not found in '" & LAB_LOOKUP_SHEET & "'!" & LAB_LOOKUP_RANGE & "."
         SetStatus ws, "Air", "Error: " & msg
         SetStatus ws, "Hotshot", "Error: " & msg
-        MsgBox msg, vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox msg, vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: lab not found"
+        Exit Function
     End If
     ' Reject "00000" too: FormatZip pads a blank/zero result up to 5 digits.
     If Not originZip Like "#####" Or originZip = "00000" Then
@@ -156,8 +245,9 @@ Public Sub RunScienceCareQuote()
         invalidMsg = "Resolved origin ZIP """ & originZip & """ for lab """ & labCode & """ is invalid."
         SetStatus ws, "Air", "Error: " & invalidMsg
         SetStatus ws, "Hotshot", "Error: " & invalidMsg
-        MsgBox invalidMsg, vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox invalidMsg, vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: invalid origin ZIP"
+        Exit Function
     End If
 
     ' --- Destination ZIP ---
@@ -167,21 +257,24 @@ Public Sub RunScienceCareQuote()
     If IsError(destRaw) Then
         SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " contains a worksheet error."
         SetStatus ws, "Hotshot", "Error: Destination ZIP contains a worksheet error."
-        MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: destination ZIP cell error"
+        Exit Function
     End If
     If IsEmpty(destRaw) Or CStr(destRaw) = "" Then
         SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " is empty."
         SetStatus ws, "Hotshot", "Error: Destination ZIP empty."
-        MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: destination ZIP empty"
+        Exit Function
     End If
     destZip = FormatZip(destRaw)
     If Not destZip Like "#####" Then
         SetStatus ws, "Air", "Error: Destination ZIP invalid (" & destZip & ")"
         SetStatus ws, "Hotshot", "Error: Destination ZIP invalid"
-        MsgBox "Destination ZIP """ & destZip & """ must be 5 digits.", vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox "Destination ZIP """ & destZip & """ must be 5 digits.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: invalid destination ZIP"
+        Exit Function
     End If
 
     ' --- Weight and pieces ---
@@ -203,9 +296,10 @@ Public Sub RunScienceCareQuote()
     If totalWeight <= 0 Then
         SetStatus ws, "Air", "Error: Total weight " & CELL_TOTAL_WEIGHT & " <= 0"
         SetStatus ws, "Hotshot", "Error: Total weight <= 0"
-        MsgBox "Total Shipment Weight cell (" & CELL_TOTAL_WEIGHT & ") must be greater than 0.", _
-               vbExclamation, "FSI Quote"
-        Exit Sub
+        If Not silent Then MsgBox "Total Shipment Weight cell (" & CELL_TOTAL_WEIGHT & ") must be greater than 0.", _
+                                  vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: weight <= 0"
+        Exit Function
     End If
 
     ' --- Dimensional weight (sum across all box types with quantity) ---
@@ -241,17 +335,23 @@ Public Sub RunScienceCareQuote()
     hotResp = PostQuote("{""quote_type"": ""Hotshot"", " & payloadBase & "}")
     ParseAndWrite ws, hotResp, "Hotshot"
 
-    MsgBox "Done. Air -> " & CELL_OUT_AIR_TOTAL & ", Hotshot -> " & CELL_OUT_HOT_TOTAL & ".", _
-           vbInformation, "FSI Quote"
-    Exit Sub
+    If Not silent Then
+        MsgBox "Done. Air -> " & CELL_OUT_AIR_TOTAL & ", Hotshot -> " & CELL_OUT_HOT_TOTAL & ".", _
+               vbInformation, "FSI Quote"
+    End If
+    QuoteShipment = "Success"
+    Exit Function
 
 InputError:
     SetStatus ws, "Air", "Error: could not read " & CELL_TOTAL_WEIGHT & " / " & CELL_TOTAL_BOXES
     SetStatus ws, "Hotshot", "Error: could not read weight / boxes"
-    MsgBox "Could not read Weight or Boxes. Check cells " & _
-           CELL_TOTAL_WEIGHT & " and " & CELL_TOTAL_BOXES & ".", _
-           vbExclamation, "FSI Quote"
-End Sub
+    If Not silent Then
+        MsgBox "Could not read Weight or Boxes. Check cells " & _
+               CELL_TOTAL_WEIGHT & " and " & CELL_TOTAL_BOXES & ".", _
+               vbExclamation, "FSI Quote"
+    End If
+    QuoteShipment = "Error: could not read weight / boxes"
+End Function
 
 
 ' -----------------------------------------------------------------------
