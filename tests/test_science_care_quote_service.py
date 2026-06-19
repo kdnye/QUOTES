@@ -310,6 +310,55 @@ def test_accessorials_resolved_via_map(
     assert "Liftgate Delivery" in air_call["accessorials"]
 
 
+def test_established_lane_respects_effective_dates(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import date, timedelta
+
+    _seed_reference(app)
+    today = date.today()
+    # Expired lane (effective_to in the past) - must NOT match.
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="98101",
+            service_type="Any",
+            rate=99.0,
+            effective_to=today - timedelta(days=1),
+        )
+    )
+    # Future lane (effective_from in the future) - must NOT match.
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="98101",
+            service_type="Air",
+            rate=88.0,
+            effective_from=today + timedelta(days=10),
+        )
+    )
+    # Currently-active lane (open-ended bounds) - SHOULD match.
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="98101",
+            service_type="Hotshot",
+            rate=199.0,
+        )
+    )
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch,
+        {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0},
+    )
+    form = _form(routing_type_1="SC to SC")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.established_rate == 199.0
+    assert leg.winner_mode == "Established"
+
+
 def test_missing_lab_code_skips_leg(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

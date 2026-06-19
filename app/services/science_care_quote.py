@@ -14,9 +14,15 @@ freight pricing. Existing quote service code is not modified.
 from __future__ import annotations
 
 import json
+import logging
 import math
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Mapping
+
+from sqlalchemy import or_
+
+logger = logging.getLogger(__name__)
 
 from app.models import (
     RATE_SET_SCIENCE_CARE,
@@ -304,10 +310,16 @@ def _cheapest_for_leg(
 def _lookup_established(
     origin_zip: str, dest_zip: str
 ) -> float | None:
-    """Return the lowest Established Lane rate that covers a leg."""
+    """Return the lowest Established Lane rate that covers a leg today.
+
+    Honours ``effective_from`` / ``effective_to`` so expired or
+    not-yet-active rates don't leak into the rollup. A NULL bound is
+    treated as open-ended (no lower or upper limit).
+    """
 
     if not origin_zip or not dest_zip:
         return None
+    today = date.today()
     rows = (
         SCEstablishedLane.query.filter_by(
             rate_set=RATE_SET_SCIENCE_CARE,
@@ -315,6 +327,16 @@ def _lookup_established(
             dest_zip=dest_zip,
         )
         .filter(SCEstablishedLane.service_type.in_(["Air", "Hotshot", "Any"]))
+        .filter(
+            or_(
+                SCEstablishedLane.effective_from.is_(None),
+                SCEstablishedLane.effective_from <= today,
+            ),
+            or_(
+                SCEstablishedLane.effective_to.is_(None),
+                SCEstablishedLane.effective_to >= today,
+            ),
+        )
         .all()
     )
     rates = [float(r.rate) for r in rows if r.rate is not None]
@@ -452,12 +474,18 @@ def compute_sc_multileg(
             request_ip=request_ip,
         )
 
+        # NOTE: do NOT call db.session.rollback() in these except handlers.
+        # create_quote() manages its own session and commits internally, so
+        # a rollback here would only affect db.session - which already
+        # holds the pre-cached SCTissueCode / SCBoxType / SCConsumable /
+        # SCAccessorialMap / SCLab instances. Rolling back would expire
+        # every one of them, forcing N+1 SELECTs on the next iteration.
         try:
             air_quote, _air_meta = create_quote(quote_type="Air", **common)
             result.air_quote = air_quote
         except Exception as exc:  # noqa: BLE001 - per-leg isolation
+            logger.exception("Air quote failed for SC leg %d", n)
             result.error = f"Air quote failed: {exc}"
-            db.session.rollback()
 
         try:
             hot_quote, _hot_meta = create_quote(
@@ -465,9 +493,9 @@ def compute_sc_multileg(
             )
             result.hotshot_quote = hot_quote
         except Exception as exc:  # noqa: BLE001
+            logger.exception("Hotshot quote failed for SC leg %d", n)
             err = f"Hotshot quote failed: {exc}"
             result.error = f"{result.error}; {err}" if result.error else err
-            db.session.rollback()
 
         result.established_rate = _lookup_established(
             result.origin_zip, result.dest_zip
