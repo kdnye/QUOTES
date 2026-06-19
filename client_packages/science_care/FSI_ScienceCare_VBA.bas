@@ -84,11 +84,12 @@ Private Const SHIPMENT_TAB_COUNT As Long = 7
 ' total cell sums those rows.
 '   SUMMARY_FIRST_ROW = 44   -> SHIPMENT 1 lands in C44, SHIPMENT 2 in C45, ...
 '   SUMMARY_COL       = "C"
-'   SUMMARY_TOTAL     = "C51" (typically SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT)
-Private Const SUMMARY_SHEET      As String = "SHIPMENT 1"
-Private Const SUMMARY_FIRST_ROW  As Long   = 44
-Private Const SUMMARY_COL        As String = "C"
-Private Const SUMMARY_TOTAL_CELL As String = "C51"
+' The grand-total row is computed at runtime as
+' SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT, so bumping SHIPMENT_TAB_COUNT
+' shifts the total down instead of overwriting the last shipment row.
+Private Const SUMMARY_SHEET     As String = "SHIPMENT 1"
+Private Const SUMMARY_FIRST_ROW As Long   = 44
+Private Const SUMMARY_COL       As String = "C"
 
 ' Established-lane VLOOKUP cell on each SHIPMENT tab. Holds either the
 ' numeric lane price or the string "N/A". Folded into the cheapest-freight
@@ -627,6 +628,21 @@ Private Sub UpdateSummaryTable()
     On Error GoTo 0
     If summarySheet Is Nothing Then Exit Sub
 
+    ' Capture Application state and suppress redraws/events/auto-calc for
+    ' the duration of the writes - matters most in the single-tab code
+    ' path, where the parent macro hasn't already done so. CleanUp always
+    ' restores, even if a runtime error fires mid-write (e.g. protected
+    ' summary sheet).
+    Dim prevScreen As Boolean, prevEvents As Boolean, prevCalc As Long
+    prevScreen = Application.ScreenUpdating
+    prevEvents = Application.EnableEvents
+    prevCalc = Application.Calculation
+
+    On Error GoTo CleanUp
+    Application.ScreenUpdating = False
+    Application.EnableEvents = False
+    Application.Calculation = xlCalculationManual
+
     Dim grandTotal As Double
     grandTotal = 0
 
@@ -636,7 +652,7 @@ Private Sub UpdateSummaryTable()
         Set ws = Nothing
         On Error Resume Next
         Set ws = ThisWorkbook.Sheets("SHIPMENT " & n)
-        On Error GoTo 0
+        On Error GoTo CleanUp
 
         Dim cheapest As Double
         cheapest = 0
@@ -646,7 +662,15 @@ Private Sub UpdateSummaryTable()
         grandTotal = grandTotal + cheapest
     Next n
 
-    summarySheet.Range(SUMMARY_TOTAL_CELL).Value = grandTotal
+    ' Total row sits immediately after the last shipment row, so growing
+    ' SHIPMENT_TAB_COUNT shifts it down rather than colliding with the
+    ' last per-shipment row.
+    summarySheet.Range(SUMMARY_COL & (SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT)).Value = grandTotal
+
+CleanUp:
+    Application.ScreenUpdating = prevScreen
+    Application.EnableEvents = prevEvents
+    Application.Calculation = prevCalc
 End Sub
 
 

@@ -113,7 +113,7 @@ Summary rollup on **SHIPMENT 1** (rewritten by the macro after every quote):
 |---|---|
 | **C44** | Cheapest of SHIPMENT 1's `{C40 Air, C41 Hotshot, C42 Established Lane}` |
 | **C45–C50** | Same calculation for SHIPMENT 2 through SHIPMENT 7 |
-| **C51** | Grand total — sum of `C44:C50` |
+| **C51** | Grand total — sum of `C44:C50` (row computed dynamically as `SUMMARY_FIRST_ROW + SHIPMENT_TAB_COUNT`, so bumping the tab count shifts the total down rather than overwriting the last shipment row) |
 
 `CheapestFreight` skips zero, blank, error, `"N/A"`, and non-numeric values — so a skipped international shipment or a missing established-lane row contributes 0 instead of breaking the row. The macro overwrites the legacy in-sheet formulas that broke when the static rate-chart tabs were removed.
 
