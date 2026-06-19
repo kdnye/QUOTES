@@ -126,8 +126,18 @@ Public Sub RunAllShipmentQuotes()
         Exit Sub
     End If
 
+    ' DoEvents below lets Excel process clicks, so guard against a second
+    ' click on the batch button mid-run starting a nested execution.
+    Static isRunning As Boolean
+    If isRunning Then Exit Sub
+    isRunning = True
+
     Dim prevCalc As Long
     prevCalc = Application.Calculation
+
+    ' Any unexpected error from here on jumps to CleanUp so the global
+    ' Application state is restored before the macro returns.
+    On Error GoTo CleanUp
     Application.ScreenUpdating = False
     Application.Calculation = xlCalculationManual
     Application.EnableEvents = False
@@ -145,7 +155,7 @@ Public Sub RunAllShipmentQuotes()
         Set ws = Nothing
         On Error Resume Next
         Set ws = ThisWorkbook.Sheets(tabName)
-        On Error GoTo 0
+        On Error GoTo CleanUp
 
         If ws Is Nothing Then
             missing = missing + 1
@@ -178,6 +188,21 @@ Public Sub RunAllShipmentQuotes()
            "Failed:    " & failed & _
            IIf(missing > 0, vbLf & "Missing tabs: " & missing, "") & vbLf & vbLf & _
            summary, vbInformation, "FSI Quote"
+    isRunning = False
+    Exit Sub
+
+CleanUp:
+    Dim errNum As Long, errDesc As String
+    errNum = Err.Number
+    errDesc = Err.Description
+    Application.Calculation = prevCalc
+    Application.EnableEvents = True
+    Application.ScreenUpdating = True
+    isRunning = False
+    If errNum <> 0 Then
+        MsgBox "Batch quote aborted: " & errDesc & " (Err " & errNum & ")", _
+               vbCritical, "FSI Quote"
+    End If
 End Sub
 
 
