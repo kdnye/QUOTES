@@ -674,6 +674,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from app.setup import setup_bp
     from .quotes import quotes_bp
     from app.quote.admin_view import admin_quotes_bp
+    from app.science_care import science_care_bp
 
     csrf.exempt(api_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
@@ -681,6 +682,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     app.register_blueprint(admin_bp, url_prefix="/admin")
     app.register_blueprint(admin_quotes_bp, url_prefix="/admin")
     app.register_blueprint(quotes_bp, url_prefix="/quotes")
+    app.register_blueprint(science_care_bp, url_prefix="/sc")
     app.register_blueprint(help_bp, url_prefix="/help")
     app.register_blueprint(setup_bp)
 

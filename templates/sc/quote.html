@@ -1,0 +1,192 @@
+{% extends "base.html" %}
+
+{% block title %}Science Care Multi-Lab Quote{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+  <div>
+    <h1 class="h3 mb-1">Science Care Multi-Lab Quote</h1>
+    <p class="text-body-secondary mb-0">
+      Quote up to {{ leg_count }} shipment legs in one pass. Each leg is
+      priced as the cheapest of Air, Hotshot, or your Established Lane
+      rate (with the SC-to-SC routing override).
+    </p>
+  </div>
+  {% if current_user.is_sc_admin or current_user.is_admin %}
+  <a class="btn btn-outline-secondary" href="{{ url_for('science_care.sc_reference_index') }}">
+    Manage reference data
+  </a>
+  {% endif %}
+</div>
+
+<datalist id="sc-lab-codes">
+  {% for lab in labs %}
+  <option value="{{ lab.lab_code }}" label="{{ lab.lab_name or '' }}"></option>
+  {% endfor %}
+</datalist>
+
+<form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_form') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+  <div class="accordion mb-4" id="sc-shipments">
+    {% for leg in legs %}
+    <div class="accordion-item">
+      <h2 class="accordion-header" id="sc-leg-heading-{{ leg }}">
+        <button class="accordion-button {% if not loop.first %}collapsed{% endif %}"
+                type="button" data-bs-toggle="collapse"
+                data-bs-target="#sc-leg-{{ leg }}"
+                aria-expanded="{{ 'true' if loop.first else 'false' }}"
+                aria-controls="sc-leg-{{ leg }}">
+          <span class="me-3 fw-semibold">SHIPMENT {{ leg }}</span>
+          <span id="sc-leg-summary-{{ leg }}" class="small text-body-secondary">
+            Lab — Destination — Winner
+          </span>
+        </button>
+      </h2>
+      <div id="sc-leg-{{ leg }}"
+           class="accordion-collapse collapse {% if loop.first %}show{% endif %}"
+           aria-labelledby="sc-leg-heading-{{ leg }}">
+        <div class="accordion-body">
+          <div class="row g-3 mb-3">
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="lab_code_{{ leg }}">SC Lab</label>
+              <input class="form-control"
+                     list="sc-lab-codes"
+                     id="lab_code_{{ leg }}"
+                     name="lab_code_{{ leg }}"
+                     hx-get="{{ url_for('science_care.sc_lab_lookup_partial') }}"
+                     hx-trigger="change delay:200ms"
+                     hx-target="#sc-lab-origin-{{ leg }}"
+                     hx-swap="innerHTML"
+                     hx-vals='{"leg": {{ leg }}}'
+                     autocomplete="off" />
+              <small id="sc-lab-origin-{{ leg }}" class="form-text text-body-secondary"></small>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="dest_zip_{{ leg }}">Destination ZIP</label>
+              <input class="form-control"
+                     id="dest_zip_{{ leg }}"
+                     name="dest_zip_{{ leg }}"
+                     inputmode="numeric"
+                     pattern="\d{5}"
+                     maxlength="5" />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="routing_type_{{ leg }}">Shipment type</label>
+              <select class="form-select"
+                      id="routing_type_{{ leg }}"
+                      name="routing_type_{{ leg }}">
+                <option value="">— select —</option>
+                <option>Outbound</option>
+                <option>SC to SC</option>
+                <option>Inbound</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label" for="temp_mode_{{ leg }}">Mode</label>
+              <select class="form-select"
+                      id="temp_mode_{{ leg }}"
+                      name="temp_mode_{{ leg }}">
+                <option value="frozen">Frozen</option>
+                <option value="rtu">Ready to Use</option>
+              </select>
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label" for="intl_country_{{ leg }}">International country (skip if filled)</label>
+              <input class="form-control"
+                     id="intl_country_{{ leg }}"
+                     name="intl_country_{{ leg }}"
+                     placeholder="e.g. France" />
+            </div>
+          </div>
+
+          <fieldset class="mb-3">
+            <legend class="h6">Accessorials</legend>
+            <div class="d-flex flex-wrap gap-3">
+              {% for field, label in accessorials %}
+              <div class="form-check">
+                <input class="form-check-input"
+                       type="checkbox"
+                       value="Y"
+                       id="acc_{{ field }}_{{ leg }}"
+                       name="acc_{{ field }}_{{ leg }}" />
+                <label class="form-check-label" for="acc_{{ field }}_{{ leg }}">{{ label }}</label>
+              </div>
+              {% endfor %}
+            </div>
+          </fieldset>
+
+          <div class="mb-2 d-flex justify-content-between align-items-center">
+            <h3 class="h6 mb-0">Tissue items</h3>
+            <button type="button"
+                    class="btn btn-sm btn-outline-primary sc-add-tissue"
+                    data-leg="{{ leg }}"
+                    hx-get="{{ url_for('science_care.sc_tissue_row_partial') }}"
+                    hx-target="#tissue-rows-{{ leg }} tbody"
+                    hx-swap="beforeend"
+                    hx-vals='{"leg": {{ leg }}, "i": 2}'>
+              + Add tissue row
+            </button>
+          </div>
+
+          <div id="tissue-rows-{{ leg }}" class="table-responsive">
+            <table class="table table-sm align-middle">
+              <thead>
+                <tr>
+                  <th style="width:20%">Tissue code</th>
+                  <th style="width:30%">Description</th>
+                  <th style="width:15%">Qty</th>
+                  <th style="width:15%">Unit weight (lb)</th>
+                  <th style="width:20%">Default box</th>
+                </tr>
+              </thead>
+              <tbody>
+                {% with i = 1, prefill = None %}
+                  {% include "sc/_tissue_row.html" %}
+                {% endwith %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="d-flex gap-3">
+    <button class="btn btn-primary"
+            type="submit"
+            hx-post="{{ url_for('science_care.sc_quote_form') }}"
+            hx-include="#sc-form"
+            hx-target="#sc-results"
+            hx-swap="innerHTML"
+            disabled>
+      Generate quotes (orchestration lands in next PR)
+    </button>
+  </div>
+</form>
+
+<section id="sc-results" class="mt-4"></section>
+
+<script>
+  // Wire HTMX CSRF header off the existing meta tag in base.html.
+  document.body.addEventListener("htmx:configRequest", (event) => {
+    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
+    if (token) {
+      event.detail.headers["X-CSRFToken"] = token;
+    }
+  });
+
+  // Update each "Add tissue row" button's hx-vals before the request so
+  // the new row's index reflects the current count.
+  document.querySelectorAll(".sc-add-tissue").forEach((button) => {
+    button.addEventListener("htmx:configRequest", (event) => {
+      const leg = parseInt(button.dataset.leg, 10);
+      const tbody = document.querySelector(`#tissue-rows-${leg} tbody`);
+      const nextIndex = (tbody ? tbody.children.length : 0) + 1;
+      event.detail.parameters.leg = leg;
+      event.detail.parameters.i = nextIndex;
+    });
+  });
+</script>
+{% endblock %}
