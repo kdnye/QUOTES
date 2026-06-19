@@ -148,12 +148,20 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
         # commit OR rollback, so a crash mid-upgrade can't orphan the
         # lock and a `finally`-based unlock can't mask the original
         # exception by raising during cleanup on a dead connection.
+        #
+        # We pass `lock_conn` into _stamp_and_upgrade so its inspector
+        # reuses our held connection instead of borrowing a second one
+        # from the pool - critical when DB_POOL_SIZE=1 and overflow=0,
+        # where the inspector's checkout would deadlock against our
+        # held lock connection. Alembic's command.upgrade() builds its
+        # own engine from the URL, so it's not affected by the app's
+        # pool.
         with active_engine.begin() as lock_conn:
             lock_conn.execute(
                 text("SELECT pg_advisory_xact_lock(:key)"),
                 {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
             )
-            _stamp_and_upgrade(config, active_engine)
+            _stamp_and_upgrade(config, active_engine, inspect_conn=lock_conn)
     else:
         _stamp_and_upgrade(config, active_engine)
 
@@ -165,7 +173,9 @@ def _is_postgres(active_engine: Engine) -> bool:
 
 
 def _stamp_and_upgrade(
-    config: AlembicConfig, active_engine: Engine
+    config: AlembicConfig,
+    active_engine: Engine,
+    inspect_conn=None,
 ) -> None:
     """Run Alembic's stamp-if-bare + upgrade-to-head sequence.
 
@@ -174,9 +184,14 @@ def _stamp_and_upgrade(
     other dialects (SQLite, etc.). All schema inspection happens after
     the lock is held so a worker that wins the race for the lock sees
     an up-to-date view of ``alembic_version``.
+
+    When ``inspect_conn`` is supplied (the Postgres lock path), the
+    inspector reuses that connection so we don't borrow a second one
+    from the pool while the advisory lock is held. A single-slot pool
+    (``DB_POOL_SIZE=1``, no overflow) would otherwise deadlock here.
     """
 
-    inspector = inspect(active_engine)
+    inspector = inspect(inspect_conn if inspect_conn is not None else active_engine)
     existing_tables = [table for table in inspector.get_table_names() if table]
     has_version_table = "alembic_version" in existing_tables
 

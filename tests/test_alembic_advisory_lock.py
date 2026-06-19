@@ -64,8 +64,11 @@ def test_postgres_path_acquires_advisory_lock(
     sql = str(calls[0].args[0])
     assert "pg_advisory_xact_lock" in sql
     assert calls[0].args[1] == {"key": db_module._ALEMBIC_ADVISORY_LOCK_KEY}
-    # The stamp+upgrade ran exactly once, inside the lock.
+    # The stamp+upgrade ran exactly once, inside the lock, and was
+    # passed the held connection so the inspector doesn't borrow a
+    # second one from the pool.
     stamp_and_upgrade.assert_called_once()
+    assert stamp_and_upgrade.call_args.kwargs.get("inspect_conn") is lock_conn
 
 
 def test_postgres_path_releases_lock_on_failure(
@@ -102,6 +105,31 @@ def test_non_postgres_path_skips_lock(
     # No transaction opened - no advisory lock on non-Postgres dialects.
     engine.begin.assert_not_called()
     stamp_and_upgrade.assert_called_once()
+
+
+def test_postgres_path_reuses_lock_conn_for_inspector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression: with DB_POOL_SIZE=1 + DB_POOL_MAX_OVERFLOW=0, the
+    # inspector inside _stamp_and_upgrade must NOT borrow a second
+    # connection from the pool while lock_conn is held - it would
+    # deadlock. Verify the lock_conn is threaded into the helper via
+    # inspect_conn=.
+    engine = _make_engine("postgresql")
+    lock_conn = MagicMock()
+    engine.begin.return_value.__enter__.return_value = lock_conn
+    engine.begin.return_value.__exit__.return_value = False
+
+    captured: dict = {}
+
+    def fake_stamp_and_upgrade(config, active_engine, inspect_conn=None):
+        captured["inspect_conn"] = inspect_conn
+
+    monkeypatch.setattr(db_module, "_stamp_and_upgrade", fake_stamp_and_upgrade)
+
+    db_module._run_alembic_upgrade(engine)
+
+    assert captured["inspect_conn"] is lock_conn
 
 
 def test_advisory_lock_key_is_stable() -> None:
