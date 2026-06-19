@@ -9,7 +9,7 @@
       Update the contact details tied to your quoting account. Changes take effect immediately and will be used the next time you request a quote.
     </p>
     <form method="post" novalidate>
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      {{ csrf_input() }}
       <div class="row g-3">
         <div class="col-md-6">
           <label class="form-label" for="first_name">First name</label>

@@ -37,7 +37,7 @@
 </datalist>
 
 <form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_submit') }}">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  {{ csrf_input() }}
 
   <div class="accordion mb-4" id="sc-shipments">
     {% for leg in legs %}
@@ -217,13 +217,8 @@
 </section>
 
 <script>
-  // Wire HTMX CSRF header off the existing meta tag in base.html.
-  document.body.addEventListener("htmx:configRequest", (event) => {
-    const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content");
-    if (token) {
-      event.detail.headers["X-CSRFToken"] = token;
-    }
-  });
+  // HTMX CSRF wiring lives in base.html now (every page that loads
+  // HTMX gets it for free).
 
   // Update each "Add tissue row" button's hx-vals before the request so
   // the new row's index reflects the current count.

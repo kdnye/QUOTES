@@ -22,7 +22,7 @@
   </p>
   {% if admin_fee > 0 %}
   <p class="mb-0">
-    The total includes ${{ '%.2f'|format(admin_fee) }} email admin fee when you send this request.
+    The total includes {{ admin_fee | currency }} email admin fee when you send this request.
   </p>
   {% else %}
   <p class="mb-0">This request keeps the quoted amount without an added admin fee.</p>

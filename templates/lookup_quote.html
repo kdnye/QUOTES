@@ -11,7 +11,7 @@
         </p>
 
         <form method="post" class="row g-3">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          {{ csrf_input() }}
 
           <div class="col-12">
             <label for="lookup_mode" class="form-label">Lookup Mode</label>

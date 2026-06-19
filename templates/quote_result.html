@@ -27,7 +27,7 @@
 
 <div class="fsi-summary">
   <p class="fsi-body mb-2 fs-5">Pieces: {{ metadata.pieces }}</p>
-  <div class="quote-total-highlight fsi-summary__total p-3 rounded shadow-sm"> <p class="fsi-section-title fsi-summary__label fw-bold mb-2 fs-4">Quote Total</p> <p class="quote-total-amount fsi-summary__amount display-6 fw-bold text-primary">${{ '%.2f'|format(grand_total) }}</p> </div>
+  <div class="quote-total-highlight fsi-summary__total p-3 rounded shadow-sm"> <p class="fsi-section-title fsi-summary__label fw-bold mb-2 fs-4">Quote Total</p> <p class="quote-total-amount fsi-summary__amount display-6 fw-bold text-primary">{{ grand_total | currency }}</p> </div>
 </div>
 </div>
 <div class="fsi-notice fsi-notice--warning mt-2" role="note">
@@ -38,7 +38,7 @@
   </small>
 </div>
 <div class="mt-3">
-  <p class="fsi-body"><strong>Base Charge:</strong> ${{ '%.2f'|format(base_total) }}</p>
+  <p class="fsi-body"><strong>Base Charge:</strong> {{ base_total | currency }}</p>
 
   {% if show_cost_breakdown %}
   <div class="fsi-card mb-3 p-3">
@@ -47,7 +47,7 @@
       <tbody>
         <tr>
           <td class="text-muted">Base Rate</td>
-          <td class="text-end fw-semibold">${{ '%.2f'|format(metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else (quote.total - (metadata.accessorial_total|default(0)))) }}</td>
+          <td class="text-end fw-semibold">{{ metadata.details.base_rate if metadata.details and metadata.details.base_rate is defined else (quote.total - (metadata.accessorial_total|default(0))) | currency }}</td>
         </tr>
         {% if metadata.details and metadata.details.origin_charge is defined and metadata.details.origin_charge %}
         <tr>
@@ -57,7 +57,7 @@
             <small class="text-muted">(zone {{ metadata.details.origin_beyond }})</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.details.origin_charge) }}</td>
+          <td class="text-end">{{ metadata.details.origin_charge | currency }}</td>
         </tr>
         {% endif %}
         {% if metadata.details and metadata.details.dest_charge is defined and metadata.details.dest_charge %}
@@ -68,7 +68,7 @@
             <small class="text-muted">(zone {{ metadata.details.dest_beyond }})</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.details.dest_charge) }}</td>
+          <td class="text-end">{{ metadata.details.dest_charge | currency }}</td>
         </tr>
         {% endif %}
         {% if metadata.details and metadata.details.fuel_surcharge_base_amount %}
@@ -79,7 +79,7 @@
             <small class="text-muted">({{ '%.1f'|format(metadata.details.fuel_surcharge_base_pct * 100) }}%)</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.details.fuel_surcharge_base_amount) }}</td>
+          <td class="text-end">{{ metadata.details.fuel_surcharge_base_amount | currency }}</td>
         </tr>
         {% endif %}
         {% if metadata.details and metadata.details.vsc_amount %}
@@ -90,7 +90,7 @@
             <small class="text-muted">({{ '%.1f'|format(metadata.details.vsc_pct * 100) }}%)</small>
             {% endif %}
           </td>
-          <td class="text-end">${{ '%.2f'|format(metadata.details.vsc_amount) }}</td>
+          <td class="text-end">{{ metadata.details.vsc_amount | currency }}</td>
         </tr>
         {% endif %}
         {% if metadata.details and metadata.details.total_fsc_applied %}
@@ -103,13 +103,13 @@
         {% for acc_name, acc_cost in metadata.accessorials.items() %}
         <tr>
           <td class="text-muted">{{ acc_name }}</td>
-          <td class="text-end">${{ '%.2f'|format(acc_cost) }}</td>
+          <td class="text-end">{{ acc_cost | currency }}</td>
         </tr>
         {% endfor %}
         {% endif %}
         <tr class="border-top">
           <td class="fw-bold">Quote Total</td>
-          <td class="text-end fw-bold">${{ '%.2f'|format(quote.total) }}</td>
+          <td class="text-end fw-bold">{{ quote.total | currency }}</td>
         </tr>
       </tbody>
     </table>
@@ -140,10 +140,10 @@
   <h2 class="fsi-section-title h3">Accessorials</h2>
   <ul>
   {% for name, cost in metadata.accessorials.items() %}
-    <li>{{ name }}: ${{ '%.2f'|format(cost) }}</li>
+    <li>{{ name }}: {{ cost | currency }}</li>
   {% endfor %}
   </ul>
-  <p class="fsi-body"><strong>Accessorials Total:</strong> ${{ '%.2f'|format(metadata.accessorial_total) }}</p>
+  <p class="fsi-body"><strong>Accessorials Total:</strong> {{ metadata.accessorial_total | currency }}</p>
   {% endif %}
 
   <!--"##{% if metadata.details %}"
@@ -182,7 +182,7 @@
         Send a plain-text receipt of this quote to your registered email address ({{ current_user.email }}).
       </p>
       <form method="post" action="{{ url_for('quotes.email_quote_to_me', quote_id=quote.quote_id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        {{ csrf_input() }}
         <button type="submit" class="btn fsi-button-secondary">Send to Myself</button>
       </form>
     </div>
@@ -198,7 +198,7 @@
         available to Freight Services staff accounts only.
       </p>
       <form method="post" action="{{ url_for('send_email_route') }}" class="row g-3 align-items-end">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        {{ csrf_input() }}
         <input type="hidden" name="quote_id" value="{{ quote.quote_id }}" />
         <input type="hidden" name="origin_zip" value="{{ quote.origin }}" />
         <input type="hidden" name="destination_zip" value="{{ quote.destination }}" />

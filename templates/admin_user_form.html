@@ -4,7 +4,7 @@
 <h1>{{ 'Edit User' if user else 'Add User' }}</h1>
 {% set data = form_data or {} %}
 <form method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {{ csrf_input() }}
   <div class="mb-3">
     <label for="email" class="form-label">Email</label>
     <a
@@ -218,7 +218,7 @@
 
 <div class="d-flex gap-2 flex-wrap">
   <form method="post" action="{{ url_for('admin.generate_api_key', user_id=user.id) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {{ csrf_input() }}
     <button type="submit" class="btn btn-primary btn-sm"
       onclick="return confirm('{{ 'Regenerate' if user.api_key else 'Generate' }} API key for {{ user.email }}? {{ 'The old key will stop working immediately.' if user.api_key else '' }}')">
       {{ 'Regenerate' if user.api_key else 'Generate' }} API Key
@@ -227,14 +227,14 @@
 
   {% if user.api_key %}
     <form method="post" action="{{ url_for('admin.toggle_api_access', user_id=user.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ csrf_input() }}
       <button type="submit" class="btn btn-outline-secondary btn-sm">
         {{ 'Disable' if user.api_enabled else 'Enable' }} Access
       </button>
     </form>
 
     <form method="post" action="{{ url_for('admin.revoke_api_key', user_id=user.id) }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {{ csrf_input() }}
       <button type="submit" class="btn btn-outline-danger btn-sm"
         onclick="return confirm('Revoke API key for {{ user.email }}? This cannot be undone — a new key must be generated.')">
         Revoke Key

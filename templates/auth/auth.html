@@ -5,7 +5,7 @@
     <article>
       <h3>Login</h3>
       <form method="post" action="{{ url_for('auth_bp.login') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        {{ csrf_input() }}
         <label>Email <input type="email" name="email" required></label>
         <label>Password <input type="password" name="password" required></label>
         <button class="btn" type="submit">Login</button>
@@ -14,7 +14,7 @@
     <article>
       <h3>Register</h3>
       <form method="post" action="{{ url_for('auth_bp.register') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        {{ csrf_input() }}
         <label>Name <input name="name" required></label>
         <label>Email <input type="email" name="email" required></label>
         <label>Password <input type="password" name="password" required></label>

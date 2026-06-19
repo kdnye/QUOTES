@@ -31,7 +31,7 @@
         <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_beyond_rate', br_id=br.id) }}">Edit</a></td>
         <td>
           <form method="post" action="{{ url_for('admin.delete_beyond_rate', br_id=br.id) }}" onsubmit="return confirm('Delete this beyond rate?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ csrf_input() }}
             <button class="btn btn-sm btn-danger" type="submit">Delete</button>
           </form>
         </td>

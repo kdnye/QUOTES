@@ -15,7 +15,7 @@
           </a>
           {% endif %}
           <form method="post" novalidate class="fsi-body">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ csrf_input() }}
             <div class="mb-3">
               <label class="form-label" for="email">Email address</label>
               <input

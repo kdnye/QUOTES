@@ -66,7 +66,7 @@
             restart to take effect.
           </p>
           <form method="post" action="{{ url_for('setup.setup_status') }}">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            {{ csrf_input() }}
             {% for field in override_fields %}
               <div class="mb-3">
                 <label class="form-label" for="{{ field.name }}">{{ field.label }}</label>
