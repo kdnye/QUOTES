@@ -40,7 +40,6 @@ from flask_login import current_user, login_required
 from app.admin import CSVUploadForm, _parse_csv_rows
 from app.models import (
     RATE_SET_SCIENCE_CARE,
-    RateUpload,
     SCAccessorialMap,
     SCBoxType,
     SCLab,
@@ -50,7 +49,7 @@ from app.models import (
 )
 from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import compute_sc_multileg
-from scripts.import_air_rates import save_unique
+from app.services.bulk_import import record_rate_upload, save_unique
 
 from . import science_care_bp
 from .csv_admin import (
@@ -522,11 +521,8 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
                             "skipped)."
                         )
 
-                db.session.add(
-                    RateUpload(
-                        table_name=spec.name,
-                        filename=file_storage.filename,
-                    )
+                record_rate_upload(
+                    db.session, spec.name, file_storage.filename
                 )
                 db.session.commit()
             except Exception as exc:  # noqa: BLE001 - re-surfaced on form

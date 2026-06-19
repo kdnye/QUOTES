@@ -9,7 +9,7 @@ from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from argparse import ArgumentParser
-from typing import Any, Iterable, List, Sequence, Tuple, Type, TypeVar
+from typing import Any, Iterable, List, Sequence, Tuple
 
 import logging
 import pandas as pd
@@ -17,12 +17,11 @@ from sqlalchemy.orm import Session as SASession
 
 from app import create_app
 from app.models import db, AirCostZone, ZipZone, CostZone, BeyondRate, VscZone
+from app.services.bulk_import import save_unique  # noqa: F401 - re-exported for back-compat
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 
 def normalize_zip_for_lookup(raw_zip: Any) -> str | None:
@@ -370,56 +369,6 @@ def _normalize_rate_sets(df: pd.DataFrame) -> pd.Series:
         .str.strip()
         .apply(normalize_rate_set)
     )
-
-
-def save_unique(
-    session: SASession,
-    model: Type[T],
-    objects: Iterable[T],
-    unique_attr: str | Sequence[str],
-) -> Tuple[int, int]:
-    """Persist only new records for a given model.
-
-    This optimized implementation loads all existing keys up front and keeps an
-    in-memory set to check for duplicates. It avoids issuing a ``SELECT`` query
-    for every row, dramatically speeding up bulk imports such as the 28k ZIP
-    codes in the original rate workbook.
-
-    Args:
-        session: Active :class:`sqlalchemy.orm.Session` used for database I/O.
-        model: SQLAlchemy model class to query for existing rows.
-        objects: Iterable of model instances to insert.
-        unique_attr: Model attribute that uniquely identifies a row.
-
-    Returns:
-        A tuple of ``(inserted, skipped)`` counts.
-    """
-
-    attrs = (unique_attr,) if isinstance(unique_attr, str) else tuple(unique_attr)
-    objs = list(objects)
-    query_columns = [getattr(model, attr) for attr in attrs]
-    rows = session.query(*query_columns).all()
-    existing_keys = {
-        row if len(attrs) > 1 else row[0] for row in rows  # type: ignore[index]
-    }
-    to_insert: List[T] = []
-    inserted = 0
-    skipped = 0
-    for obj in objs:
-        values = tuple(getattr(obj, attr) for attr in attrs)
-        key = values if len(attrs) > 1 else values[0]
-        key_display = key[0] if isinstance(key, tuple) else key
-        if key in existing_keys:
-            logger.info("Skipped existing %s: %s", model.__name__, key_display)
-            skipped += 1
-        else:
-            logger.info("Inserted %s: %s", model.__name__, key_display)
-            existing_keys.add(key)
-            to_insert.append(obj)
-            inserted += 1
-    if to_insert:
-        session.bulk_save_objects(to_insert)
-    return inserted, skipped
 
 
 def import_csvs(directory: Path) -> None:

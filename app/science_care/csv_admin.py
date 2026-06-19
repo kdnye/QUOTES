@@ -30,6 +30,8 @@ from app.admin import (
     TableSpec,
     _is_missing,
     _parse_bool_flag,
+    _parse_optional_float,
+    _parse_optional_int,
     _parse_required_float,
     _parse_required_int,
     _parse_required_string,
@@ -47,41 +49,31 @@ from app.models import (
 
 
 # --- Custom parsers ----------------------------------------------------------
-
-
-# The four parsers below all defer to `_is_missing` from app.admin. That
-# helper catches pandas' float NaN sentinel (which empty CSV cells
-# decode into) on top of None / blank strings - a plain
-# ``value is None`` check would let NaN through and `str(NaN)` would
-# write the literal "nan" to the database.
+#
+# _parse_optional_float / _parse_optional_int are imported above from
+# app.admin - their behavior is identical (check _is_missing, delegate
+# to the required variant) and re-implementing them here would invite
+# silent drift.
+#
+# _parse_optional_string is intentionally NOT shared: app.admin's
+# version returns "" for a whitespace-only cell, while the SC version
+# below returns None so the column stores NULL (the SC schema's
+# nullable string columns mean None and "" are semantically different).
+# A future refactor could collapse this once admin agrees on the
+# nullable semantics.
 
 
 def _parse_optional_string(value: Any) -> str | None:
     """Return ``value`` as a stripped string, or ``None`` when blank.
 
     Used for columns that map to nullable ``db.String`` attributes
-    (e.g. ``SCLab.address``, ``SCTissueCode.notes``).
+    (e.g. ``SCLab.address``, ``SCTissueCode.notes``). Whitespace-only
+    cells map to ``None`` so the DB stores NULL.
     """
 
     if _is_missing(value):
         return None
     return str(value).strip() or None
-
-
-def _parse_optional_float(value: Any) -> float | None:
-    """Return ``value`` as a float, or ``None`` when blank."""
-
-    if _is_missing(value):
-        return None
-    return _parse_required_float(value)
-
-
-def _parse_optional_int(value: Any) -> int | None:
-    """Return ``value`` as an int, or ``None`` when blank."""
-
-    if _is_missing(value):
-        return None
-    return _parse_required_int(value)
 
 
 def _parse_optional_date(value: Any) -> date | None:
