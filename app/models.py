@@ -37,7 +37,18 @@ RATE_SET_LOGOS_TABLE = "rate_set_logos"
 FUEL_SURCHARGES_TABLE = "fuel_surcharges"
 VSC_ZONES_TABLE = "vsc_zones"
 
+# Science Care multi-lab quote tables.
+SC_LABS_TABLE = "sc_labs"
+SC_TISSUE_CODES_TABLE = "sc_tissue_codes"
+SC_BOX_TYPES_TABLE = "sc_box_types"
+SC_CONSUMABLES_TABLE = "sc_consumables"
+SC_ESTABLISHED_LANES_TABLE = "sc_established_lanes"
+SC_ACCESSORIAL_MAP_TABLE = "sc_accessorial_map"
+SC_QUOTE_SESSIONS_TABLE = "sc_quote_sessions"
+SC_QUOTE_SESSION_LEGS_TABLE = "sc_quote_session_legs"
+
 RATE_SET_DEFAULT = "default"
+RATE_SET_SCIENCE_CARE = "science_care"
 
 
 def generate_readable_id():
@@ -125,6 +136,9 @@ class User(UserMixin, db.Model):
     is_active = db.Column(db.Boolean, default=True)
     rate_set = db.Column(
         db.String(50), nullable=False, default=RATE_SET_DEFAULT, index=True
+    )
+    is_sc_admin: Mapped[bool] = db.Column(
+        Boolean, nullable=False, default=False, server_default="0"
     )
     api_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     api_enabled: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
@@ -520,3 +534,256 @@ class RateSetLogo(db.Model):
         onupdate=datetime.utcnow,
         nullable=False,
     )
+
+
+# ============================================================================
+# Science Care multi-lab quote tables.
+#
+# Reference tables (CSV round-tripable via /sc/reference): SCLab, SCTissueCode,
+# SCBoxType, SCConsumable, SCEstablishedLane, SCAccessorialMap.
+# Submission tables (populated post-create_quote, never edited via CSV):
+# SCQuoteSession, SCQuoteSessionLeg.
+#
+# All carry the existing `rate_set` partition column so the tables follow the
+# same multi-tenant pattern as the rate models above. The default value
+# RATE_SET_SCIENCE_CARE makes the SC use case the canonical tenant while
+# leaving room for additional rate-set partitions if other customers ever
+# adopt the same workflow.
+# ============================================================================
+
+
+class SCLab(db.Model):
+    """Science Care lab → origin ZIP plus contact metadata."""
+
+    __tablename__ = SC_LABS_TABLE
+    __table_args__ = (
+        UniqueConstraint("rate_set", "lab_code", name="uq_sc_labs_rate_set_lab_code"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    lab_code = db.Column(db.String(20), nullable=False)
+    lab_name = db.Column(db.String(150))
+    origin_zip = db.Column(db.String(10), nullable=False)
+    address = db.Column(db.String(250))
+    contact_name = db.Column(db.String(120))
+    contact_phone = db.Column(db.String(50))
+    is_active = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.true()
+    )
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCTissueCode(db.Model):
+    """Per-tissue weight + default box-type allocation hint."""
+
+    __tablename__ = SC_TISSUE_CODES_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "tissue_code",
+            name="uq_sc_tissue_codes_rate_set_tissue_code",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tissue_code = db.Column(db.String(40), nullable=False)
+    description = db.Column(db.String(250))
+    unit_weight_lb = db.Column(db.Float, nullable=False)
+    default_box_type_code = db.Column(db.String(20))
+    pieces_per_box = db.Column(db.Integer)
+    notes = db.Column(db.Text)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCBoxType(db.Model):
+    """Allowed shipment box types with dimensions + tare weight."""
+
+    __tablename__ = SC_BOX_TYPES_TABLE
+    __table_args__ = (
+        UniqueConstraint("rate_set", "code", name="uq_sc_box_types_rate_set_code"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(20), nullable=False)
+    label = db.Column(db.String(80))
+    length_in = db.Column(db.Float, nullable=False)
+    width_in = db.Column(db.Float, nullable=False)
+    height_in = db.Column(db.Float, nullable=False)
+    tare_weight_lb = db.Column(
+        db.Float, nullable=False, default=0.0, server_default="0"
+    )
+    max_payload_lb = db.Column(db.Float)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCConsumable(db.Model):
+    """Frozen / RTU dry-ice & gel-pack weight additions per box."""
+
+    __tablename__ = SC_CONSUMABLES_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "consumable_type",
+            "temp_mode",
+            "scope",
+            name="uq_sc_consumables_rate_set_type_mode_scope",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    consumable_type = db.Column(db.String(30), nullable=False)
+    temp_mode = db.Column(db.String(20), nullable=False)
+    scope = db.Column(db.String(20), nullable=False)
+    weight_lb_per_box = db.Column(db.Float, nullable=False)
+    notes = db.Column(db.Text)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCEstablishedLane(db.Model):
+    """Pre-negotiated lab-to-lab freight rates.
+
+    ``service_type`` may be ``Air``, ``Hotshot``, or ``Any``. ``Any`` rows
+    participate in the cheapest-of rollup for both quote modes.
+    """
+
+    __tablename__ = SC_ESTABLISHED_LANES_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "origin_zip",
+            "dest_zip",
+            "service_type",
+            name="uq_sc_lanes_rate_set_origin_dest_service",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    origin_zip = db.Column(db.String(10), nullable=False)
+    dest_zip = db.Column(db.String(10), nullable=False)
+    service_type = db.Column(
+        db.String(10), nullable=False, default="Any", server_default="Any"
+    )
+    rate = db.Column(db.Float, nullable=False)
+    effective_from = db.Column(db.Date)
+    effective_to = db.Column(db.Date)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCAccessorialMap(db.Model):
+    """Maps SC form fields (e.g. ``J3``) to live accessorial names."""
+
+    __tablename__ = SC_ACCESSORIAL_MAP_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "form_field",
+            name="uq_sc_accessorial_map_rate_set_form_field",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    form_field = db.Column(db.String(20), nullable=False)
+    display_label = db.Column(db.String(150), nullable=False)
+    accessorial_name = db.Column(db.String(120), nullable=False)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCQuoteSession(db.Model):
+    """One row per submission of the SC multi-leg quote page."""
+
+    __tablename__ = SC_QUOTE_SESSIONS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"), nullable=False, index=True
+    )
+    submitted_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        server_default=db.func.now(),
+        nullable=False,
+        index=True,
+    )
+    grand_total = db.Column(
+        db.Float, nullable=False, default=0.0, server_default="0"
+    )
+    payload_json = db.Column(db.Text)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCQuoteSessionLeg(db.Model):
+    """One row per shipment leg of an :class:`SCQuoteSession`.
+
+    Links the leg to the underlying Air / Hotshot :class:`Quote` rows
+    produced by ``app.services.quote.create_quote``.
+    """
+
+    __tablename__ = SC_QUOTE_SESSION_LEGS_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "session_id",
+            "leg_index",
+            name="uq_sc_quote_session_legs_session_id_leg_index",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{SC_QUOTE_SESSIONS_TABLE}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    leg_index = db.Column(db.Integer, nullable=False)
+    air_quote_id = db.Column(
+        db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id", ondelete="SET NULL")
+    )
+    hotshot_quote_id = db.Column(
+        db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id", ondelete="SET NULL")
+    )
+    established_rate = db.Column(db.Float)
+    winner_mode = db.Column(db.String(20))
+    winner_total = db.Column(db.Float, default=0.0, server_default="0")
+    skip_reason = db.Column(db.String(60))
