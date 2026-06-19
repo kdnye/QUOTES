@@ -266,9 +266,15 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.Column("leg_index", sa.Integer(), nullable=False),
-        sa.Column("air_quote_id", sa.Integer(), sa.ForeignKey("quotes.id")),
         sa.Column(
-            "hotshot_quote_id", sa.Integer(), sa.ForeignKey("quotes.id")
+            "air_quote_id",
+            sa.Integer(),
+            sa.ForeignKey("quotes.id", ondelete="SET NULL"),
+        ),
+        sa.Column(
+            "hotshot_quote_id",
+            sa.Integer(),
+            sa.ForeignKey("quotes.id", ondelete="SET NULL"),
         ),
         sa.Column("established_rate", sa.Float()),
         sa.Column("winner_mode", sa.String(length=20)),

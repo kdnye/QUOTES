@@ -567,9 +567,15 @@ class SCLab(db.Model):
     address = db.Column(db.String(250))
     contact_name = db.Column(db.String(120))
     contact_phone = db.Column(db.String(50))
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    is_active = db.Column(
+        db.Boolean, nullable=False, default=True, server_default=db.true()
+    )
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -593,7 +599,11 @@ class SCTissueCode(db.Model):
     pieces_per_box = db.Column(db.Integer)
     notes = db.Column(db.Text)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -611,10 +621,16 @@ class SCBoxType(db.Model):
     length_in = db.Column(db.Float, nullable=False)
     width_in = db.Column(db.Float, nullable=False)
     height_in = db.Column(db.Float, nullable=False)
-    tare_weight_lb = db.Column(db.Float, nullable=False, default=0.0)
+    tare_weight_lb = db.Column(
+        db.Float, nullable=False, default=0.0, server_default="0"
+    )
     max_payload_lb = db.Column(db.Float)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -639,7 +655,11 @@ class SCConsumable(db.Model):
     weight_lb_per_box = db.Column(db.Float, nullable=False)
     notes = db.Column(db.Text)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -664,12 +684,18 @@ class SCEstablishedLane(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     origin_zip = db.Column(db.String(10), nullable=False)
     dest_zip = db.Column(db.String(10), nullable=False)
-    service_type = db.Column(db.String(10), nullable=False, default="Any")
+    service_type = db.Column(
+        db.String(10), nullable=False, default="Any", server_default="Any"
+    )
     rate = db.Column(db.Float, nullable=False)
     effective_from = db.Column(db.Date)
     effective_to = db.Column(db.Date)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -690,7 +716,11 @@ class SCAccessorialMap(db.Model):
     display_label = db.Column(db.String(150), nullable=False)
     accessorial_name = db.Column(db.String(120), nullable=False)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -704,12 +734,22 @@ class SCQuoteSession(db.Model):
         db.Integer, db.ForeignKey(f"{USERS_TABLE}.id"), nullable=False, index=True
     )
     submitted_at = db.Column(
-        db.DateTime, default=datetime.utcnow, nullable=False, index=True
+        db.DateTime,
+        default=datetime.utcnow,
+        server_default=db.func.now(),
+        nullable=False,
+        index=True,
     )
-    grand_total = db.Column(db.Float, nullable=False, default=0.0)
+    grand_total = db.Column(
+        db.Float, nullable=False, default=0.0, server_default="0"
+    )
     payload_json = db.Column(db.Text)
     rate_set = db.Column(
-        db.String(50), nullable=False, default=RATE_SET_SCIENCE_CARE, index=True
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
     )
 
 
@@ -737,9 +777,13 @@ class SCQuoteSessionLeg(db.Model):
         index=True,
     )
     leg_index = db.Column(db.Integer, nullable=False)
-    air_quote_id = db.Column(db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id"))
-    hotshot_quote_id = db.Column(db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id"))
+    air_quote_id = db.Column(
+        db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id", ondelete="SET NULL")
+    )
+    hotshot_quote_id = db.Column(
+        db.Integer, db.ForeignKey(f"{QUOTES_TABLE}.id", ondelete="SET NULL")
+    )
     established_rate = db.Column(db.Float)
     winner_mode = db.Column(db.String(20))
-    winner_total = db.Column(db.Float, default=0.0)
+    winner_total = db.Column(db.Float, default=0.0, server_default="0")
     skip_reason = db.Column(db.String(60))

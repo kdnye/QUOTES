@@ -166,7 +166,10 @@ def sc_admin_required(view: Callable) -> Callable:
     """Restrict access to Science Care reference-table maintenance.
 
     Gates ``/sc/reference`` endpoints. Requires either a flagged SC admin
-    (``current_user.is_sc_admin``) or an FSI super-admin (``is_admin``).
+    *whose ``rate_set`` is also ``"science_care"``* or an FSI super-admin
+    (``is_admin``). The dual ``rate_set`` + ``is_sc_admin`` check enforces
+    strict tenant isolation: a user from a different rate-set who is
+    accidentally flagged ``is_sc_admin`` still cannot edit the SC tables.
     Regular SC users (``rate_set == "science_care"`` without the
     ``is_sc_admin`` flag) are 403'd so they can quote without editing the
     underlying reference tables.
@@ -178,7 +181,10 @@ def sc_admin_required(view: Callable) -> Callable:
             return redirect(url_for("auth.login", next=request.url))
         if getattr(current_user, "is_admin", False):
             return view(*args, **kwargs)
-        if not getattr(current_user, "is_sc_admin", False):
+        if (
+            getattr(current_user, "rate_set", None) != "science_care"
+            or not getattr(current_user, "is_sc_admin", False)
+        ):
             abort(403)
         return view(*args, **kwargs)
 

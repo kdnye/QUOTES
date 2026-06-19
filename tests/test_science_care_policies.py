@@ -107,6 +107,20 @@ def test_sc_admin_required_allows_sc_admin(app: Flask) -> None:
     assert response.status_code == 200
 
 
+def test_sc_admin_required_blocks_cross_tenant_sc_admin(app: Flask) -> None:
+    # A non-science_care user accidentally flagged is_sc_admin must NOT
+    # gain access - strict tenant isolation.
+    user = _make_user(
+        "wrong-tenant@example.com",
+        rate_set="default",
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/probe/admin")
+    assert response.status_code == 403
+
+
 def test_sc_admin_required_allows_fsi_admin(app: Flask) -> None:
     user = _make_user("fsi-admin@example.com", rate_set="default")
     user.is_admin = True
