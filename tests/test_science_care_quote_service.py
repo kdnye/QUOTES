@@ -55,7 +55,7 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
 def _make_user() -> User:
     user = User(
         email="sc-orch@example.com",
-        full_name="SC Orch",
+        name="SC Orch",
         password_hash="x",
         rate_set=RATE_SET_SCIENCE_CARE,
     )

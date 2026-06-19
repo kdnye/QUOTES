@@ -47,7 +47,7 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
 def test_is_sc_admin_defaults_false(app: Flask) -> None:
     user = User(
         email="sc-default@example.com",
-        full_name="SC Default",
+        name="SC Default",
         password_hash="x",
     )
     db.session.add(user)
@@ -198,7 +198,7 @@ def test_sc_accessorial_map_unique_per_form_field(app: Flask) -> None:
 def test_sc_quote_session_and_legs_round_trip(app: Flask) -> None:
     user = User(
         email="sc-session@example.com",
-        full_name="SC Session",
+        name="SC Session",
         password_hash="x",
         rate_set=RATE_SET_SCIENCE_CARE,
     )

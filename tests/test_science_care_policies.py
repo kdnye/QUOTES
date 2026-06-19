@@ -50,7 +50,7 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
 def _make_user(email: str, rate_set: str, is_sc_admin: bool = False) -> User:
     user = User(
         email=email,
-        full_name=email,
+        name=email,
         password_hash="x",
         rate_set=rate_set,
         is_sc_admin=is_sc_admin,

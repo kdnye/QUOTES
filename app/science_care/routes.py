@@ -383,9 +383,15 @@ def sc_lab_defaults_save():
         )
 
     try:
-        SCUserLabSlot.query.filter_by(
-            user_id=current_user.id,
-            rate_set=RATE_SET_SCIENCE_CARE,
+        # Scope the wipe to slots whose lab_code is currently active.
+        # Rows pointing at a temporarily-deactivated lab are hidden by
+        # _default_lab_slots() and therefore can't be expressed on the
+        # form - leaving them out of the delete preserves them so the
+        # user's default reappears when the lab is reactivated.
+        SCUserLabSlot.query.filter(
+            SCUserLabSlot.user_id == current_user.id,
+            SCUserLabSlot.rate_set == RATE_SET_SCIENCE_CARE,
+            SCUserLabSlot.lab_code.in_(valid_lab_codes),
         ).delete(synchronize_session=False)
         db.session.flush()
         if new_rows:
