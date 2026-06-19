@@ -7,6 +7,11 @@ fail with `duplicate key on pg_type_typname_nsp_index`. The startup
 guard catches this and starts anyway, but the noise scares anyone
 reading the logs. The advisory lock serializes the upgrade so only one
 worker actually does the work.
+
+The lock is transaction-scoped (pg_advisory_xact_lock) so a crashed
+upgrade rolls back the transaction and releases the lock cleanly,
+without a `finally` block that could mask the original exception by
+raising on a dead connection during unlock.
 """
 
 from __future__ import annotations
@@ -26,7 +31,7 @@ from app import database as db_module  # noqa: E402
 def _make_engine(dialect_name: str) -> MagicMock:
     """Build a SQLAlchemy engine mock with the given dialect name."""
 
-    engine = MagicMock(spec=["dialect", "connect", "url"])
+    engine = MagicMock(spec=["dialect", "begin", "connect", "url"])
     engine.dialect = MagicMock()
     engine.dialect.name = dialect_name
     url = MagicMock()
@@ -37,34 +42,30 @@ def _make_engine(dialect_name: str) -> MagicMock:
     return engine
 
 
-def test_postgres_path_acquires_and_releases_advisory_lock(
+def test_postgres_path_acquires_advisory_lock(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     engine = _make_engine("postgresql")
     lock_conn = MagicMock()
-    # `engine.connect()` is used as a context manager (`with ... as`).
-    engine.connect.return_value.__enter__.return_value = lock_conn
-    engine.connect.return_value.__exit__.return_value = False
+    # `engine.begin()` is used as a context manager (`with ... as`).
+    engine.begin.return_value.__enter__.return_value = lock_conn
+    engine.begin.return_value.__exit__.return_value = False
 
     stamp_and_upgrade = MagicMock()
     monkeypatch.setattr(db_module, "_stamp_and_upgrade", stamp_and_upgrade)
 
     db_module._run_alembic_upgrade(engine)
 
-    # Two SQL calls: pg_advisory_lock then pg_advisory_unlock, in order.
+    # Exactly one SQL call: pg_advisory_xact_lock. No manual unlock or
+    # commit - the transaction-scoped lock releases automatically when
+    # the `with engine.begin()` block exits.
     calls = lock_conn.execute.call_args_list
-    assert len(calls) == 2, f"expected 2 SQL calls, got {len(calls)}"
-    first_sql = str(calls[0].args[0])
-    second_sql = str(calls[1].args[0])
-    assert "pg_advisory_lock" in first_sql
-    assert "pg_advisory_unlock" in second_sql
-    # Same key for lock + unlock.
-    assert calls[0].args[1] == calls[1].args[1]
-    # The stamp+upgrade ran exactly once, between the lock pair.
+    assert len(calls) == 1, f"expected 1 SQL call, got {len(calls)}"
+    sql = str(calls[0].args[0])
+    assert "pg_advisory_xact_lock" in sql
+    assert calls[0].args[1] == {"key": db_module._ALEMBIC_ADVISORY_LOCK_KEY}
+    # The stamp+upgrade ran exactly once, inside the lock.
     stamp_and_upgrade.assert_called_once()
-    # And the connection was committed so the unlock isn't stuck in
-    # an uncommitted transaction.
-    lock_conn.commit.assert_called_once()
 
 
 def test_postgres_path_releases_lock_on_failure(
@@ -72,8 +73,8 @@ def test_postgres_path_releases_lock_on_failure(
 ) -> None:
     engine = _make_engine("postgresql")
     lock_conn = MagicMock()
-    engine.connect.return_value.__enter__.return_value = lock_conn
-    engine.connect.return_value.__exit__.return_value = False
+    engine.begin.return_value.__enter__.return_value = lock_conn
+    engine.begin.return_value.__exit__.return_value = False
 
     def boom(config, active_engine):
         raise RuntimeError("simulated upgrade failure")
@@ -83,9 +84,10 @@ def test_postgres_path_releases_lock_on_failure(
     with pytest.raises(RuntimeError):
         db_module._run_alembic_upgrade(engine)
 
-    # Unlock SQL still ran despite the upgrade exception.
-    sqls = [str(c.args[0]) for c in lock_conn.execute.call_args_list]
-    assert any("pg_advisory_unlock" in s for s in sqls)
+    # __exit__ being invoked is what triggers the rollback that releases
+    # the transaction-scoped advisory lock. No manual unlock call needed
+    # (and therefore no risk of masking the RuntimeError).
+    engine.begin.return_value.__exit__.assert_called_once()
 
 
 def test_non_postgres_path_skips_lock(
@@ -97,8 +99,8 @@ def test_non_postgres_path_skips_lock(
 
     db_module._run_alembic_upgrade(engine)
 
-    # No connection grabbed - no lock taken on non-Postgres dialects.
-    engine.connect.assert_not_called()
+    # No transaction opened - no advisory lock on non-Postgres dialects.
+    engine.begin.assert_not_called()
     stamp_and_upgrade.assert_called_once()
 
 

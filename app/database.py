@@ -139,25 +139,21 @@ def _run_alembic_upgrade(active_engine: Engine) -> None:
     config.set_main_option("sqlalchemy.url", _escape_alembic_url(rendered_url))
 
     if _is_postgres(active_engine):
-        # Serialize concurrent gunicorn workers. The first worker to
-        # acquire the advisory lock runs the upgrade; others block at
-        # pg_advisory_lock() until it releases, then call upgrade(head)
-        # which is a no-op because alembic_version is already at head.
-        # Session-level locks auto-release if the connection closes
-        # mid-upgrade, so a crash can't leave the lock orphaned.
-        with active_engine.connect() as lock_conn:
+        # Serialize concurrent gunicorn workers via a transaction-scoped
+        # Postgres advisory lock. The first worker to enter the
+        # `engine.begin()` block runs the upgrade; others block at
+        # pg_advisory_xact_lock() until the transaction releases, then
+        # call upgrade(head) which is a no-op because alembic_version is
+        # already at head. Transaction-level locks auto-release on
+        # commit OR rollback, so a crash mid-upgrade can't orphan the
+        # lock and a `finally`-based unlock can't mask the original
+        # exception by raising during cleanup on a dead connection.
+        with active_engine.begin() as lock_conn:
             lock_conn.execute(
-                text("SELECT pg_advisory_lock(:key)"),
+                text("SELECT pg_advisory_xact_lock(:key)"),
                 {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
             )
-            try:
-                _stamp_and_upgrade(config, active_engine)
-            finally:
-                lock_conn.execute(
-                    text("SELECT pg_advisory_unlock(:key)"),
-                    {"key": _ALEMBIC_ADVISORY_LOCK_KEY},
-                )
-                lock_conn.commit()
+            _stamp_and_upgrade(config, active_engine)
     else:
         _stamp_and_upgrade(config, active_engine)
 
