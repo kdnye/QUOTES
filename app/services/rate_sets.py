@@ -58,6 +58,51 @@ def normalize_rate_set(raw_value: Optional[str]) -> str:
     return candidate or DEFAULT_RATE_SET
 
 
+def query_with_rate_set_fallback(
+    session: Any,
+    model: Any,
+    rate_set: str,
+    **filters: Any,
+) -> Any:
+    """Look up a row by ``filters`` + ``rate_set`` with a DEFAULT fallback.
+
+    Tries
+    ``session.query(model).filter_by(rate_set=rate_set, **filters).first()``.
+    When that returns ``None`` AND ``rate_set != DEFAULT_RATE_SET``,
+    retries against :data:`DEFAULT_RATE_SET`. Returns the first row
+    found, or ``None`` if neither query matches.
+
+    Args:
+        session: An open SQLAlchemy session. The helper does not open
+            or close sessions; callers continue to wrap their work in
+            ``with Session() as db:``.
+        model: The mapped class to query (e.g. ``ZipZone``,
+            ``CostZone``).
+        rate_set: Pre-normalised rate-set identifier. Callers should
+            run their input through :func:`normalize_rate_set` first.
+        **filters: Additional equality filters forwarded to
+            ``filter_by``. Use only when the column has a direct
+            equality match - range predicates and ``order_by`` need a
+            different helper.
+
+    Returns:
+        The first matching row, or ``None``.
+    """
+
+    record = (
+        session.query(model)
+        .filter_by(rate_set=rate_set, **filters)
+        .first()
+    )
+    if record is None and rate_set != DEFAULT_RATE_SET:
+        record = (
+            session.query(model)
+            .filter_by(rate_set=DEFAULT_RATE_SET, **filters)
+            .first()
+        )
+    return record
+
+
 def _call_with_rate_set(
     func: Callable[..., Any], rate_set: str, *args: Any, **kwargs: Any
 ) -> Any:
