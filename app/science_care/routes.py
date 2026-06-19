@@ -388,11 +388,16 @@ def sc_lab_defaults_save():
         # _default_lab_slots() and therefore can't be expressed on the
         # form - leaving them out of the delete preserves them so the
         # user's default reappears when the lab is reactivated.
-        SCUserLabSlot.query.filter(
-            SCUserLabSlot.user_id == current_user.id,
-            SCUserLabSlot.rate_set == RATE_SET_SCIENCE_CARE,
-            SCUserLabSlot.lab_code.in_(valid_lab_codes),
-        ).delete(synchronize_session=False)
+        # `sorted(...)` keeps the SQL parameter ordering deterministic
+        # (better query-plan caching); the empty-set guard skips a
+        # pointless DELETE WHERE lab_code IN () round-trip on a fresh
+        # SC tenant.
+        if valid_lab_codes:
+            SCUserLabSlot.query.filter(
+                SCUserLabSlot.user_id == current_user.id,
+                SCUserLabSlot.rate_set == RATE_SET_SCIENCE_CARE,
+                SCUserLabSlot.lab_code.in_(sorted(valid_lab_codes)),
+            ).delete(synchronize_session=False)
         db.session.flush()
         if new_rows:
             # add_all over bulk_save_objects: we have at most SC_LEG_COUNT
