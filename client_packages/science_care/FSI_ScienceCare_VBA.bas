@@ -74,6 +74,13 @@ Private Const CELL_OUT_HOT_TOTAL  As String = "C41"  ' FS by Hot Shot: total pri
 Private Const CELL_OUT_HOT_MILES  As String = "H41"  ' Hot Shot Miles
 Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success" or error detail
 
+' ZIP shipment notes - written from the API response's metadata.origin_notes
+' and metadata.dest_notes (the same text the FSI web UI surfaces). Both cells
+' live in row 53 by default so the user can hide the row and expose them via
+' a concatenated formula elsewhere (e.g. in A43).
+Private Const CELL_OUT_ORIGIN_NOTE As String = "A53"  ' Note for the origin (lab) ZIP
+Private Const CELL_OUT_DEST_NOTE   As String = "B53"  ' Note for the destination ZIP
+
 ' Number of SHIPMENT N tabs in the workbook - RunAllShipmentQuotes loops
 ' "SHIPMENT 1" through "SHIPMENT <this>". Tabs that don't exist are
 ' counted as "missing" in the summary; bump this if you add tabs.
@@ -249,6 +256,8 @@ Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
     ws.Range(CELL_OUT_HOT_TOTAL).ClearContents
     ws.Range(CELL_OUT_HOT_MILES).ClearContents
     ws.Range(CELL_OUT_HOT_STATUS).ClearContents
+    ws.Range(CELL_OUT_ORIGIN_NOTE).ClearContents
+    ws.Range(CELL_OUT_DEST_NOTE).ClearContents
 
     ' --- International guard: API is domestic-only for now ---
     Dim intlCountry As String
@@ -595,6 +604,16 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
             End If
         End If
 
+        ' metadata.origin_notes / dest_notes are identical between the Air
+        ' and Hotshot responses (they depend on the ZIPs, not quote_type),
+        ' so write them once from the first call only - currently Air.
+        ' A null in the JSON ("origin_notes": null) doesn't match the
+        ' string-value regex and leaves the cleared cell blank.
+        If quoteType = "Air" Then
+            ws.Range(CELL_OUT_ORIGIN_NOTE).Value = ExtractJsonString(resp, "origin_notes")
+            ws.Range(CELL_OUT_DEST_NOTE).Value = ExtractJsonString(resp, "dest_notes")
+        End If
+
         SetStatus ws, quoteType, "Success"
     Else
         rx.Pattern = """remediation"":\s*""([^""]+)"""
@@ -766,4 +785,34 @@ End Function
 
 Private Function EscapeJson(s As String) As String
     EscapeJson = Replace(Replace(s, "\", "\\"), """", "\""")
+End Function
+
+
+' -----------------------------------------------------------------------
+' ExtractJsonString - pulls a top-level (or nested) string field out of
+' a JSON response by name. Returns "" when the key is missing or its
+' value is null. Handles the common backslash escapes (\", \\, \n, \t,
+' \r, \/) so a multi-sentence shipment note round-trips intact.
+' -----------------------------------------------------------------------
+Private Function ExtractJsonString(json As String, key As String) As String
+    Dim rx As Object
+    Set rx = CreateObject("VBScript.RegExp")
+    rx.Global = False
+    ' Match: "key": "..."  with support for \\ and \" escapes inside the value.
+    rx.Pattern = """" & key & """\s*:\s*""((?:[^""\\]|\\.)*)"""
+    Dim m As Object
+    Set m = rx.Execute(json)
+    If m.Count = 0 Then Exit Function
+
+    Dim raw As String
+    raw = m(0).SubMatches(0)
+    ' Unescape the common JSON escapes - keep \\ last so it doesn't
+    ' re-escape characters produced by the earlier passes.
+    raw = Replace(raw, "\""", """")
+    raw = Replace(raw, "\/", "/")
+    raw = Replace(raw, "\n", vbLf)
+    raw = Replace(raw, "\r", vbCr)
+    raw = Replace(raw, "\t", vbTab)
+    raw = Replace(raw, "\\", "\")
+    ExtractJsonString = raw
 End Function
