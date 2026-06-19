@@ -283,19 +283,28 @@ def api_create_quote() -> ResponseReturnValue:
     if send_quote_email and api_user and api_user.email:
         if is_quote_email_smtp_enabled():
             try:
-                from app.quotes.routes import (  # local import avoids module-level circularity
+                from app.models import db  # local import avoids module-level circularity
+                from app.quotes.routes import (
                     SELF_QUOTE_EMAIL_INTRO,
                     _format_quote_copy_email_body,
                     _format_quote_copy_email_html,
-                    _get_zip_notes,
                 )
+                from app.services.quote import get_zip_notes
 
                 email_meta = dict(metadata or {})
                 email_meta["accessorial_total"] = float(
                     email_meta.get("accessorial_total", 0.0) or 0.0
                 )
-                origin_notes = _get_zip_notes(quote_obj.origin or "", quote_obj.rate_set)
-                dest_notes = _get_zip_notes(quote_obj.destination or "", quote_obj.rate_set)
+                origin_notes = get_zip_notes(
+                    quote_obj.origin or "",
+                    quote_obj.rate_set,
+                    session=db.session,
+                )
+                dest_notes = get_zip_notes(
+                    quote_obj.destination or "",
+                    quote_obj.rate_set,
+                    session=db.session,
+                )
                 action_url = url_for("quotes.new_quote", _external=True)
                 email_body = _format_quote_copy_email_body(
                     quote_obj,

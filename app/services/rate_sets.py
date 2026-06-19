@@ -19,8 +19,15 @@ from app.database import (
     CostZone,
     BeyondRate,
 )
+from app.models import RATE_SET_DEFAULT
 
-DEFAULT_RATE_SET = "default"
+# Sourced from app.models.RATE_SET_DEFAULT so the two historically
+# divergent names stay in lock-step. Both spellings exist for back-
+# compat (RATE_SET_DEFAULT in app/models.py is imported by migrations
+# and column definitions; DEFAULT_RATE_SET here is imported by quote
+# logic and routes). Changing the literal in app/models.py now updates
+# both call paths atomically.
+DEFAULT_RATE_SET = RATE_SET_DEFAULT
 
 # Known customer-specific rate sets that should always be available for admins to
 # manage even before any rates are uploaded. The keys are normalized

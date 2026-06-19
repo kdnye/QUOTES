@@ -36,6 +36,7 @@ from app.models import (
     SCTissueCode,
     db,
 )
+from app.services.constants import DIM_DIVISOR
 from app.services.quote import create_quote
 
 
@@ -43,11 +44,6 @@ from app.services.quote import create_quote
 # constant in :mod:`app.science_care.routes` so the orchestrator stays
 # in lock-step with the rendered accordion.
 SC_LEG_COUNT = 7
-
-# Standard FSI dimensional-weight divisor (cubic inches per pound).
-# Matches the value used by the SC workbook macro so a leg quoted via
-# the web page produces the same dim weight as the legacy spreadsheet.
-DIM_DIVISOR = 166
 
 # Routing-mode literal that activates the established-lane override.
 ROUTING_SC_TO_SC = "sc to sc"

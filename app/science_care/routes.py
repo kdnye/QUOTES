@@ -35,7 +35,7 @@ from flask import (
     request,
     url_for,
 )
-from flask_login import login_required
+from flask_login import current_user, login_required
 
 from app.admin import CSVUploadForm, _parse_csv_rows
 from app.models import (
@@ -159,8 +159,6 @@ def _default_lab_slots(user_id: int) -> dict[int, str]:
 def sc_quote_form() -> str:
     """Render the empty seven-leg multi-lab quote form."""
 
-    from flask_login import current_user
-
     return render_template(
         "sc/quote.html",
         leg_count=SC_LEG_COUNT,
@@ -184,8 +182,6 @@ def sc_quote_calculate() -> str:
     can use the same result context.
     """
 
-    from flask_login import current_user
-
     context = compute_sc_multileg(
         request.form, current_user, request.remote_addr
     )
@@ -202,8 +198,6 @@ def sc_quote_submit():
     when the browser submits the form via the standard ``Enter`` /
     button path instead of HTMX.
     """
-
-    from flask_login import current_user
 
     context = compute_sc_multileg(
         request.form, current_user, request.remote_addr
@@ -337,8 +331,6 @@ def sc_lab_lookup_partial() -> str:
 def sc_lab_defaults_form() -> str:
     """Render the per-user default-labs management page."""
 
-    from flask_login import current_user
-
     return render_template(
         "sc/lab_defaults.html",
         leg_count=SC_LEG_COUNT,
@@ -359,8 +351,6 @@ def sc_lab_defaults_save():
     field. Wrapped in try/rollback so a constraint failure doesn't leak
     a half-applied transaction back to the next request.
     """
-
-    from flask_login import current_user
 
     valid_lab_codes = {lab.lab_code for lab in _lab_choices()}
     new_rows: list[SCUserLabSlot] = []

@@ -33,7 +33,9 @@ from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.quote.zip_validation import validate_us_zip
+from app.services.constants import DIM_DIVISOR
 from app.services.mail import send_email, user_has_mail_privileges
+from app.services.quote import get_zip_notes
 from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
@@ -410,7 +412,7 @@ def new_quote():
         else:
             weight_dim = 0.0
             if length and width and height:
-                weight_dim = ((length * width * height) / 166.0) * pieces
+                weight_dim = ((length * width * height) / DIM_DIVISOR) * pieces
 
         if piece_err := check_air_piece_limit(
             quote_type,
@@ -792,8 +794,12 @@ def _quote_template_context(
     threshold_warning = check_thresholds(quote.quote_type, quote.weight, quote.total)
     exceeds_threshold = bool(threshold_warning)
 
-    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     return {
         "quote": quote,
@@ -813,41 +819,6 @@ def _quote_template_context(
             getattr(current_user, "show_cost_breakdown", False)
         ),
     }
-
-
-def _get_zip_notes(zip_code: str, rate_set: str | None) -> str | None:
-    """Look up shipment notes for a ZIP code in ``zip_zones``.
-
-    Args:
-        zip_code: ZIP code used for the :class:`app.models.ZipZone` lookup.
-        rate_set: Quote rate-set value used for primary lookup and fallback.
-
-    Returns:
-        Shipment notes string when configured, otherwise ``None``.
-
-    External dependencies:
-        * Reads :class:`app.models.ZipZone` through :mod:`app.models.db`.
-        * Calls :func:`app.services.rate_sets.normalize_rate_set` to align
-          lookup values with quote generation.
-    """
-
-    normalized_zip = (zip_code or "").strip()
-    if not normalized_zip:
-        return None
-
-    normalized_rate_set = normalize_rate_set(rate_set or DEFAULT_RATE_SET)
-    zone_entry = ZipZone.query.filter_by(
-        zipcode=normalized_zip,
-        rate_set=normalized_rate_set,
-    ).first()
-
-    if zone_entry is None and normalized_rate_set != DEFAULT_RATE_SET:
-        zone_entry = ZipZone.query.filter_by(
-            zipcode=normalized_zip,
-            rate_set=DEFAULT_RATE_SET,
-        ).first()
-
-    return getattr(zone_entry, "notes", None) if zone_entry else None
 
 
 def _format_quote_copy_email_body(
@@ -1065,8 +1036,12 @@ def _render_email_request(
     )
     return_accessorial_options, _ = _get_accessorial_choices()
 
-    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     return render_template(
         "email_request.html",
@@ -1138,8 +1113,12 @@ def email_quote_to_me(quote_id: str):
         metadata = {}
     metadata["accessorial_total"] = float(metadata.get("accessorial_total", 0.0) or 0.0)
 
-    origin_notes = _get_zip_notes(quote.origin or "", quote.rate_set)
-    dest_notes = _get_zip_notes(quote.destination or "", quote.rate_set)
+    origin_notes = get_zip_notes(
+        quote.origin or "", quote.rate_set, session=db.session
+    )
+    dest_notes = get_zip_notes(
+        quote.destination or "", quote.rate_set, session=db.session
+    )
 
     email_body = _format_quote_copy_email_body(
         quote,
