@@ -71,7 +71,7 @@ Private Const CELL_TOTAL_BOXES  As String = "A30"  ' Total Boxes count
 Private Const CELL_OUT_AIR_TOTAL  As String = "C40"  ' FS by Air: total price ($)
 Private Const CELL_OUT_AIR_STATUS As String = "B40"  ' Air status: "Success" or error detail
 Private Const CELL_OUT_HOT_TOTAL  As String = "C41"  ' FS by Hot Shot: total price ($)
-Private Const CELL_OUT_HOT_MILES  As String = "E41"  ' Hot Shot Miles
+Private Const CELL_OUT_HOT_MILES  As String = "H41"  ' Hot Shot Miles
 Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success" or error detail
 
 ' Number of SHIPMENT N tabs in the workbook - RunAllShipmentQuotes loops
