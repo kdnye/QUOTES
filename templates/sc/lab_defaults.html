@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Default Labs — Science Care{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+  <div>
+    <h1 class="h3 mb-1">Default labs per shipment slot</h1>
+    <p class="text-body-secondary mb-0">
+      Assign a default lab to each of the seven shipment slots. These
+      values prefill the SC quote form so you don't have to retype them
+      each visit. Leave a slot blank to start it empty.
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm" href="{{ url_for('science_care.sc_quote_form') }}">
+    Back to quote
+  </a>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category if category in ['success','warning','danger','info'] else 'info' }}" role="alert">
+      {{ message }}
+    </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<datalist id="sc-lab-codes">
+  {% for lab in labs %}
+  <option value="{{ lab.lab_code }}" label="{{ lab.lab_name or '' }}"></option>
+  {% endfor %}
+</datalist>
+
+<form method="post" action="{{ url_for('science_care.sc_lab_defaults_save') }}" class="row g-3">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  {% for n in legs %}
+  <div class="col-12 col-md-6 col-lg-4">
+    <label class="form-label" for="lab_code_{{ n }}">Shipment {{ n }}</label>
+    <input class="form-control"
+           list="sc-lab-codes"
+           id="lab_code_{{ n }}"
+           name="lab_code_{{ n }}"
+           value="{{ default_labs_by_leg.get(n, '') }}"
+           placeholder="Pick a lab code…"
+           autocomplete="off" />
+  </div>
+  {% endfor %}
+
+  <div class="col-12 d-flex gap-2 mt-3">
+    <button class="btn btn-primary" type="submit">Save defaults</button>
+    <a class="btn btn-outline-secondary" href="{{ url_for('science_care.sc_quote_form') }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
