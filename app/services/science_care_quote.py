@@ -110,6 +110,7 @@ class LegResult:
     total_boxes: int = 0
     dim_weight_lb: float = 0.0
     accessorial_labels: list[str] = field(default_factory=list)
+    consumable_picks: dict[int, int] = field(default_factory=dict)
     air_quote: Any | None = None
     hotshot_quote: Any | None = None
     established_rate: float | None = None
@@ -236,13 +237,20 @@ def allocate_boxes(
     return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
-def _consumable_weight(
+def _auto_consumable_weight(
     temp_mode: str,
     scope: str,
     total_boxes: int,
     consumable_index: list[SCConsumable],
 ) -> float:
-    """Sum the per-box consumable weight applicable to a leg."""
+    """Sum the per-box consumable weight applicable to a leg automatically.
+
+    Used as the fallback when the SC user submits a leg with every
+    consumable Qty blank/zero. Pre-feature behaviour: pick every
+    :class:`SCConsumable` row matching the leg's ``temp_mode`` + ``scope``
+    (with ``"any"`` acting as a wildcard) and multiply its per-box
+    weight by the leg's total box count.
+    """
 
     if total_boxes <= 0:
         return 0.0
@@ -258,6 +266,31 @@ def _consumable_weight(
             continue
         total += float(row.weight_lb_per_box or 0.0) * total_boxes
     return total
+
+
+def _consumable_picks_from_form(
+    form: Mapping[str, str],
+    leg: int,
+    consumable_index: list[SCConsumable],
+) -> tuple[float, dict[int, int]]:
+    """Read the user's per-consumable Qty inputs for one leg.
+
+    Returns ``(total_weight, picks)``. ``picks`` is a dict mapping
+    :class:`SCConsumable.id` to the qty the user typed (only non-zero
+    entries appear). When every Qty for the leg is blank or zero the
+    weight is zero and the caller falls back to :func:`_auto_consumable_weight`.
+    """
+
+    total = 0.0
+    picks: dict[int, int] = {}
+    for row in consumable_index:
+        raw = form.get(f"cons_qty_{leg}_{row.id}")
+        qty = _as_int(raw, default=0)
+        if qty <= 0:
+            continue
+        picks[int(row.id)] = qty
+        total += float(row.weight_lb_per_box or 0.0) * qty
+    return total, picks
 
 
 def _collect_accessorials(
@@ -480,9 +513,19 @@ def compute_sc_multileg(
             continue
 
         scope = "intl" if result.intl_country else "domestic"
-        total_weight += _consumable_weight(
-            result.temp_mode, scope, total_boxes, consumable_index
+        # Picks-first: trust the user's explicit Qty inputs when they
+        # entered any. Otherwise fall back to the auto formula so SC
+        # users who haven't started filling in the new fields still
+        # get a reasonable consumable estimate.
+        consumable_weight, picks = _consumable_picks_from_form(
+            form, n, consumable_index
         )
+        if not picks:
+            consumable_weight = _auto_consumable_weight(
+                result.temp_mode, scope, total_boxes, consumable_index
+            )
+        result.consumable_picks = picks
+        total_weight += consumable_weight
 
         if total_weight <= 0:
             result.skip_reason = "computed weight is zero"
@@ -583,6 +626,11 @@ def compute_sc_multileg(
                 winner_total=result.winner_total,
                 skip_reason=_short_reason(
                     result.skip_reason or result.error
+                ),
+                consumables_json=(
+                    json.dumps(result.consumable_picks)
+                    if result.consumable_picks
+                    else None
                 ),
             )
         )
