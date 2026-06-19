@@ -259,6 +259,81 @@ def test_sc_lookup_endpoints_survive_garbage_query_params(app: Flask) -> None:
         assert response.status_code == 200, path
 
 
+def test_sc_quote_calculate_renders_results(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = _make_user("post-orch@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    db.session.add_all(
+        [
+            SCLab(
+                lab_code="SCCA",
+                origin_zip="85705",
+                is_active=True,
+            ),
+            __import__("app.models", fromlist=["SCBoxType"]).SCBoxType(
+                code="MED",
+                length_in=20,
+                width_in=15,
+                height_in=18,
+                tare_weight_lb=4,
+            ),
+            SCTissueCode(
+                tissue_code="MED01",
+                description="Medium part",
+                unit_weight_lb=10.0,
+                default_box_type_code="MED",
+                pieces_per_box=2,
+            ),
+        ]
+    )
+    db.session.commit()
+
+    # Stub create_quote so the route doesn't depend on the rate tables.
+    from app.services import science_care_quote as svc
+
+    def fake_create_quote(**kwargs):
+        from app.models import Quote
+
+        q = Quote(
+            user_id=kwargs.get("user_id"),
+            user_email=kwargs.get("user_email"),
+            quote_type=kwargs["quote_type"],
+            origin=kwargs["origin"],
+            destination=kwargs["destination"],
+            weight=kwargs["weight"],
+            pieces=kwargs.get("pieces", 1),
+            zone="X",
+            total=100.0 if kwargs["quote_type"] == "Air" else 80.0,
+            quote_metadata="{}",
+            rate_set=kwargs.get("rate_set"),
+        )
+        db.session.add(q)
+        db.session.commit()
+        db.session.refresh(q)
+        return q, {"total": q.total, "details": {}}
+
+    monkeypatch.setattr(svc, "create_quote", fake_create_quote)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/calculate",
+        data={
+            "lab_code_1": "SCCA",
+            "dest_zip_1": "98101",
+            "routing_type_1": "Outbound",
+            "temp_mode_1": "frozen",
+            "tissue_code_1_1": "MED01",
+            "qty_1_1": "2",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Multi-leg quote summary" in html
+    assert "Hot Shot" in html
+    assert "Total S&amp;H" in html or "Total S&H" in html
+
+
 def test_base_template_loads_htmx() -> None:
     # Path-based check so the regression doesn't depend on rendering a
     # full request - the htmx script tag is mandatory for the SC page to
