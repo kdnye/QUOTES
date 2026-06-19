@@ -25,8 +25,7 @@
   {% endfor %}
 </datalist>
 
-<form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_form') }}"
-      onsubmit="event.preventDefault();">
+<form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_submit') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
   <div class="accordion mb-4" id="sc-shipments">
@@ -157,17 +156,29 @@
   <div class="d-flex gap-3">
     <button class="btn btn-primary"
             type="submit"
-            hx-post="{{ url_for('science_care.sc_quote_form') }}"
+            hx-post="{{ url_for('science_care.sc_quote_calculate') }}"
             hx-include="#sc-form"
             hx-target="#sc-results"
             hx-swap="innerHTML"
-            disabled>
-      Generate quotes (orchestration lands in next PR)
+            hx-indicator="#sc-quote-spinner">
+      Generate quotes
     </button>
+    <span id="sc-quote-spinner" class="htmx-indicator align-self-center small text-body-secondary">
+      Running 14 quotes…
+    </span>
   </div>
 </form>
 
-<section id="sc-results" class="mt-4"></section>
+<section id="sc-results" class="mt-4">
+  {% if results %}
+    {% with session=results.session,
+           legs=results.legs,
+           grand_total=results.grand_total,
+           skipped=results.skipped %}
+      {% include "sc/_results_partial.html" %}
+    {% endwith %}
+  {% endif %}
+</section>
 
 <script>
   // Wire HTMX CSRF header off the existing meta tag in base.html.

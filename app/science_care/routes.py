@@ -48,6 +48,7 @@ from app.models import (
     db,
 )
 from app.policies import sc_admin_required, sc_user_required
+from app.services.science_care_quote import compute_sc_multileg
 from scripts.import_air_rates import save_unique
 
 from . import science_care_bp
@@ -128,6 +129,52 @@ def sc_quote_form() -> str:
         accessorials=_accessorial_labels(),
         labs=_lab_choices(),
         box_types=_box_type_choices(),
+    )
+
+
+@science_care_bp.post("/quote/calculate")
+@login_required
+@sc_user_required
+def sc_quote_calculate() -> str:
+    """HTMX endpoint: run the multi-leg orchestration and swap a partial.
+
+    Returns the ``sc/_results_partial.html`` fragment for HTMX swap.
+    Non-HTMX callers (the standard form ``POST /sc/quote`` endpoint)
+    can use the same result context.
+    """
+
+    from flask_login import current_user
+
+    context = compute_sc_multileg(
+        request.form, current_user, request.remote_addr
+    )
+    return render_template("sc/_results_partial.html", **context)
+
+
+@science_care_bp.post("/quote")
+@login_required
+@sc_user_required
+def sc_quote_submit():
+    """Non-HTMX fallback for ``POST /sc/quote``.
+
+    Renders the full quote page with the results card filled in. Used
+    when the browser submits the form via the standard ``Enter`` /
+    button path instead of HTMX.
+    """
+
+    from flask_login import current_user
+
+    context = compute_sc_multileg(
+        request.form, current_user, request.remote_addr
+    )
+    return render_template(
+        "sc/quote.html",
+        leg_count=SC_LEG_COUNT,
+        legs=list(range(1, SC_LEG_COUNT + 1)),
+        accessorials=_accessorial_labels(),
+        labs=_lab_choices(),
+        box_types=_box_type_choices(),
+        results=context,
     )
 
 

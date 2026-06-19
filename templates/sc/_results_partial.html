@@ -1,0 +1,92 @@
+{# Results card swapped into #sc-results after a multi-leg submit.
+   Expected context: legs (list[LegResult]), grand_total (float),
+   skipped (list[LegResult]), session (SCQuoteSession). #}
+<div class="card border-primary mt-3">
+  <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center">
+    <strong>Multi-leg quote summary</strong>
+    <span class="badge bg-primary">Session #{{ session.id }}</span>
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Leg</th>
+          <th>Lab → Dest</th>
+          <th class="text-end">Air</th>
+          <th class="text-end">Hot Shot</th>
+          <th class="text-end">Established</th>
+          <th>Winner</th>
+          <th class="text-end">Subtotal</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leg in legs %}
+        <tr>
+          <td>{{ leg.leg_index }}</td>
+          <td>
+            {% if leg.lab_code or leg.dest_zip %}
+              <span class="text-body-secondary">{{ leg.lab_code or '—' }}</span>
+              <span class="text-body-secondary">/</span>
+              <span>{{ leg.dest_zip or '—' }}</span>
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.air_quote and leg.air_quote.total %}
+              ${{ '%.2f'|format(leg.air_quote.total) }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.hotshot_quote and leg.hotshot_quote.total %}
+              ${{ '%.2f'|format(leg.hotshot_quote.total) }}
+            {% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.established_rate %}
+              ${{ '%.2f'|format(leg.established_rate) }}
+            {% else %}—{% endif %}
+          </td>
+          <td>
+            {% if leg.winner_mode %}
+              <span class="badge bg-success">{{ leg.winner_mode }}</span>
+            {% else %}
+              <span class="badge bg-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.winner_total %}
+              <strong>${{ '%.2f'|format(leg.winner_total) }}</strong>
+            {% else %}
+              <span class="text-body-secondary">$0.00</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if leg.skip_reason %}
+              <span class="text-warning">Skipped — {{ leg.skip_reason }}</span>
+            {% elif leg.error %}
+              <span class="text-danger">{{ leg.error }}</span>
+            {% else %}
+              <span class="text-success">Success</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="table-primary">
+          <th colspan="6" class="text-end">Total S&amp;H</th>
+          <th class="text-end">${{ '%.2f'|format(grand_total) }}</th>
+          <th></th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% if skipped %}
+  <div class="card-body small text-body-secondary border-top">
+    {{ skipped|length }} of {{ legs|length }} leg(s) skipped — they
+    contribute $0 to the Total S&amp;H.
+  </div>
+  {% endif %}
+</div>
