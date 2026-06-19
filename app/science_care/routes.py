@@ -21,19 +21,41 @@ and the matching results partial.
 
 from __future__ import annotations
 
-from flask import render_template, request
+import csv
+import io
+from typing import Union
+
+import pandas as pd
+from flask import (
+    Response,
+    abort,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
 from flask_login import login_required
 
+from app.admin import CSVUploadForm, _parse_csv_rows
 from app.models import (
     RATE_SET_SCIENCE_CARE,
+    RateUpload,
     SCAccessorialMap,
     SCBoxType,
     SCLab,
     SCTissueCode,
+    db,
 )
 from app.policies import sc_admin_required, sc_user_required
+from scripts.import_air_rates import save_unique
 
 from . import science_care_bp
+from .csv_admin import (
+    SC_TABLE_SPECS,
+    force_science_care_rate_set,
+    get_sc_table_spec,
+)
 
 
 # Form field → friendly accessorial labels used when the SC tenant has
@@ -219,44 +241,171 @@ def sc_lab_lookup_partial() -> str:
     )
 
 
+# Display order + per-table descriptions for the reference index page.
+# Keys must exist in :data:`SC_TABLE_SPECS`.
+_SC_TABLE_DESCRIPTIONS: tuple[tuple[str, str], ...] = (
+    ("sc_labs", "Lab code → origin ZIP, contact info"),
+    (
+        "sc_tissue_codes",
+        "Per-tissue weight + default box assignment",
+    ),
+    (
+        "sc_box_types",
+        "Allowed shipment boxes with dimensions and tare weight",
+    ),
+    (
+        "sc_consumables",
+        "Dry-ice / gel-pack weight additions per box",
+    ),
+    (
+        "sc_established_lanes",
+        "Pre-negotiated lab-to-lab freight rates",
+    ),
+    (
+        "sc_accessorial_map",
+        "Form-field labels → live accessorial names",
+    ),
+)
+
+
 @science_care_bp.get("/reference")
 @login_required
 @sc_admin_required
 def sc_reference_index() -> str:
-    """Landing page listing the six SC reference tables.
-
-    The actual ``/sc/reference/<table>/download`` and
-    ``/sc/reference/<table>/upload`` endpoints land in the follow-up
-    CSV-admin PR; this page only renders the table list so the route is
-    reachable end-to-end.
-    """
+    """Landing page listing the six SC reference tables."""
 
     tables = [
-        ("sc_labs", "Labs", "Lab code → origin ZIP, contact info"),
-        (
-            "sc_tissue_codes",
-            "Tissue codes",
-            "Per-tissue weight + default box assignment",
-        ),
-        (
-            "sc_box_types",
-            "Box types",
-            "Allowed shipment boxes with dimensions and tare weight",
-        ),
-        (
-            "sc_consumables",
-            "Consumables",
-            "Dry-ice / gel-pack weight additions per box",
-        ),
-        (
-            "sc_established_lanes",
-            "Established lanes",
-            "Pre-negotiated lab-to-lab freight rates",
-        ),
-        (
-            "sc_accessorial_map",
-            "Accessorial map",
-            "Form-field labels → live accessorial names",
-        ),
+        (key, SC_TABLE_SPECS[key].label, description)
+        for key, description in _SC_TABLE_DESCRIPTIONS
     ]
     return render_template("sc/reference_index.html", tables=tables)
+
+
+def _resolve_sc_spec_or_404(table: str):
+    """Look up an SC ``TableSpec`` or abort 404 if the key is unknown."""
+
+    spec = get_sc_table_spec(table)
+    if spec is None:
+        abort(404)
+    return spec
+
+
+@science_care_bp.route(
+    "/reference/<string:table>/upload", methods=["GET", "POST"]
+)
+@login_required
+@sc_admin_required
+def sc_upload_csv(table: str) -> Union[str, Response]:
+    """Upload a CSV that appends to or replaces an SC reference table.
+
+    Behaviour matches ``app.admin.upload_csv`` (same form, same parser,
+    same validation, same audit row), narrowed to SC scope:
+
+    * ``replace`` mode deletes only rows where ``rate_set == "science_care"``
+      so other tenants' rows are untouched.
+    * Every parsed row's ``rate_set`` is forced to ``"science_care"`` before
+      it hits the DB - the CSV's own ``rate_set`` column (if present) is
+      ignored on import.
+    """
+
+    spec = _resolve_sc_spec_or_404(table)
+    form = CSVUploadForm()
+    if form.validate_on_submit():
+        file_storage = form.file.data
+        try:
+            objects = _parse_csv_rows(file_storage, spec)
+        except (ValueError, pd.errors.EmptyDataError) as exc:
+            form.file.errors.append(str(exc))
+        else:
+            force_science_care_rate_set(objects)
+            action = form.action.data
+            inserted = len(objects)
+            skipped = 0
+            if action == "replace":
+                spec.model.query.filter_by(
+                    rate_set=RATE_SET_SCIENCE_CARE
+                ).delete(synchronize_session=False)
+                db.session.flush()
+                db.session.bulk_save_objects(objects)
+                message = (
+                    f"{spec.label} data replaced with {inserted} row(s)."
+                )
+            else:
+                if spec.unique_attr:
+                    inserted, skipped = save_unique(
+                        db.session,
+                        spec.model,
+                        objects,
+                        spec.unique_attr,
+                    )
+                else:
+                    db.session.bulk_save_objects(objects)
+                message = (
+                    f"{spec.label} upload added {inserted} row(s)."
+                )
+                if spec.unique_attr and skipped:
+                    message = (
+                        f"{spec.label} upload added {inserted} row(s) "
+                        f"({skipped} duplicate row(s) skipped)."
+                    )
+
+            db.session.add(
+                RateUpload(
+                    table_name=spec.name,
+                    filename=file_storage.filename,
+                )
+            )
+            db.session.commit()
+            flash(message, "success")
+            return redirect(url_for(spec.list_endpoint))
+
+    status = 400 if request.method == "POST" else 200
+    return (
+        render_template(
+            "admin_upload.html",
+            form=form,
+            table=table,
+            table_label=spec.label,
+            expected_headers=[col.header for col in spec.columns],
+            download_url=url_for(
+                "science_care.sc_download_csv", table=table
+            ),
+            cancel_url=url_for(spec.list_endpoint),
+        ),
+        status,
+    )
+
+
+@science_care_bp.get("/reference/<string:table>/download")
+@login_required
+@sc_admin_required
+def sc_download_csv(table: str) -> Response:
+    """Stream an SC reference table as a CSV template.
+
+    Filtered to ``rate_set == "science_care"`` so an SC admin can never
+    see another tenant's rows.
+    """
+
+    spec = _resolve_sc_spec_or_404(table)
+    query = spec.model.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+    if spec.order_by is not None:
+        order_by = (
+            spec.order_by
+            if isinstance(spec.order_by, (list, tuple))
+            else (spec.order_by,)
+        )
+        query = query.order_by(*order_by)
+    rows = query.all()
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    headers = [column.header for column in spec.columns]
+    writer.writerow(headers)
+    for row in rows:
+        writer.writerow([column.export(row) for column in spec.columns])
+
+    response = Response(output.getvalue(), mimetype="text/csv")
+    response.headers["Content-Disposition"] = (
+        f"attachment; filename={spec.name}_template.csv"
+    )
+    return response
