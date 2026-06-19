@@ -74,8 +74,10 @@ def test_sc_quote_renders_for_sc_user(app: Flask) -> None:
     # All seven legs render.
     for n in range(1, 8):
         assert f"SHIPMENT {n}" in html
-    # HTMX script tag from base.html is present.
-    assert "htmx.org" in html
+    # HTMX script tag from base.html is present. Use the pinned URL so
+    # CodeQL doesn't flag a loose "htmx.org" substring as incomplete URL
+    # sanitization (it is a regression assertion, not a security check).
+    assert "unpkg.com/htmx.org@1.9.12" in html
 
 
 def test_sc_quote_blocks_non_sc_user(app: Flask) -> None:
