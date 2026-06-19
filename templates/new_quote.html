@@ -2,7 +2,7 @@
 {% block content %}
 <h1 class="fsi-display mb-3">Create New Quote</h1>
 <form method="post" class="fsi-body">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  {{ csrf_input() }}
 
   <div class="fsi-form-section fsi-form-section--boxed">
     <label class="form-label d-block">

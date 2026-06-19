@@ -26,7 +26,7 @@
               <td><a href="{{ url_for('quotes.lookup_quote', quote_id=quote.quote_id) }}">{{ quote.quote_id }}</a></td>
               <td>{{ summary.get('client_reference', '—') }}</td>
               <td>{{ quote.origin or '—' }} → {{ quote.destination or '—' }}</td>
-              <td>${{ '%.2f'|format(quote.total or 0) }}</td>
+              <td>{{ (quote.total or 0) | currency }}</td>
               <td>{{ summary.get('status', 'Saved') }} / {{ quote.quote_type or '—' }}</td>
             </tr>
           {% endfor %}

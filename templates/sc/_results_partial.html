@@ -35,17 +35,17 @@
           </td>
           <td class="text-end">
             {% if leg.air_quote and leg.air_quote.total %}
-              ${{ '%.2f'|format(leg.air_quote.total) }}
+              {{ leg.air_quote.total | currency }}
             {% else %}—{% endif %}
           </td>
           <td class="text-end">
             {% if leg.hotshot_quote and leg.hotshot_quote.total %}
-              ${{ '%.2f'|format(leg.hotshot_quote.total) }}
+              {{ leg.hotshot_quote.total | currency }}
             {% else %}—{% endif %}
           </td>
           <td class="text-end">
             {% if leg.established_rate %}
-              ${{ '%.2f'|format(leg.established_rate) }}
+              {{ leg.established_rate | currency }}
             {% else %}—{% endif %}
           </td>
           <td>
@@ -57,7 +57,7 @@
           </td>
           <td class="text-end">
             {% if leg.winner_total %}
-              <strong>${{ '%.2f'|format(leg.winner_total) }}</strong>
+              <strong>{{ leg.winner_total | currency }}</strong>
             {% else %}
               <span class="text-body-secondary">$0.00</span>
             {% endif %}
@@ -77,7 +77,7 @@
       <tfoot>
         <tr class="table-primary">
           <th colspan="6" class="text-end">Total S&amp;H</th>
-          <th class="text-end">${{ '%.2f'|format(grand_total) }}</th>
+          <th class="text-end">{{ grand_total | currency }}</th>
           <th></th>
         </tr>
       </tfoot>
@@ -102,7 +102,7 @@
   {% for leg in legs %}
   <span hx-swap-oob="innerHTML:#sc-leg-summary-winner-{{ leg.leg_index }}">
     {%- if leg.winner_mode -%}
-    ${{ '%.2f'|format(leg.winner_total or 0) }} {{ leg.winner_mode }}
+    {{ (leg.winner_total or 0) | currency }} {{ leg.winner_mode }}
     {%- elif leg.skip_reason -%}
     Skipped
     {%- else -%}

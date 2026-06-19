@@ -33,7 +33,7 @@
         <td><a class="btn btn-sm btn-info" href="{{ url_for('admin.edit_air_cost_zone', acz_id=acz.id) }}">Edit</a></td>
         <td>
           <form method="post" action="{{ url_for('admin.delete_air_cost_zone', acz_id=acz.id) }}" onsubmit="return confirm('Delete this air cost zone?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            {{ csrf_input() }}
             <button class="btn btn-sm btn-danger" type="submit">Delete</button>
           </form>
         </td>

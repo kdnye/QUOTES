@@ -34,7 +34,7 @@
 </datalist>
 
 <form method="post" action="{{ url_for('science_care.sc_lab_defaults_save') }}" class="row g-3">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  {{ csrf_input() }}
   {% for n in legs %}
   <div class="col-12 col-md-6 col-lg-4">
     <label class="form-label" for="lab_code_{{ n }}">Shipment {{ n }}</label>

@@ -14,7 +14,7 @@
 
       <form method="post" action="{{ url_for('setup.setup_db_init') }}" class="card">
         <div class="card-body">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          {{ csrf_input() }}
           <p class="mb-3">Click the button below to run the initialization step.</p>
           <button type="submit" class="btn btn-primary">Run database init</button>
         </div>

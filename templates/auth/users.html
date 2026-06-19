@@ -16,7 +16,7 @@
             <td>
               {% if not u.is_approved %}
                 <form method="post" action="{{ url_for('auth_bp.approve_user') }}" style="display:inline;">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  {{ csrf_input() }}
                   <input type="hidden" name="email" value="{{ u.email }}" />
                   <button class="btn" type="submit">Approve</button>
                 </form>

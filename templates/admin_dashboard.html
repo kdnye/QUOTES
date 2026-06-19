@@ -46,7 +46,7 @@
           method="post"
           action="{{ url_for('admin.toggle_quote_email_smtp') }}"
         >
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          {{ csrf_input() }}
           <div class="form-check form-switch">
             <input
               class="form-check-input"
@@ -91,7 +91,7 @@
             <td>{{ 'Yes' if u.is_active else 'No' }}</td>
             <td>
               <form method="post" action="{{ url_for('admin.toggle_active', user_id=u.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {{ csrf_input() }}
                 <button class="btn btn-sm btn-secondary" type="submit">Toggle</button>
               </form>
             </td>
@@ -100,7 +100,7 @@
             </td>
             <td>
               <form method="post" action="{{ url_for('admin.delete_user', user_id=u.id) }}" onsubmit="return confirm('Delete this user?');">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {{ csrf_input() }}
                 <button class="btn btn-sm btn-danger" type="submit">Delete</button>
               </form>
             </td>
@@ -115,7 +115,7 @@
                 action="{{ url_for('admin.approve_employee', user_id=u.id) }}"
                 class="d-inline"
               >
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {{ csrf_input() }}
                 <button class="btn btn-sm btn-success" type="submit">Approve</button>
               </form>
               {% endif %}
@@ -135,12 +135,12 @@
             <td>
               {% if not u.is_admin %}
               <form method="post" action="{{ url_for('admin.promote', user_id=u.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {{ csrf_input() }}
                 <button class="btn btn-sm btn-primary" type="submit">Promote</button>
               </form>
               {% else %}
               <form method="post" action="{{ url_for('admin.demote', user_id=u.id) }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                {{ csrf_input() }}
                 <button class="btn btn-sm btn-warning" type="submit">Demote</button>
               </form>
               {% endif %}

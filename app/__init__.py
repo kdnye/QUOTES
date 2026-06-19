@@ -335,6 +335,39 @@ def _verify_app_setup(app: Flask) -> List[str]:
     return errors
 
 
+def _register_template_helpers(app: Flask) -> None:
+    """Wire shared Jinja globals + filters for cross-template reuse.
+
+    Adds:
+
+    * ``csrf_input()`` global — emits ``<input type="hidden" name="csrf_token"
+      value="...">``. Replaces the 25+ inline copies that used to live in
+      each form template. Returns a :class:`markupsafe.Markup` so Jinja
+      doesn't double-escape the HTML.
+    * ``currency`` filter — formats a number as ``$1,234.56``. Templates
+      used to spell this out as ``${{ '%.2f'|format(x) }}`` in 7+ places;
+      now they write ``{{ x | currency }}`` and get a single source of
+      truth for the format.
+    """
+
+    from flask_wtf.csrf import generate_csrf
+
+    def csrf_input() -> Markup:
+        token = generate_csrf()
+        return Markup(
+            f'<input type="hidden" name="csrf_token" value="{token}">'
+        )
+
+    def currency(value, places: int = 2) -> str:
+        try:
+            return f"${float(value):,.{places}f}"
+        except (TypeError, ValueError):
+            return ""
+
+    app.jinja_env.globals["csrf_input"] = csrf_input
+    app.jinja_env.filters["currency"] = currency
+
+
 def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     """Application factory for the quote tool.
 
@@ -675,6 +708,8 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
     from .quotes import quotes_bp
     from app.quote.admin_view import admin_quotes_bp
     from app.science_care import science_care_bp
+
+    _register_template_helpers(app)
 
     csrf.exempt(api_bp)
     app.register_blueprint(api_bp, url_prefix="/api")
