@@ -111,6 +111,7 @@ class LegResult:
     dim_weight_lb: float = 0.0
     accessorial_labels: list[str] = field(default_factory=list)
     consumable_picks: dict[int, int] = field(default_factory=dict)
+    box_counts: dict[str, int] = field(default_factory=dict)
     air_quote: Any | None = None
     hotshot_quote: Any | None = None
     established_rate: float | None = None
@@ -167,10 +168,43 @@ def _collect_tissue_rows(
     return rows
 
 
+def _finalize_box_totals(
+    boxes_by_type: dict[str, int],
+    tissue_only_weight: float,
+    box_index: dict[str, SCBoxType],
+) -> tuple[float, int, float]:
+    """Apply tare + dim weight to a ``boxes_by_type`` dict.
+
+    Pulled out of :func:`allocate_boxes` so the override path can reuse
+    the same arithmetic without re-walking tissue rows. Given a starting
+    tissue-only weight, it adds each box's tare × count and computes the
+    dim weight as ``Σ L×W×H×count / DIM_DIVISOR``. Box codes not present
+    in ``box_index`` are silently dropped (same forgiving behaviour as
+    today's allocator).
+    """
+
+    total_weight = tissue_only_weight
+    dim_weight = 0.0
+    for code, count in boxes_by_type.items():
+        box = box_index.get(code)
+        if box is None:
+            continue
+        total_weight += float(box.tare_weight_lb or 0.0) * count
+        dim_weight += (
+            float(box.length_in or 0.0)
+            * float(box.width_in or 0.0)
+            * float(box.height_in or 0.0)
+            * count
+        ) / DIM_DIVISOR
+    total_boxes = sum(boxes_by_type.values())
+    return total_weight, total_boxes, dim_weight
+
+
 def allocate_boxes(
     tissue_rows: list[TissueRow],
     tissue_index: dict[str, SCTissueCode],
     box_index: dict[str, SCBoxType],
+    box_overrides: dict[str, int] | None = None,
 ) -> tuple[float, int, dict[str, int], float, list[str]]:
     """Resolve tissue rows into total weight, box counts, and dim weight.
 
@@ -188,10 +222,17 @@ def allocate_boxes(
     * ``unknown_codes`` lists tissue codes the user submitted that are
       not in ``tissue_index``. The caller skips the whole leg when this
       list is non-empty so a single typo can't undercount the freight.
+
+    ``box_overrides`` (optional) lets the caller replace the auto box
+    allocation entirely. When supplied with at least one non-zero entry,
+    the tissue weight calculation is unchanged but the box counts (and
+    therefore the tare + dim weight) come from ``box_overrides``
+    verbatim. Unknown box codes are silently dropped via
+    :func:`_finalize_box_totals`.
     """
 
-    total_weight = 0.0
-    boxes_by_type: dict[str, int] = {}
+    tissue_only_weight = 0.0
+    auto_boxes: dict[str, int] = {}
     unknown_codes: list[str] = []
     for row in tissue_rows:
         tissue = tissue_index.get(row.tissue_code)
@@ -203,13 +244,13 @@ def allocate_boxes(
         row.pieces_per_box = tissue.pieces_per_box or 1
         if row.qty <= 0:
             continue
-        total_weight += row.unit_weight_lb * row.qty
+        tissue_only_weight += row.unit_weight_lb * row.qty
         if not row.box_type_code:
             continue
         per_box = max(1, row.pieces_per_box)
         box_count = math.ceil(row.qty / per_box)
-        boxes_by_type[row.box_type_code] = (
-            boxes_by_type.get(row.box_type_code, 0) + box_count
+        auto_boxes[row.box_type_code] = (
+            auto_boxes.get(row.box_type_code, 0) + box_count
         )
         box = box_index.get(row.box_type_code)
         if box is not None:
@@ -220,20 +261,19 @@ def allocate_boxes(
                 float(box.height_in or 0.0),
             )
 
-    dim_weight = 0.0
-    for code, count in boxes_by_type.items():
-        box = box_index.get(code)
-        if box is None:
-            continue
-        total_weight += float(box.tare_weight_lb or 0.0) * count
-        dim_weight += (
-            float(box.length_in or 0.0)
-            * float(box.width_in or 0.0)
-            * float(box.height_in or 0.0)
-            * count
-        ) / DIM_DIVISOR
+    # Apply overrides (if any non-zero entries) - they replace the auto
+    # allocation entirely so the user can intentionally consolidate
+    # multiple tissues into one box or split into more.
+    if box_overrides:
+        boxes_by_type = {
+            code: count for code, count in box_overrides.items() if count > 0
+        }
+    else:
+        boxes_by_type = auto_boxes
 
-    total_boxes = sum(boxes_by_type.values())
+    total_weight, total_boxes, dim_weight = _finalize_box_totals(
+        boxes_by_type, tissue_only_weight, box_index
+    )
     return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
@@ -291,6 +331,31 @@ def _consumable_picks_from_form(
         picks[int(row.id)] = qty
         total += float(row.weight_lb_per_box or 0.0) * qty
     return total, picks
+
+
+def _box_overrides_from_form(
+    form: Mapping[str, str],
+    leg: int,
+    box_index: dict[str, SCBoxType],
+) -> dict[str, int]:
+    """Read the user's per-box-type Count inputs for one leg.
+
+    Returns ``{box_code: count}`` for non-zero entries (empty dict when
+    every input is blank or zero). The form keys are
+    ``box_count_<leg>_<box_id>`` - we resolve the ID back to the box
+    code via ``box_index`` so the rest of the pipeline keeps speaking
+    string codes.
+    """
+
+    by_id: dict[int, SCBoxType] = {int(b.id): b for b in box_index.values()}
+    overrides: dict[str, int] = {}
+    for box_id, box in by_id.items():
+        raw = form.get(f"box_count_{leg}_{box_id}")
+        count = _as_int(raw, default=0)
+        if count <= 0:
+            continue
+        overrides[box.code] = count
+    return overrides
 
 
 def _collect_accessorials(
@@ -493,13 +558,21 @@ def compute_sc_multileg(
             legs.append(result)
             continue
 
+        # Picks-first: when the user typed any box-count override for
+        # the leg, allocate_boxes uses those instead of the auto
+        # allocation from tissue rows. Blank submit -> falls back to
+        # today's tissue-driven allocation.
+        box_overrides = _box_overrides_from_form(form, n, box_index)
         (
             total_weight,
             total_boxes,
             boxes_by_type,
             dim_weight,
             unknown_codes,
-        ) = allocate_boxes(tissue_rows, tissue_index, box_index)
+        ) = allocate_boxes(
+            tissue_rows, tissue_index, box_index, box_overrides=box_overrides
+        )
+        result.box_counts = dict(boxes_by_type)
         if unknown_codes:
             # Refuse the leg rather than silently undercount weight on
             # what may be a typo. The form already shows unknown codes
@@ -630,6 +703,11 @@ def compute_sc_multileg(
                 consumables_json=(
                     json.dumps(result.consumable_picks)
                     if result.consumable_picks
+                    else None
+                ),
+                boxes_json=(
+                    json.dumps(result.box_counts)
+                    if result.box_counts
                     else None
                 ),
             )

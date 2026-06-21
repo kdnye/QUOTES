@@ -361,6 +361,33 @@ def test_sc_quote_form_renders_consumable_inputs(app: Flask) -> None:
         assert f'name="cons_qty_{leg}_{cons.id}"' in html
 
 
+def test_sc_quote_form_renders_box_count_inputs(app: Flask) -> None:
+    # The new per-leg Boxes section surfaces one Count input per
+    # SCBoxType, named box_count_<leg>_<id>.
+    from app.models import SCBoxType
+
+    user = _make_user("box-form@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    box = SCBoxType(
+        code="MED",
+        label="Medium",
+        length_in=20,
+        width_in=15,
+        height_in=18,
+        tare_weight_lb=4.0,
+    )
+    db.session.add(box)
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert ">Boxes<" in html
+    for leg in range(1, 8):
+        assert f'name="box_count_{leg}_{box.id}"' in html
+
+
 def test_base_template_loads_htmx() -> None:
     # Path-based check so the regression doesn't depend on rendering a
     # full request - the htmx script tag is mandatory for the SC page to
