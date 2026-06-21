@@ -791,6 +791,11 @@ class SCQuoteSessionLeg(db.Model):
     # JSON map of {consumable_id: qty} the user picked on the form. NULL
     # for legs submitted before the per-leg consumables feature shipped.
     consumables_json = db.Column(db.Text)
+    # JSON map of {box_type_code: count} the user ended up with for the
+    # leg (typed overrides win; falls back to the auto allocation from
+    # the tissue rows). NULL for legs submitted before this feature
+    # shipped.
+    boxes_json = db.Column(db.Text)
 
 
 class SCUserLabSlot(db.Model):

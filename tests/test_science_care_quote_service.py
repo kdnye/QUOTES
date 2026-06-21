@@ -527,3 +527,88 @@ def test_consumable_picks_persisted_on_leg(
     assert leg_row.consumables_json is not None
     decoded = json.loads(leg_row.consumables_json)
     assert decoded == {str(gel_pack.id): 3}
+
+
+def test_box_overrides_drive_counts(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The user's explicit per-box-type Count should replace the auto
+    # allocation from tissue rows. Tissue weight and the override-only
+    # tare/dim totals are what land in the leg.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    from app.models import RATE_SET_SCIENCE_CARE, SCBoxType
+
+    med_box = SCBoxType.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, code="MED"
+    ).one()
+
+    # Default form puts 1 PELV03 (auto-picks 1 XL box). Override with
+    # 3 Mediums and the leg's boxes_by_type must reflect the override
+    # only.
+    form = _form(**{f"box_count_1_{med_box.id}": "3"})
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.box_counts == {"MED": 3}
+    # 79 lb tissue + 3 * 4 lb tare + 1 * 25 lb auto dry-ice = 116 lb.
+    # (Auto consumable fallback kicks in because the form has no
+    # cons_qty_* values.)
+    assert leg.total_weight_lb == pytest.approx(116.0)
+
+
+def test_blank_box_overrides_fall_back_to_auto(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression: a leg submitted without any box_count_* keys must
+    # continue to receive today's tissue-driven auto allocation.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    leg = result["legs"][0]
+    # Same as test_full_orchestration_persists_session_and_picks_winner.
+    assert leg.total_weight_lb == pytest.approx(118.0)
+    # box_counts surfaces the auto allocation (1 XL from PELV03 default).
+    assert leg.box_counts == {"XL": 1}
+
+
+def test_box_overrides_persisted_on_leg(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    from app.models import (
+        RATE_SET_SCIENCE_CARE,
+        SCBoxType,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+    )
+
+    med_box = SCBoxType.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, code="MED"
+    ).one()
+    form = _form(**{f"box_count_1_{med_box.id}": "2"})
+    svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+
+    session = SCQuoteSession.query.filter_by(user_id=user.id).one()
+    leg_row = (
+        SCQuoteSessionLeg.query.filter_by(
+            session_id=session.id, leg_index=1
+        ).one()
+    )
+    assert leg_row.boxes_json is not None
+    assert json.loads(leg_row.boxes_json) == {"MED": 2}
