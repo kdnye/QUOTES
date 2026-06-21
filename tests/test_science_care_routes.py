@@ -481,6 +481,34 @@ def test_sc_box_counts_partial_preserves_typed_overrides(app: Flask) -> None:
     assert 'value="2"' in xlg_slice
 
 
+def test_sc_box_counts_partial_preserves_explicit_zero(app: Flask) -> None:
+    # Regression: an explicit "0" is a deliberate "no boxes of this
+    # type" override, NOT an empty input. It must survive the recompute
+    # even when the auto allocation would put boxes here.
+    user = _make_user(
+        "zero-override@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            # Auto would put 2 XLG boxes here. User explicitly set 0.
+            f"box_count_1_{xlg.id}": "0",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    xlg_slice = html.split(f'name="box_count_1_{xlg.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    # The "0" is preserved; the auto did not creep back in.
+    assert 'value="0"' in xlg_slice
+
+
 def test_sc_box_counts_partial_blocks_non_sc_user(app: Flask) -> None:
     user = _make_user("non-sc-box@example.com", rate_set="default")
     client = app.test_client()

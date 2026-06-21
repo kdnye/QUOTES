@@ -382,11 +382,14 @@ def sc_box_counts_partial(leg: int) -> str:
 
     box_values: dict[int, int] = {}
     for box in box_types:
-        typed = _safe_int(
-            request.form.get(f"box_count_{leg}_{box.id}"), 0
-        )
-        if typed > 0:
-            box_values[int(box.id)] = typed
+        # "Prefill empty inputs only" - if the user has typed ANYTHING
+        # (including a deliberate "0"), keep their value. Only a truly
+        # blank input falls back to the auto allocation. Distinguishes
+        # "user wants no boxes of this type" from "user hasn't said
+        # anything yet".
+        raw_val = request.form.get(f"box_count_{leg}_{box.id}")
+        if raw_val is not None and raw_val.strip() != "":
+            box_values[int(box.id)] = _safe_int(raw_val, 0)
             continue
         auto_count = int(auto_boxes_by_type.get(box.code, 0))
         if auto_count > 0:

@@ -39,7 +39,7 @@
            name="qty_{{ leg }}_{{ i }}"
            value="{{ 1 if prefill else '' }}"
            hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
-           hx-trigger="change delay:300ms"
+           hx-trigger="input delay:300ms"
            hx-include="#sc-leg-{{ leg }}"
            hx-target="#box-counts-{{ leg }}"
            hx-swap="outerHTML" />
