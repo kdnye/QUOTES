@@ -185,10 +185,15 @@ def _finalize_box_totals(
 
     total_weight = tissue_only_weight
     dim_weight = 0.0
+    total_boxes = 0
     for code, count in boxes_by_type.items():
         box = box_index.get(code)
         if box is None:
+            # Skip unknown box codes for the count too - otherwise
+            # total_boxes would be inflated by boxes whose tare and
+            # dims never landed in total_weight/dim_weight.
             continue
+        total_boxes += count
         total_weight += float(box.tare_weight_lb or 0.0) * count
         dim_weight += (
             float(box.length_in or 0.0)
@@ -196,7 +201,6 @@ def _finalize_box_totals(
             * float(box.height_in or 0.0)
             * count
         ) / DIM_DIVISOR
-    total_boxes = sum(boxes_by_type.values())
     return total_weight, total_boxes, dim_weight
 
 
@@ -347,10 +351,16 @@ def _box_overrides_from_form(
     string codes.
     """
 
-    by_id: dict[int, SCBoxType] = {int(b.id): b for b in box_index.values()}
     overrides: dict[str, int] = {}
-    for box_id, box in by_id.items():
-        raw = form.get(f"box_count_{leg}_{box_id}")
+    for box in box_index.values():
+        # Skip uncommitted / mock objects whose id hasn't been
+        # populated yet - int(None) in the form-key f-string would
+        # raise TypeError. In production every box_index value comes
+        # from a committed row so this is just a defensive guard for
+        # unit-test stubs.
+        if box.id is None:
+            continue
+        raw = form.get(f"box_count_{leg}_{box.id}")
         count = _as_int(raw, default=0)
         if count <= 0:
             continue
