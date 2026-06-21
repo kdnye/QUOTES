@@ -386,6 +386,107 @@ def test_sc_quote_form_renders_box_count_inputs(app: Flask) -> None:
     assert ">Boxes<" in html
     for leg in range(1, 8):
         assert f'name="box_count_{leg}_{box.id}"' in html
+        # The wrapping div is the HTMX swap target - if this id moves,
+        # the live-recompute trigger has nowhere to land.
+        assert f'id="box-counts-{leg}"' in html
+
+
+def _seed_box_count_endpoint_fixtures():
+    """Seed the SC reference data the box-count partial endpoint reads."""
+
+    from app.models import SCBoxType, SCTissueCode
+
+    med = SCBoxType(
+        code="MED",
+        label="Medium",
+        length_in=20,
+        width_in=15,
+        height_in=18,
+        tare_weight_lb=4.0,
+    )
+    xlg = SCBoxType(
+        code="XLG",
+        label="X-Large",
+        length_in=52,
+        width_in=20,
+        height_in=15,
+        tare_weight_lb=14.0,
+    )
+    pelv = SCTissueCode(
+        tissue_code="PELV03",
+        description="Pelvis to Toe",
+        unit_weight_lb=79.0,
+        default_box_type_code="XLG",
+        pieces_per_box=1,
+    )
+    db.session.add_all([med, xlg, pelv])
+    db.session.commit()
+    return med, xlg, pelv
+
+
+def test_sc_box_counts_partial_returns_auto_values(app: Flask) -> None:
+    # Submit tissue rows; the endpoint returns the box-count grid with
+    # the XLG count auto-filled and the others left blank.
+    user = _make_user("auto-box@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={"tissue_code_1_1": "PELV03", "qty_1_1": "2"},
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # OOB swap wrapper is rendered.
+    assert 'id="box-counts-1"' in html
+    # XLG resolves to value="2" (PELV03 default + qty=2 with pieces_per_box=1).
+    assert (
+        f'name="box_count_1_{xlg.id}"' in html
+        and 'value="2"' in html.split(f'name="box_count_1_{xlg.id}"', 1)[1]
+        .split("</div>", 1)[0]
+    )
+    # MED stays empty since no tissue maps to it.
+    med_slice = html.split(f'name="box_count_1_{med.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value=""' in med_slice
+
+
+def test_sc_box_counts_partial_preserves_typed_overrides(app: Flask) -> None:
+    # When the user has typed a MED count, the recompute keeps it (the
+    # XLG auto still flows in for the still-empty input).
+    user = _make_user("override-box@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            f"box_count_1_{med.id}": "4",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # MED kept the user's typed override.
+    med_slice = html.split(f'name="box_count_1_{med.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="4"' in med_slice
+    # XLG still auto-fills to 2.
+    xlg_slice = html.split(f'name="box_count_1_{xlg.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="2"' in xlg_slice
+
+
+def test_sc_box_counts_partial_blocks_non_sc_user(app: Flask) -> None:
+    user = _make_user("non-sc-box@example.com", rate_set="default")
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post("/sc/quote/leg/1/box-counts", data={})
+    assert response.status_code == 403
 
 
 def test_base_template_loads_htmx() -> None:

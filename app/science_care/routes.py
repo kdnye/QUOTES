@@ -49,7 +49,11 @@ from app.models import (
     db,
 )
 from app.policies import sc_admin_required, sc_user_required
-from app.services.science_care_quote import compute_sc_multileg
+from app.services.science_care_quote import (
+    _collect_tissue_rows,
+    allocate_boxes,
+    compute_sc_multileg,
+)
 from app.services.bulk_import import record_rate_upload, save_unique
 
 from . import science_care_bp
@@ -338,6 +342,61 @@ def sc_lab_lookup_partial() -> str:
         )
     return render_template(
         "sc/_lab_lookup.html", leg=leg, lab=lab, code=code
+    )
+
+
+@science_care_bp.post("/quote/leg/<int:leg>/box-counts")
+@login_required
+@sc_user_required
+def sc_box_counts_partial(leg: int) -> str:
+    """HTMX endpoint: live-recompute one leg's box-count inputs.
+
+    Triggered whenever a tissue row's qty input changes. The endpoint
+    receives the full leg body via ``hx-include="#sc-leg-<n>"`` and:
+
+    * Parses tissue rows with :func:`_collect_tissue_rows`.
+    * Calls :func:`allocate_boxes` (no overrides) to get the auto
+      ``{box_code: count}`` allocation that's implied by those rows.
+    * For each ``SCBoxType``, surfaces the user's typed value when it's
+      non-empty AND non-zero ("prefill empty inputs only" semantics);
+      otherwise surfaces the auto count.
+    * Returns the partial wrapping ``<div id="box-counts-<leg>">`` so
+      HTMX swaps the whole grid in place via ``hx-swap="outerHTML"``.
+    """
+
+    leg = max(1, min(SC_LEG_COUNT, _safe_int(leg, 1)))
+
+    tissue_index = {
+        t.tissue_code: t
+        for t in SCTissueCode.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all()
+    }
+    box_types = _box_type_choices()
+    box_index = {b.code: b for b in box_types}
+
+    tissue_rows = _collect_tissue_rows(request.form, leg)
+    _, _, auto_boxes_by_type, _, _ = allocate_boxes(
+        tissue_rows, tissue_index, box_index
+    )
+
+    box_values: dict[int, int] = {}
+    for box in box_types:
+        typed = _safe_int(
+            request.form.get(f"box_count_{leg}_{box.id}"), 0
+        )
+        if typed > 0:
+            box_values[int(box.id)] = typed
+            continue
+        auto_count = int(auto_boxes_by_type.get(box.code, 0))
+        if auto_count > 0:
+            box_values[int(box.id)] = auto_count
+
+    return render_template(
+        "sc/_box_count_inputs.html",
+        leg=leg,
+        box_types=box_types,
+        box_values=box_values,
     )
 
 

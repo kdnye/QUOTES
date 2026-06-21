@@ -1,0 +1,35 @@
+{# Per-leg box-count inputs grid.
+
+   Rendered in two contexts:
+
+   * Inline from `templates/sc/quote.html`'s Boxes fieldset on initial
+     GET and on the non-HTMX POST re-render.
+   * As the HTMX swap response from
+     `science_care.sc_box_counts_partial`, which targets this same
+     element (`#box-counts-<leg>`) with `hx-swap="outerHTML"`.
+
+   Expected context: leg (int), box_types (list[SCBoxType]),
+   box_values (dict[int, int] keyed by SCBoxType.id). Missing keys
+   render as empty inputs so the placeholder "0" surfaces.
+#}
+<div class="row g-2" id="box-counts-{{ leg }}">
+  {% for box in box_types %}
+  <div class="col-12 col-md-6 col-lg-3">
+    <label class="form-label small" for="box_count_{{ leg }}_{{ box.id }}">
+      {{ box.label or box.code }}
+      <span class="text-body-secondary">
+        ({{ box.length_in }}×{{ box.width_in }}×{{ box.height_in }}",
+        tare {{ box.tare_weight_lb }} lb)
+      </span>
+    </label>
+    <input class="form-control form-control-sm"
+           type="number"
+           min="0"
+           step="1"
+           id="box_count_{{ leg }}_{{ box.id }}"
+           name="box_count_{{ leg }}_{{ box.id }}"
+           value="{{ box_values.get(box.id, '') }}"
+           placeholder="0" />
+  </div>
+  {% endfor %}
+</div>

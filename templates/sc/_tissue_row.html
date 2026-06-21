@@ -27,12 +27,22 @@
            readonly />
   </td>
   <td>
+    {# qty change drives the leg's Boxes section: hx-post recomputes
+       the auto allocation server-side and swaps the inputs grid. The
+       hx-include scope is the whole leg body so all tissue rows AND
+       current box-count overrides ride along - the server preserves
+       typed overrides and only fills empty inputs. #}
     <input class="form-control form-control-sm"
            type="number"
            min="0"
            step="1"
            name="qty_{{ leg }}_{{ i }}"
-           value="{{ 1 if prefill else '' }}" />
+           value="{{ 1 if prefill else '' }}"
+           hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
+           hx-trigger="change delay:300ms"
+           hx-include="#sc-leg-{{ leg }}"
+           hx-target="#box-counts-{{ leg }}"
+           hx-swap="outerHTML" />
   </td>
   <td>
     <input class="form-control form-control-sm bg-body-tertiary"
