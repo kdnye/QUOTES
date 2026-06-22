@@ -496,9 +496,13 @@ numbers stay responsive even between server round-trips.
 subtotals for the leg:
 
 - **Tissue** – `Σ qty × unit_weight` across the leg's tissue rows.
-- **Consumables** – opt-in. Only consumable rows where the user typed a
-  non-zero `cons_qty_<leg>_<id>` contribute (`Σ weight_per_box × user_qty`).
-  Leaving every Qty blank yields 0 lb of consumables.
+- **Consumables** – temperature-mode defaults with per-row override. A blank
+  Qty falls back to the auto default for the matching row only:
+  `temp_mode=frozen` adds **1 domestic dry ice per box**; `temp_mode=rtu`
+  adds **1 domestic gel pack per box**. Non-matching consumable rows stay
+  at 0 unless the user types a Qty. Any typed value wins (including `0`
+  to suppress the default for that row), mirroring the
+  "prefill blank only" semantic of the per-leg box-count overrides.
 - **Box tare** – `Σ tare_weight × count` for every box on the leg.
 - **TOTAL** – the three summed; matches the client workbook's
   "TOTAL SHIPMENT WEIGHT" cell.
