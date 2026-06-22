@@ -440,9 +440,17 @@ def _canon_consumable_token(value: object) -> str:
     (``_parse_required_string`` only ``.strip()``s), so tenants who
     uploaded space-separated names should still hit the temp_mode
     default without re-uploading the table.
+
+    Explicit ``is None`` check (rather than ``value or ""``) so a
+    numeric ``0`` or ``False`` survives ``str()`` as its literal
+    representation instead of being coerced to an empty string -
+    defensive against a future schema change that might allow a
+    non-string token through.
     """
 
-    return re.sub(r"[\s_]+", "_", str(value or "").strip().lower())
+    if value is None:
+        return ""
+    return re.sub(r"[\s_]+", "_", str(value).strip().lower())
 
 
 def _default_consumable_for_mode(
