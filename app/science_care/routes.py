@@ -383,10 +383,15 @@ def sc_tissue_lookup_partial() -> str:
     # The freshly-typed code may not yet be reflected in request.args
     # because the user is still editing the input. Splice it in so the
     # OOB box allocation reflects what the visible tissue row will show
-    # after the swap completes.
+    # after the swap completes. Same for the defaulted qty: the rendered
+    # row gets qty=1 the moment prefill matches, so the OOB subtotals
+    # need to see qty=1 too or the Shipment-weight card + section pills
+    # stay at 0 lb until the user touches the qty input.
     args = request.args.copy()
     if prefill:
         args[f"tissue_code_{leg}_{row_index}"] = prefill.tissue_code
+        if qty_for_row > 0:
+            args[f"qty_{leg}_{row_index}"] = str(qty_for_row)
     box_counts_html, subtotals_html = _render_box_counts_and_subtotals(
         args, leg, box_types, box_index, oob=True
     )
