@@ -585,7 +585,26 @@ def _render_box_counts_and_subtotals(
         subtotals=subtotals,
         oob=True,
     )
-    return box_counts_html, subtotals_html
+    # Per-section subtotal pills (Consumables / Tissue items / Boxes)
+    # each live under their respective fieldset and are swapped
+    # individually via OOB so the user sees the same numbers without
+    # having to scroll to the bottom recap card.
+    section_html = "".join(
+        render_template(
+            "sc/_section_subtotal.html",
+            leg=leg,
+            section=section,
+            label=label,
+            weight_lb=subtotals[weight_key],
+            oob=True,
+        )
+        for section, label, weight_key in (
+            ("consumable", "Consumables", "consumable_lb"),
+            ("tissue", "Tissue", "tissue_lb"),
+            ("box", "Box tare", "box_tare_lb"),
+        )
+    )
+    return box_counts_html, subtotals_html + section_html
 
 
 @science_care_bp.get("/quote/defaults")

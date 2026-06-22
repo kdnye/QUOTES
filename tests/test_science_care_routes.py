@@ -833,6 +833,66 @@ def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
     assert "match(/_(\\d+)$/)" not in html
 
 
+def test_box_counts_endpoint_emits_per_section_subtotals(app: Flask) -> None:
+    # Three per-section subtotal pills (Consumables / Tissue / Boxes)
+    # must ride the same /box-counts response as the recap card so the
+    # numbers in each fieldset update without a separate round-trip.
+    user = _make_user(
+        "section-sub@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "1",
+            "temp_mode_1": "frozen",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Each section's subtotal wrapper carries an OOB swap target.
+    assert 'id="sc-consumable-subtotal-1"' in html
+    assert 'id="sc-tissue-subtotal-1"' in html
+    assert 'id="sc-box-subtotal-1"' in html
+    # Subtotal pills carry the recap card's three numbers.
+    # tissue 79 lb, dry ice auto 25 lb, XLG tare 14 lb.
+    assert "79.0 lb" in html
+    assert "25.0 lb" in html
+    assert "14.0 lb" in html
+
+
+def test_tissue_lookup_response_starts_with_tr_element(app: Flask) -> None:
+    # Regression for a production bug: when this partial's response
+    # carries leading whitespace from Jinja {% set %} blocks, the
+    # browser's table-context parser drops the new <tr> and the HTMX
+    # outerHTML swap silently no-ops. The server returns the right
+    # data, but the row visually never updates. The fix is to use
+    # whitespace-stripping {%- ... -%} on every leading block so the
+    # response opens with the <tr> tag immediately.
+    user = _make_user(
+        "trswap@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&qty_1_1=1"
+    )
+    body = response.get_data(as_text=True)
+    # No leading whitespace at all - the response must open directly
+    # with the <tr> element so HTMX's table-fragment parser can find
+    # it inside the synthesized <tbody> wrapper.
+    assert body.lstrip("\n").startswith(
+        body
+    ), "tissue-lookup response must not start with leading newlines"
+    assert body.startswith(
+        "<tr"
+    ), f"expected response to start with '<tr', got: {body[:40]!r}"
+
+
 def test_box_count_inputs_carry_hx_post_for_live_subtotals(app: Flask) -> None:
     # Regression: typing a box-count override must trigger a recompute
     # of the per-leg Shipment-weight card. The override input needs its

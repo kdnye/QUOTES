@@ -179,6 +179,11 @@
               </div>
               {% endfor %}
             </div>
+            {% with section = "consumable",
+                    label = "Consumables",
+                    weight_lb = subtotals_initial.consumable_lb %}
+              {% include "sc/_section_subtotal.html" %}
+            {% endwith %}
           </fieldset>
 
           <div class="mb-2 d-flex justify-content-between align-items-center">
@@ -193,6 +198,13 @@
               + Add tissue row
             </button>
           </div>
+
+          {% set leg_result = (
+              results.legs[leg - 1]
+              if results and results.legs|length >= leg
+              else none
+          ) %}
+          {% set subtotals_initial = sc_initial_subtotals_for_leg(leg_result) %}
 
           <div id="tissue-rows-{{ leg }}" class="table-responsive">
             <table class="table table-sm align-middle">
@@ -221,6 +233,11 @@
               </tbody>
             </table>
           </div>
+          {% with section = "tissue",
+                  label = "Tissue",
+                  weight_lb = subtotals_initial.tissue_lb %}
+            {% include "sc/_section_subtotal.html" %}
+          {% endwith %}
 
           <fieldset class="mb-3 mt-3">
             <legend class="h6">Boxes</legend>
@@ -230,21 +247,21 @@
               want — your typed values are preserved on subsequent
               recomputes.
             </p>
-            {% set leg_result = (
-                results.legs[leg - 1]
-                if results and results.legs|length >= leg
-                else none
-            ) %}
             {% with box_values = sc_box_values_for_leg(box_types, leg_result) %}
               {% include "sc/_box_count_inputs.html" %}
+            {% endwith %}
+            {% with section = "box",
+                    label = "Box tare",
+                    weight_lb = subtotals_initial.box_tare_lb %}
+              {% include "sc/_section_subtotal.html" %}
             {% endwith %}
           </fieldset>
 
           {# Per-leg weight subtotals: matches the client workbook's
-             TOTAL SHIPMENT WEIGHT block. Initial render is all zeros;
-             the box-counts HTMX endpoint emits this as an OOB swap so
-             the numbers stay in sync as the user types. #}
-          {% with subtotals = sc_initial_subtotals_for_leg(leg_result) %}
+             TOTAL SHIPMENT WEIGHT block. Recaps the three section
+             subtotals + adds a TOTAL. The box-counts HTMX endpoint
+             emits this as an OOB swap so the numbers stay in sync. #}
+          {% with subtotals = subtotals_initial %}
             {% include "sc/_leg_weight_subtotals.html" %}
           {% endwith %}
         </div>

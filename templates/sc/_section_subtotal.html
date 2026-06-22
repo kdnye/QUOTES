@@ -1,0 +1,20 @@
+{# Inline "Subtotal:" pill rendered at the bottom of each shipment
+   subsection (Consumables, Tissue items, Boxes).
+
+   Expected context:
+   * leg (int)
+   * section (str) - one of 'consumable', 'tissue', 'box'. Used as the
+     DOM id suffix so each section's pill can be OOB-swapped on its own.
+   * label (str) - visible "X subtotal:" prefix
+   * weight_lb (float) - subtotal in pounds; the kg column rounds to a
+     whole kg for parity with the client workbook.
+   * oob (bool, optional) - when true, HTMX swaps the wrapper into the
+     matching #sc-<section>-subtotal-<leg> element.
+#}
+<div class="d-flex justify-content-end small mt-1"
+     id="sc-{{ section }}-subtotal-{{ leg }}"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <span class="text-body-secondary me-2">{{ label }} subtotal:</span>
+  <strong>{{ '%.1f'|format(weight_lb) }} lb</strong>
+  <span class="text-body-secondary ms-2">/ {{ '%d'|format((weight_lb * 0.453592)|round(0, 'common')) }} kg</span>
+</div>
