@@ -6,10 +6,9 @@
    * prefill (SCTissueCode | None) - lookup result for the typed code
    * code (str) - what the user typed; preserved on unknown-code so the
      input doesn't silently clear out from under them
+   * qty_for_row (int) - current qty (used to pre-render Total lbs/kg)
    * box_types (list[SCBoxType]) - every SC box type (for the dropdown,
      filtered down to the boxes that actually fit this tissue)
-   * allowed_box_codes (list[str]) - subset of box codes that have a
-     non-zero capacity for this tissue (empty until a code is looked up)
    * capacities (dict[str, int]) - {box_code: pieces_per_box} for the
      allowed boxes; rendered in the row's data attributes so client-side
      code can reuse it without another round-trip
@@ -19,7 +18,13 @@
    * user_box_pick (str) - the box the user explicitly chose, if any
      (empty string means "use the recommendation")
 #}
-<tr>
+{% set unit_weight = prefill.unit_weight_lb if prefill else 0 %}
+{% set effective_qty = qty_for_row if qty_for_row else 0 %}
+{% set total_lbs = (unit_weight or 0) * effective_qty %}
+{# 1 lb = 0.453592 kg; round to nearest whole kg for display parity with
+   the client's workbook (which rounds the Total kg column to integers). #}
+{% set total_kg = (total_lbs * 0.453592) %}
+<tr data-unit-weight="{{ unit_weight or 0 }}">
   <td>
     <input class="form-control form-control-sm {% if code and not prefill %}is-invalid{% endif %}"
            list="sc-tissue-codes"
@@ -49,12 +54,12 @@
        hx-include scope is the whole leg body so all tissue rows AND
        current box-count overrides ride along - the server preserves
        typed overrides and only fills empty inputs. #}
-    <input class="form-control form-control-sm"
+    <input class="form-control form-control-sm sc-qty-input"
            type="number"
            min="0"
            step="1"
            name="qty_{{ leg }}_{{ i }}"
-           value="{{ 1 if prefill else '' }}"
+           value="{{ effective_qty if prefill or effective_qty else '' }}"
            hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
            hx-trigger="input delay:300ms"
            hx-include="#sc-leg-{{ leg }}"
@@ -64,7 +69,22 @@
   <td>
     <input class="form-control form-control-sm bg-body-tertiary"
            name="unit_weight_{{ leg }}_{{ i }}"
-           value="{{ '%.2f'|format(prefill.unit_weight_lb) if prefill else '' }}"
+           value="{{ '%.2f'|format(unit_weight) if prefill else '' }}"
+           title="Per-piece average weight"
+           readonly />
+  </td>
+  <td>
+    <input class="form-control form-control-sm bg-body-tertiary sc-line-total-lbs"
+           name="tissue_total_lbs_{{ leg }}_{{ i }}"
+           value="{{ '%.1f'|format(total_lbs) if total_lbs else '' }}"
+           title="Qty × Avg lbs"
+           readonly />
+  </td>
+  <td>
+    <input class="form-control form-control-sm bg-body-tertiary sc-line-total-kg"
+           name="tissue_total_kg_{{ leg }}_{{ i }}"
+           value="{{ '%d'|format(total_kg|round(0, 'common')) if total_kg else '' }}"
+           title="Qty × Avg lbs × 0.4536 (rounded to whole kg)"
            readonly />
   </td>
   <td>

@@ -1,0 +1,56 @@
+{# Per-leg weight subtotals card.
+
+   Rendered:
+   * Inline from `templates/sc/quote.html` on initial GET (all zeros until
+     the user starts typing).
+   * As an OOB swap from /sc/quote/leg/<n>/box-counts (qty trigger, box
+     override, consumable Qty, etc.) so the numbers update live alongside
+     the auto-allocator.
+
+   Expected context:
+   * leg (int)
+   * subtotals (dict): keys tissue_lb, consumable_lb, box_tare_lb,
+     total_lb. Each is a float.
+   * oob (bool, optional): when true, add `hx-swap-oob` so HTMX swaps
+     the outer wrapper into the existing #sc-weight-subtotals-<leg>.
+#}
+{% set lb_to_kg = 0.453592 %}
+<div class="card mt-3"
+     id="sc-weight-subtotals-{{ leg }}"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  <div class="card-header bg-body-tertiary py-2">
+    <strong class="small">Shipment weight</strong>
+  </div>
+  <div class="card-body py-2">
+    <div class="row g-2 small">
+      <div class="col-6 col-md-3 d-flex justify-content-between">
+        <span class="text-body-secondary">Tissue</span>
+        <span>
+          <strong>{{ '%.1f'|format(subtotals.tissue_lb) }}</strong> lb
+          <span class="text-body-secondary">/ {{ '%d'|format((subtotals.tissue_lb * lb_to_kg)|round(0, 'common')) }} kg</span>
+        </span>
+      </div>
+      <div class="col-6 col-md-3 d-flex justify-content-between">
+        <span class="text-body-secondary">Consumables</span>
+        <span>
+          <strong>{{ '%.1f'|format(subtotals.consumable_lb) }}</strong> lb
+          <span class="text-body-secondary">/ {{ '%d'|format((subtotals.consumable_lb * lb_to_kg)|round(0, 'common')) }} kg</span>
+        </span>
+      </div>
+      <div class="col-6 col-md-3 d-flex justify-content-between">
+        <span class="text-body-secondary">Box tare</span>
+        <span>
+          <strong>{{ '%.1f'|format(subtotals.box_tare_lb) }}</strong> lb
+          <span class="text-body-secondary">/ {{ '%d'|format((subtotals.box_tare_lb * lb_to_kg)|round(0, 'common')) }} kg</span>
+        </span>
+      </div>
+      <div class="col-6 col-md-3 d-flex justify-content-between border-start ps-3">
+        <span class="fw-semibold">TOTAL</span>
+        <span>
+          <strong>{{ '%.1f'|format(subtotals.total_lb) }}</strong> lb
+          <span class="text-body-secondary">/ {{ '%d'|format((subtotals.total_lb * lb_to_kg)|round(0, 'common')) }} kg</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</div>

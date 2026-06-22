@@ -159,8 +159,9 @@ see what is driving the leg's billable weight).
   the tare + dim totals.
 
 **Code location:** `app/services/science_care_quote.py`,
-`_finalize_box_totals()` (~line 175) and the breakdown derivation in
-`compute_sc_multileg()` (~line 770).
+`_finalize_box_totals()` (~line 175), `compute_leg_subtotals()` (live HTMX
+helper for the form's Shipment-weight card), and the breakdown derivation in
+`compute_sc_multileg()` (post-pricing results).
 
 **Worked example:** Leg with one `PELV03` (79 lb) shipping in 1 X-Large box
 (tare 14 lb) at `frozen` / `domestic`, no user-picked consumables:
@@ -173,7 +174,9 @@ see what is driving the leg's billable weight).
 Each component lands on `LegResult.{tissue_weight_lb, consumable_weight_lb,
 box_tare_weight_lb}` so the results card can render them as separate columns
 and the three values always sum to `total_weight_lb` (asserted in
-`test_leg_result_carries_weight_breakdown`).
+`test_leg_result_carries_weight_breakdown`). The live form uses
+`compute_leg_subtotals()` to render the same three values + total in the
+Shipment-weight card during data entry, before pricing runs.
 
 **Last verified:** 2026-06-22
 

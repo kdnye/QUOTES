@@ -937,3 +937,85 @@ def test_weight_breakdown_with_box_override(
     assert leg.box_tare_weight_lb == pytest.approx(12.0)
     assert leg.consumable_weight_lb == pytest.approx(75.0)
     assert leg.total_weight_lb == pytest.approx(166.0)
+
+
+# --- compute_leg_subtotals (live HTMX subtotals helper) ---------------------
+
+
+def test_compute_leg_subtotals_uses_picks_when_present() -> None:
+    # User picks override the auto consumable fallback. The helper must
+    # honour the same picks-first rule as the orchestrator.
+    from werkzeug.datastructures import ImmutableMultiDict
+
+    rows = [
+        TissueRow(tissue_code="ARM01", qty=2, unit_weight_lb=12.0),
+    ]
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+    }
+    cons = SCConsumable(
+        id=1,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    form = ImmutableMultiDict(
+        {"temp_mode_1": "frozen", "cons_qty_1_1": "3"}.items()
+    )
+    subtotals = svc.compute_leg_subtotals(
+        form,
+        leg=1,
+        tissue_rows=rows,
+        boxes_by_type={"LRG": 1},
+        box_index=box_index,
+        consumable_index=[cons],
+    )
+    assert subtotals == pytest.approx({
+        "tissue_lb": 24.0,    # 2 × 12 lb
+        "consumable_lb": 75.0,  # picks: 3 × 25 lb
+        "box_tare_lb": 8.0,   # 1 LRG × 8 lb
+        "total_lb": 107.0,
+    })
+
+
+def test_compute_leg_subtotals_auto_fallback_when_no_picks() -> None:
+    # Blank consumable Qty falls back to the temp_mode × scope auto
+    # formula scaled by total_boxes (matches the orchestrator).
+    from werkzeug.datastructures import ImmutableMultiDict
+
+    rows = [
+        TissueRow(tissue_code="ARM01", qty=2, unit_weight_lb=12.0),
+    ]
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+    }
+    cons = SCConsumable(
+        id=1,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    form = ImmutableMultiDict({"temp_mode_1": "frozen"}.items())
+    subtotals = svc.compute_leg_subtotals(
+        form,
+        leg=1,
+        tissue_rows=rows,
+        boxes_by_type={"LRG": 2},
+        box_index=box_index,
+        consumable_index=[cons],
+    )
+    # Auto: 2 boxes × 25 lb dry ice = 50 lb.
+    assert subtotals == pytest.approx({
+        "tissue_lb": 24.0,
+        "consumable_lb": 50.0,
+        "box_tare_lb": 16.0,
+        "total_lb": 90.0,
+    })

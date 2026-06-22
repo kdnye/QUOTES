@@ -483,6 +483,56 @@ def _consumable_picks_from_form(
     return total, picks
 
 
+def compute_leg_subtotals(
+    form: Mapping[str, str],
+    leg: int,
+    tissue_rows: list[TissueRow],
+    boxes_by_type: dict[str, int],
+    box_index: dict[str, SCBoxType],
+    consumable_index: list[SCConsumable],
+) -> dict[str, float]:
+    """Compute tissue / consumable / box-tare / total subtotals for one leg.
+
+    Returns a dict with ``tissue_lb``, ``consumable_lb``, ``box_tare_lb``,
+    and ``total_lb`` keys. Used by the live HTMX endpoints to keep the
+    per-leg weight subtotals card in sync with whatever the user just
+    changed (qty, box override, consumable Qty, temp_mode, etc.).
+
+    ``tissue_rows`` must already be populated by :func:`allocate_boxes` so
+    each row carries the correct ``unit_weight_lb``; ``boxes_by_type`` is
+    the allocator's final per-box-code count.
+    """
+
+    tissue_lb = sum(r.unit_weight_lb * r.qty for r in tissue_rows)
+    box_tare_lb = sum(
+        float(box_index[code].tare_weight_lb or 0.0) * count
+        for code, count in boxes_by_type.items()
+        if code in box_index
+    )
+
+    # Consumable weight follows the same picks-first rule as the
+    # orchestrator: user-typed Qty totals beat the auto fallback.
+    consumable_lb, picks = _consumable_picks_from_form(
+        form, leg, consumable_index
+    )
+    if not picks:
+        temp_mode = (form.get(f"temp_mode_{leg}") or "").strip()
+        intl_country = (form.get(f"intl_country_{leg}") or "").strip()
+        scope = "intl" if intl_country else "domestic"
+        total_boxes = sum(boxes_by_type.values())
+        consumable_lb = _auto_consumable_weight(
+            temp_mode, scope, total_boxes, consumable_index
+        )
+
+    total_lb = tissue_lb + box_tare_lb + consumable_lb
+    return {
+        "tissue_lb": tissue_lb,
+        "consumable_lb": consumable_lb,
+        "box_tare_lb": box_tare_lb,
+        "total_lb": total_lb,
+    }
+
+
 def _box_overrides_from_form(
     form: Mapping[str, str],
     leg: int,
