@@ -198,15 +198,22 @@
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
-                  <th style="width:20%">Tissue code</th>
-                  <th style="width:30%">Description</th>
-                  <th style="width:15%">Qty</th>
-                  <th style="width:15%">Unit weight (lb)</th>
-                  <th style="width:20%">Default box</th>
+                  <th style="width:18%">Tissue code</th>
+                  <th style="width:28%">Description</th>
+                  <th style="width:12%">Qty</th>
+                  <th style="width:14%">Unit weight (lb)</th>
+                  <th style="width:28%">Box</th>
                 </tr>
               </thead>
               <tbody>
-                {% with i = 1, prefill = None %}
+                {% with i = 1,
+                        prefill = None,
+                        code = "",
+                        allowed_box_codes = [],
+                        capacities = {},
+                        recommended_box_code = None,
+                        recommended_pieces_per_box = 0,
+                        user_box_pick = "" %}
                   {% include "sc/_tissue_row.html" %}
                 {% endwith %}
               </tbody>

@@ -16,7 +16,9 @@ from flask.testing import FlaskClient
 from app import create_app
 from app.models import (
     RATE_SET_SCIENCE_CARE,
+    SCBoxType,
     SCLab,
+    SCTissueBoxCapacity,
     SCTissueCode,
     User,
     db,
@@ -162,13 +164,24 @@ def test_sc_tissue_lookup_prefills_known_code(app: Flask) -> None:
     user = _make_user(
         "tissue2@example.com", rate_set=RATE_SET_SCIENCE_CARE
     )
-    db.session.add(
-        SCTissueCode(
-            tissue_code="PELV03",
-            description="Pelvis to Toe",
-            unit_weight_lb=79.0,
-            default_box_type_code="XL",
-        )
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="XL",
+                label="X-Large",
+                length_in=52,
+                width_in=20,
+                height_in=15,
+                tare_weight_lb=14.0,
+            ),
+            SCTissueCode(
+                tissue_code="PELV03",
+                description="Pelvis to Toe",
+                unit_weight_lb=79.0,
+                default_box_type_code="XL",
+                pieces_per_box=1,
+            ),
+        ]
     )
     db.session.commit()
     client = app.test_client()
@@ -180,6 +193,9 @@ def test_sc_tissue_lookup_prefills_known_code(app: Flask) -> None:
     html = response.get_data(as_text=True)
     assert "Pelvis to Toe" in html
     assert "79.00" in html
+    # XL is the legacy default_box_type_code; it lands in the new per-row
+    # box dropdown as the only option (the SCTissueBoxCapacity table is
+    # empty for this tissue, so the route falls back to the legacy field).
     assert "XL" in html
 
 
@@ -604,3 +620,81 @@ def test_base_template_loads_htmx() -> None:
     with open("templates/base.html", "r", encoding="utf-8") as fp:
         contents = fp.read()
     assert "htmx.org@1.9.12" in contents
+
+
+def test_sc_tissue_lookup_dropdown_lists_capacity_boxes(app: Flask) -> None:
+    # When SCTissueBoxCapacity rows exist for a tissue, the row's box
+    # dropdown lists every box-size with non-zero capacity AND marks the
+    # recommended one (smallest box count for the qty).
+    user = _make_user("dd@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="LRG",
+                label="Large",
+                length_in=32,
+                width_in=18,
+                height_in=20,
+                tare_weight_lb=8.0,
+            ),
+            SCBoxType(
+                code="XLG",
+                label="X-Large",
+                length_in=52,
+                width_in=20,
+                height_in=15,
+                tare_weight_lb=14.0,
+            ),
+            SCTissueCode(
+                tissue_code="ARM01",
+                description="Arm Whole",
+                unit_weight_lb=12.0,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="ARM01", box_code="LRG", pieces_per_box=7
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="ARM01", box_code="XLG", pieces_per_box=10
+            ),
+        ]
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=ARM01&qty_1_1=1"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Both allowed box codes appear as options; the smaller-volume LRG
+    # is the recommendation for qty 1 (ties on box count → smaller box).
+    assert "LRG" in html
+    assert "XLG" in html
+    assert "recommended" in html
+
+
+def test_sc_tissue_lookup_dropdown_disabled_when_no_box_options(
+    app: Flask,
+) -> None:
+    # A tissue with no capacity rows AND no legacy default renders the
+    # dropdown disabled so the user can't accidentally submit a leg with
+    # an unallocated tissue.
+    user = _make_user("noopt@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    db.session.add(
+        SCTissueCode(
+            tissue_code="MOBILE KITS",
+            description="Mobile Kit",
+            unit_weight_lb=50.0,
+        )
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=MOBILE%20KITS"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "no box configured" in html
+    # The dropdown is rendered as disabled.
+    assert "disabled" in html

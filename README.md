@@ -428,6 +428,52 @@ The `sc_user_required` and `sc_admin_required` policies in `app/policies.py`
 treat both `scicr` and `science_care` as Science Care tenants, so users
 landing on `/sc/quote` are not 403'd by the access gate.
 
+## Science Care multi-lab quote
+
+The Science Care blueprint at `/sc` adds a 7-leg quote form that mirrors the
+client's offline workbook. Each leg picks the cheapest of Air, Hotshot, or the
+pre-negotiated Established Lane rate, and weight is rolled up from per-tissue
+quantities plus consumables and box tare.
+
+### Per-tissue box capacities
+
+Each tissue ships in a specific box size; some tissues fit multiple sizes with
+different per-box quantities. The reference data captures one capacity per
+(tissue, box) pair, matching the client's spreadsheet template:
+
+| Tissue Code | Unit Weight (lb) | Medium | Large | X-Large | Small Airtray | Airtray |
+| --- | --- | --- | --- | --- | --- | --- |
+| `ARM01` (Arm Whole) | 12 | 0 | 7 | 10 | 0 | 0 |
+| `CADV02` (Embalmed Cadaver) | 300 | 0 | 0 | 0 | 0 | 1 |
+
+A value of `0` means the box size cannot ship that tissue. The allocator picks
+the box that minimises the box count for the requested qty, with ties broken by
+smaller interior volume. The user can override per-row via the Box dropdown on
+each tissue line.
+
+The data lives in two tables:
+
+- `sc_tissue_codes` – one row per tissue (code, description, avg weight, notes).
+- `sc_tissue_box_capacity` – one row per (tissue, box) with `pieces_per_box`.
+
+Both round-trip via `/sc/reference/sc_tissue_codes/upload` and `download` using
+a CSV that matches the client template column-for-column:
+
+```
+Tissue Code, Description, Unit Weight (lb), Medium, Large, X-Large, Small Airtray, Airtray, Notes
+```
+
+Box dimensions and tare weights live in `sc_box_types`. The migration seeds a
+placeholder `SMALL_AIRTRAY` row with zero dimensions – an SC admin must populate
+real dimensions before the allocator will pick that box.
+
+### Reference table CSV admin
+
+SC admins can download / upload each reference table individually from
+`/sc/reference`. CSVs are tenant-scoped (rows from other rate-sets are never
+included or overwritten) and uploads support both `replace` (truncate the SC
+slice and reload) and `add` (append, dedupe by primary key).
+
 ## Advanced
 
 - Run only the JSON API: `python standalone_flask_app.py`.

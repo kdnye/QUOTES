@@ -44,6 +44,7 @@ from app.models import (
     SCBoxType,
     SCConsumable,
     SCLab,
+    SCTissueBoxCapacity,
     SCTissueCode,
     SCUserLabSlot,
     db,
@@ -52,16 +53,22 @@ from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import (
     TissueRow,
     _collect_tissue_rows,
+    _tissue_box_capacity_index,
     allocate_boxes,
     compute_sc_multileg,
+    recommended_box_for_qty,
 )
 from app.services.bulk_import import record_rate_upload, save_unique
 
 from . import science_care_bp
 from .csv_admin import (
     SC_TABLE_SPECS,
+    append_sc_tissue_codes,
+    download_sc_tissue_codes_csv,
     force_science_care_rate_set,
     get_sc_table_spec,
+    parse_sc_tissue_codes_csv,
+    replace_sc_tissue_codes,
 )
 
 
@@ -256,6 +263,12 @@ def sc_tissue_row_partial() -> str:
         i=row_index,
         prefill=None,
         code="",
+        box_types=_box_type_choices(),
+        allowed_box_codes=[],
+        capacities={},
+        recommended_box_code=None,
+        recommended_pieces_per_box=0,
+        user_box_pick="",
     )
 
 
@@ -303,12 +316,60 @@ def sc_tissue_lookup_partial() -> str:
             ).first()
         )
 
+    box_types = _box_type_choices()
+    box_index = {b.code: b for b in box_types}
+
+    # Load this tissue's per-box capacities so the row dropdown can
+    # advertise the box sizes that actually fit it (and so the auto-pick
+    # below uses the right pieces_per_box).
+    capacity_index: dict[str, dict[str, int]] = {}
+    if code:
+        capacity_index = _tissue_box_capacity_index([code])
+    capacities_for_row = dict(capacity_index.get(code, {}))
+
+    # Legacy tenants without capacity rows still have a single
+    # default_box_type_code on SCTissueCode. Surface it in the dropdown
+    # so the page renders the same way until they upload the expanded
+    # CSV.
+    if (
+        prefill is not None
+        and not capacities_for_row
+        and prefill.default_box_type_code
+        and prefill.default_box_type_code in box_index
+    ):
+        capacities_for_row[prefill.default_box_type_code] = max(
+            1, int(prefill.pieces_per_box or 1)
+        )
+
+    qty_for_row = max(0, _safe_int(
+        request.args.get(f"qty_{leg}_{row_index}"), 1 if prefill else 0
+    ))
+    recommended_box, recommended_per_box = recommended_box_for_qty(
+        max(qty_for_row, 1) if prefill else qty_for_row,
+        capacities_for_row,
+        box_index,
+    )
+
+    # Carry the user's existing box pick (if any) through the partial so
+    # an HTMX-driven re-render (qty change, etc.) does not reset their
+    # selection. Empty means "auto" - the template selects the
+    # recommended box visually.
+    user_box_pick = (
+        request.args.get(f"box_choice_{leg}_{row_index}") or ""
+    ).strip().upper()
+
     tissue_row_html = render_template(
         "sc/_tissue_row.html",
         leg=leg,
         i=row_index,
         prefill=prefill,
         code=code,
+        box_types=box_types,
+        allowed_box_codes=sorted(capacities_for_row.keys()),
+        capacities=capacities_for_row,
+        recommended_box_code=recommended_box,
+        recommended_pieces_per_box=recommended_per_box,
+        user_box_pick=user_box_pick,
     )
 
     # OOB recompute of the leg's box counts. Mirrors the qty trigger in
@@ -324,12 +385,16 @@ def sc_tissue_lookup_partial() -> str:
     args = request.args.copy()
     if prefill:
         args[f"tissue_code_{leg}_{row_index}"] = prefill.tissue_code
-    box_types = _box_type_choices()
-    box_index = {b.code: b for b in box_types}
     tissue_rows = _collect_tissue_rows(args, leg)
     tissue_index = _tissue_index_for_rows(tissue_rows)
+    leg_capacity_index = _tissue_box_capacity_index(
+        [r.tissue_code for r in tissue_rows]
+    )
     _, _, auto_boxes_by_type, _, _ = allocate_boxes(
-        tissue_rows, tissue_index, box_index
+        tissue_rows,
+        tissue_index,
+        box_index,
+        capacity_index=leg_capacity_index,
     )
     box_values = _resolve_box_values(
         args, leg, box_types, auto_boxes_by_type
@@ -458,8 +523,14 @@ def sc_box_counts_partial(leg: int) -> str:
 
     tissue_rows = _collect_tissue_rows(request.form, leg)
     tissue_index = _tissue_index_for_rows(tissue_rows)
+    capacity_index = _tissue_box_capacity_index(
+        [r.tissue_code for r in tissue_rows]
+    )
     _, _, auto_boxes_by_type, _, _ = allocate_boxes(
-        tissue_rows, tissue_index, box_index
+        tissue_rows,
+        tissue_index,
+        box_index,
+        capacity_index=capacity_index,
     )
 
     box_values = _resolve_box_values(
@@ -626,61 +697,106 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
     form = CSVUploadForm()
     if form.validate_on_submit():
         file_storage = form.file.data
-        try:
-            objects = _parse_csv_rows(file_storage, spec)
-        except (ValueError, pd.errors.EmptyDataError) as exc:
-            form.file.errors.append(str(exc))
-        else:
-            force_science_care_rate_set(objects)
-            action = form.action.data
-            inserted = len(objects)
-            skipped = 0
-            # Wrap the write block in try/rollback so a unique- or FK-
-            # constraint failure (or anything else SQLAlchemy raises)
-            # doesn't leak an open transaction back to the next request
-            # or 500 in the user's face. The same pattern is used by
-            # other admin upload paths.
+        # sc_tissue_codes carries one capacity row per non-zero box-size
+        # column - the generic single-model parser can't emit those, so
+        # this branch handles parse + write itself before falling back
+        # to the shared path for everything else.
+        if table == "sc_tissue_codes":
             try:
-                if action == "replace":
-                    spec.model.query.filter_by(
-                        rate_set=RATE_SET_SCIENCE_CARE
-                    ).delete(synchronize_session=False)
-                    db.session.flush()
-                    db.session.bulk_save_objects(objects)
-                    message = (
-                        f"{spec.label} data replaced with "
-                        f"{inserted} row(s)."
-                    )
-                else:
-                    if spec.unique_attr:
-                        inserted, skipped = save_unique(
-                            db.session,
-                            spec.model,
-                            objects,
-                            spec.unique_attr,
+                tissues, capacities = parse_sc_tissue_codes_csv(file_storage)
+            except (ValueError, pd.errors.EmptyDataError) as exc:
+                form.file.errors.append(str(exc))
+            else:
+                action = form.action.data
+                inserted = len(tissues)
+                skipped = 0
+                try:
+                    if action == "replace":
+                        replace_sc_tissue_codes(tissues, capacities)
+                        message = (
+                            f"{spec.label} data replaced with "
+                            f"{inserted} row(s)."
                         )
                     else:
-                        db.session.bulk_save_objects(objects)
-                    message = (
-                        f"{spec.label} upload added {inserted} row(s)."
-                    )
-                    if spec.unique_attr and skipped:
-                        message = (
-                            f"{spec.label} upload added {inserted} "
-                            f"row(s) ({skipped} duplicate row(s) "
-                            "skipped)."
+                        inserted, skipped = append_sc_tissue_codes(
+                            tissues, capacities
                         )
+                        message = (
+                            f"{spec.label} upload added {inserted} row(s)."
+                        )
+                        if skipped:
+                            message = (
+                                f"{spec.label} upload added {inserted} "
+                                f"row(s) ({skipped} duplicate row(s) "
+                                "skipped)."
+                            )
 
-                record_rate_upload(
-                    db.session, spec.name, file_storage.filename
-                )
-                db.session.commit()
-            except Exception as exc:  # noqa: BLE001 - re-surfaced on form
-                db.session.rollback()
-                form.file.errors.append(f"Database error: {exc}")
+                    record_rate_upload(
+                        db.session, spec.name, file_storage.filename
+                    )
+                    db.session.commit()
+                except Exception as exc:  # noqa: BLE001 - re-surfaced on form
+                    db.session.rollback()
+                    form.file.errors.append(f"Database error: {exc}")
+                else:
+                    flash(message, "success")
+                    return redirect(url_for(spec.list_endpoint))
+        else:
+            try:
+                objects = _parse_csv_rows(file_storage, spec)
+            except (ValueError, pd.errors.EmptyDataError) as exc:
+                form.file.errors.append(str(exc))
             else:
-                flash(message, "success")
-                return redirect(url_for(spec.list_endpoint))
+                force_science_care_rate_set(objects)
+                action = form.action.data
+                inserted = len(objects)
+                skipped = 0
+                # Wrap the write block in try/rollback so a unique- or FK-
+                # constraint failure (or anything else SQLAlchemy raises)
+                # doesn't leak an open transaction back to the next request
+                # or 500 in the user's face. The same pattern is used by
+                # other admin upload paths.
+                try:
+                    if action == "replace":
+                        spec.model.query.filter_by(
+                            rate_set=RATE_SET_SCIENCE_CARE
+                        ).delete(synchronize_session=False)
+                        db.session.flush()
+                        db.session.bulk_save_objects(objects)
+                        message = (
+                            f"{spec.label} data replaced with "
+                            f"{inserted} row(s)."
+                        )
+                    else:
+                        if spec.unique_attr:
+                            inserted, skipped = save_unique(
+                                db.session,
+                                spec.model,
+                                objects,
+                                spec.unique_attr,
+                            )
+                        else:
+                            db.session.bulk_save_objects(objects)
+                        message = (
+                            f"{spec.label} upload added {inserted} row(s)."
+                        )
+                        if spec.unique_attr and skipped:
+                            message = (
+                                f"{spec.label} upload added {inserted} "
+                                f"row(s) ({skipped} duplicate row(s) "
+                                "skipped)."
+                            )
+
+                    record_rate_upload(
+                        db.session, spec.name, file_storage.filename
+                    )
+                    db.session.commit()
+                except Exception as exc:  # noqa: BLE001 - re-surfaced on form
+                    db.session.rollback()
+                    form.file.errors.append(f"Database error: {exc}")
+                else:
+                    flash(message, "success")
+                    return redirect(url_for(spec.list_endpoint))
 
     status = 400 if request.method == "POST" else 200
     return (
@@ -710,24 +826,30 @@ def sc_download_csv(table: str) -> Response:
     """
 
     spec = _resolve_sc_spec_or_404(table)
-    query = spec.model.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
-    if spec.order_by is not None:
-        order_by = (
-            spec.order_by
-            if isinstance(spec.order_by, (list, tuple))
-            else (spec.order_by,)
-        )
-        query = query.order_by(*order_by)
-    rows = query.all()
+    if table == "sc_tissue_codes":
+        # Custom serializer: one CSV row per tissue, with one column per
+        # box-size capacity (zeros for missing rows).
+        body = download_sc_tissue_codes_csv()
+    else:
+        query = spec.model.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        if spec.order_by is not None:
+            order_by = (
+                spec.order_by
+                if isinstance(spec.order_by, (list, tuple))
+                else (spec.order_by,)
+            )
+            query = query.order_by(*order_by)
+        rows = query.all()
 
-    output = io.StringIO()
-    writer = csv.writer(output)
-    headers = [column.header for column in spec.columns]
-    writer.writerow(headers)
-    for row in rows:
-        writer.writerow([column.export(row) for column in spec.columns])
+        output = io.StringIO()
+        writer = csv.writer(output)
+        headers = [column.header for column in spec.columns]
+        writer.writerow(headers)
+        for row in rows:
+            writer.writerow([column.export(row) for column in spec.columns])
+        body = output.getvalue()
 
-    response = Response(output.getvalue(), mimetype="text/csv")
+    response = Response(body, mimetype="text/csv")
     response.headers["Content-Disposition"] = (
         f"attachment; filename={spec.name}_template.csv"
     )

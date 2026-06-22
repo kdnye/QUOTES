@@ -1,8 +1,24 @@
 {# Single tissue row used both inline (initial state) and as the HTMX
    partial returned by /sc/quote/tissue-row and /sc/quote/tissue-lookup.
-   Expected context: leg (int), i (int), prefill (SCTissueCode | None),
-   code (str — what the user typed; preserved on unknown-code so the
-   input doesn't silently clear out from under them). #}
+
+   Expected context:
+   * leg (int), i (int) - row coordinates within the leg
+   * prefill (SCTissueCode | None) - lookup result for the typed code
+   * code (str) - what the user typed; preserved on unknown-code so the
+     input doesn't silently clear out from under them
+   * box_types (list[SCBoxType]) - every SC box type (for the dropdown,
+     filtered down to the boxes that actually fit this tissue)
+   * allowed_box_codes (list[str]) - subset of box codes that have a
+     non-zero capacity for this tissue (empty until a code is looked up)
+   * capacities (dict[str, int]) - {box_code: pieces_per_box} for the
+     allowed boxes; rendered in the row's data attributes so client-side
+     code can reuse it without another round-trip
+   * recommended_box_code (str | None) - the box the allocator would
+     pick by default for the current qty (None when no capacity rows)
+   * recommended_pieces_per_box (int) - paired with recommended_box_code
+   * user_box_pick (str) - the box the user explicitly chose, if any
+     (empty string means "use the recommendation")
+#}
 <tr>
   <td>
     <input class="form-control form-control-sm {% if code and not prefill %}is-invalid{% endif %}"
@@ -52,9 +68,45 @@
            readonly />
   </td>
   <td>
-    <input class="form-control form-control-sm bg-body-tertiary"
-           name="default_box_{{ leg }}_{{ i }}"
-           value="{{ prefill.default_box_type_code if prefill else '' }}"
-           readonly />
+    {# Box dropdown: lists only boxes whose pieces_per_box > 0 for this
+       tissue. The first option ("Auto") is the sentinel that re-runs
+       the recommendation each time qty changes - picking a specific
+       box overrides the recommendation. Changing the pick re-runs the
+       box-counts allocator so the leg's Boxes section reflects the
+       chosen size immediately. When no tissue code is selected yet,
+       the dropdown is disabled and shows a hint. #}
+    {% set selectable_boxes = [] %}
+    {% for box in box_types %}
+      {% if capacities.get(box.code, 0) > 0 %}
+        {% set _ = selectable_boxes.append(box) %}
+      {% endif %}
+    {% endfor %}
+    <select class="form-select form-select-sm"
+            name="box_choice_{{ leg }}_{{ i }}"
+            {% if not selectable_boxes %}disabled{% endif %}
+            hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
+            hx-trigger="change"
+            hx-include="#sc-leg-{{ leg }}"
+            hx-target="#box-counts-{{ leg }}"
+            hx-swap="outerHTML"
+            data-recommended="{{ recommended_box_code or '' }}">
+      {% if not selectable_boxes %}
+      <option value="">— no box configured —</option>
+      {% else %}
+        <option value=""
+                {% if not user_box_pick %}selected{% endif %}>
+          Auto{% if recommended_box_code %}
+            — {{ recommended_box_code }} ({{ recommended_pieces_per_box }}/box)
+          {% endif %}
+        </option>
+        {% for box in selectable_boxes %}
+        <option value="{{ box.code }}"
+                {% if box.code == user_box_pick %}selected{% endif %}>
+          {{ box.label or box.code }}
+          ({{ capacities.get(box.code, 0) }}/box{% if box.code == recommended_box_code %} • recommended{% endif %})
+        </option>
+        {% endfor %}
+      {% endif %}
+    </select>
   </td>
 </tr>

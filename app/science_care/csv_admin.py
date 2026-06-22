@@ -20,8 +20,12 @@ regardless of what's in their CSV.
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import date
 from typing import Any, Dict
+
+import pandas as pd
 
 # Imports from app.admin are *read-only*. Mutating any of these helpers
 # is out of scope for the SC blueprint per the planning doc.
@@ -44,7 +48,9 @@ from app.models import (
     SCConsumable,
     SCEstablishedLane,
     SCLab,
+    SCTissueBoxCapacity,
     SCTissueCode,
+    db,
 )
 
 
@@ -155,6 +161,12 @@ SC_TABLE_SPECS: Dict[str, TableSpec] = {
             ),
         ),
     ),
+    # sc_tissue_codes uses a custom import/export path (see
+    # parse_sc_tissue_codes_csv / download_sc_tissue_codes_csv) because
+    # one CSV row stores BOTH an SCTissueCode and one SCTissueBoxCapacity
+    # per non-zero box-size column. The TableSpec here is kept around
+    # only so the upload page can announce the expected headers - the
+    # routes intercept this table key before calling _parse_csv_rows.
     "sc_tissue_codes": TableSpec(
         name="sc_tissue_codes",
         label="SC Tissue Codes",
@@ -180,14 +192,32 @@ SC_TABLE_SPECS: Dict[str, TableSpec] = {
                 parser=_parse_required_float,
             ),
             ColumnSpec(
-                header="Default Box Type",
-                attr="default_box_type_code",
-                parser=_parse_optional_string,
+                header="Medium",
+                attr="_pieces_med",
+                parser=_parse_optional_int,
                 required=False,
             ),
             ColumnSpec(
-                header="Pieces Per Box",
-                attr="pieces_per_box",
+                header="Large",
+                attr="_pieces_lrg",
+                parser=_parse_optional_int,
+                required=False,
+            ),
+            ColumnSpec(
+                header="X-Large",
+                attr="_pieces_xlg",
+                parser=_parse_optional_int,
+                required=False,
+            ),
+            ColumnSpec(
+                header="Small Airtray",
+                attr="_pieces_small_airtray",
+                parser=_parse_optional_int,
+                required=False,
+            ),
+            ColumnSpec(
+                header="Airtray",
+                attr="_pieces_airtray",
                 parser=_parse_optional_int,
                 required=False,
             ),
@@ -387,3 +417,311 @@ def force_science_care_rate_set(rows: list[Any]) -> None:
 
     for row in rows:
         row.rate_set = RATE_SET_SCIENCE_CARE
+
+
+# --- Tissue-code custom CSV path --------------------------------------------
+#
+# The tissue-code CSV stores both an SCTissueCode (the parent row: code,
+# description, weight, notes) and zero-or-more SCTissueBoxCapacity rows
+# (one per box-size column with a non-zero qty). The generic TableSpec
+# pipeline can only emit one model per row, so the SC routes intercept
+# this table key and call the helpers below instead.
+
+# Maps each CSV box-size header to the box code it refers to. The header
+# string is the customer's column label (see the spreadsheet template).
+# Unicode dashes used in the source template are normalized to ASCII in
+# _normalize_box_header() before lookup.
+BOX_HEADER_TO_CODE: dict[str, str] = {
+    "medium": "MED",
+    "large": "LRG",
+    "x-large": "XLG",
+    "xlarge": "XLG",
+    "small airtray": "SMALL_AIRTRAY",
+    "smallairtray": "SMALL_AIRTRAY",
+    "airtray": "AIRTRAY",
+    "airtray (box05)": "AIRTRAY",
+}
+
+# Headers we drop into BOX_HEADER_TO_CODE keys at parse time. Kept here
+# so the upload page can advertise the same list back to the SC admin.
+TISSUE_BOX_CAPACITY_HEADERS: tuple[str, ...] = (
+    "Medium",
+    "Large",
+    "X-Large",
+    "Small Airtray",
+    "Airtray",
+)
+
+# Headers shown to the SC admin on the upload page + emitted on download.
+TISSUE_CSV_HEADERS: tuple[str, ...] = (
+    "Tissue Code",
+    "Description",
+    "Unit Weight (lb)",
+) + TISSUE_BOX_CAPACITY_HEADERS + ("Notes",)
+
+
+def _normalize_box_header(header: str) -> str:
+    """Normalize a box-capacity column header for case/dash-insensitive lookup."""
+
+    # The customer template uses U+2010 HYPHEN ("X‐Large") in some
+    # generations; normalise to ASCII hyphen so the lookup succeeds
+    # regardless of source-file dialect.
+    return (
+        str(header)
+        .replace("‐", "-")
+        .replace("‑", "-")
+        .replace("‒", "-")
+        .replace("–", "-")
+        .replace("—", "-")
+        .strip()
+        .lower()
+    )
+
+
+def parse_sc_tissue_codes_csv(
+    file_storage: Any,
+) -> tuple[list[SCTissueCode], list[SCTissueBoxCapacity]]:
+    """Parse an SC tissue-codes CSV into parent + capacity rows.
+
+    The expected header layout matches the customer template:
+
+        Tissue Code, Description, Unit Weight (lb), Medium, Large,
+        X-Large, Small Airtray, Airtray, Notes
+
+    For each data row, one :class:`SCTissueCode` is produced from the
+    code/description/weight/notes columns, and one
+    :class:`SCTissueBoxCapacity` is produced for each non-zero box-size
+    cell. Zero or blank cells mean "this box cannot ship this tissue"
+    and yield no capacity row.
+
+    Raises:
+        ValueError: When required columns are missing, the file is empty,
+            or any cell fails to parse. The message lists the row number
+            and column so the SC admin can fix the CSV.
+    """
+
+    file_storage.stream.seek(0)
+    df = pd.read_csv(file_storage)
+    df.columns = [str(col).lstrip("﻿").strip() for col in df.columns]
+
+    required_meta = {"Tissue Code", "Description", "Unit Weight (lb)"}
+    missing = required_meta - set(df.columns)
+    if missing:
+        raise ValueError(
+            "CSV must include columns: "
+            + ", ".join(sorted(required_meta)) + "."
+        )
+
+    # Build {original_header: box_code} for every header that maps to a
+    # known box. Unknown box columns are ignored - they're either typos
+    # or a box code the SC tenant hasn't created yet.
+    header_to_box: dict[str, str] = {}
+    for header in df.columns:
+        key = _normalize_box_header(header)
+        if key in BOX_HEADER_TO_CODE:
+            header_to_box[header] = BOX_HEADER_TO_CODE[key]
+
+    df = df.replace({pd.NA: None})
+    tissues: list[SCTissueCode] = []
+    capacities: list[SCTissueBoxCapacity] = []
+    errors: list[str] = []
+    seen_codes: set[str] = set()
+
+    for row_index, row in enumerate(df.to_dict(orient="records"), start=2):
+        # Skip fully-blank rows (saves the SC admin from a confusing
+        # "enter a value" error for trailing whitespace lines).
+        if all(_is_missing(row.get(col)) for col in df.columns):
+            continue
+
+        row_errors: list[str] = []
+        try:
+            code = _parse_required_string(row.get("Tissue Code"))
+        except ValueError as exc:
+            row_errors.append(f"Tissue Code: {exc}")
+            code = None  # type: ignore[assignment]
+
+        description = _parse_optional_string(row.get("Description"))
+
+        try:
+            weight = _parse_required_float(row.get("Unit Weight (lb)"))
+        except ValueError as exc:
+            row_errors.append(f"Unit Weight (lb): {exc}")
+            weight = None  # type: ignore[assignment]
+
+        notes = _parse_optional_string(row.get("Notes")) if "Notes" in df.columns else None
+
+        # Pieces per box for every recognised box column. Blank → 0
+        # (meaning "this box cannot ship this tissue", same as a 0 in
+        # the customer template). Non-integer values surface as a row
+        # error so the SC admin can spot the typo.
+        per_box: dict[str, int] = {}
+        for header, box_code in header_to_box.items():
+            raw = row.get(header)
+            if _is_missing(raw):
+                continue
+            try:
+                qty = _parse_required_int(raw)
+            except ValueError as exc:
+                row_errors.append(f"{header}: {exc}")
+                continue
+            if qty < 0:
+                row_errors.append(
+                    f"{header}: pieces per box must be >= 0"
+                )
+                continue
+            if qty > 0:
+                per_box[box_code] = qty
+
+        if row_errors:
+            errors.append(f"Row {row_index}: {'; '.join(row_errors)}")
+            continue
+
+        if code in seen_codes:
+            errors.append(
+                f"Row {row_index}: duplicate tissue code {code!r}"
+            )
+            continue
+        seen_codes.add(code)
+
+        # Derive default_box_type_code + pieces_per_box from the per-box
+        # map so legacy callers (and the existing model schema) keep
+        # working. The default mirrors the new allocator's preference:
+        # smallest box-count, ties broken by smaller interior volume -
+        # but here we don't have an order, so just pick the largest
+        # capacity (which IS the smallest box count for qty == 1).
+        default_box = None
+        pieces_per_box = None
+        if per_box:
+            default_box, pieces_per_box = max(
+                per_box.items(), key=lambda kv: kv[1]
+            )
+
+        tissue = SCTissueCode(
+            tissue_code=code,
+            description=description,
+            unit_weight_lb=weight,
+            default_box_type_code=default_box,
+            pieces_per_box=pieces_per_box,
+            notes=notes,
+        )
+        tissues.append(tissue)
+
+        for box_code, qty in per_box.items():
+            capacities.append(
+                SCTissueBoxCapacity(
+                    tissue_code=code,
+                    box_code=box_code,
+                    pieces_per_box=qty,
+                )
+            )
+
+    if errors:
+        raise ValueError(" ".join(errors))
+    if not tissues:
+        raise ValueError("No data rows found in the CSV file.")
+    return tissues, capacities
+
+
+def download_sc_tissue_codes_csv() -> str:
+    """Serialize every science-care tissue code as the customer template.
+
+    Box capacity columns appear in the canonical order
+    (Medium, Large, X-Large, Small Airtray, Airtray). Tissues with no
+    capacity rows render zeros across all five columns - exactly what
+    the customer's spreadsheet uses to signal "cannot ship in any box".
+    """
+
+    tissues = (
+        SCTissueCode.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .order_by(SCTissueCode.tissue_code)
+        .all()
+    )
+    caps = (
+        SCTissueBoxCapacity.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .all()
+    )
+    cap_index: dict[tuple[str, str], int] = {
+        (c.tissue_code, c.box_code): int(c.pieces_per_box or 0)
+        for c in caps
+    }
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(TISSUE_CSV_HEADERS)
+
+    # Header → box code mapping for the five capacity columns, derived
+    # from BOX_HEADER_TO_CODE so adding a column keeps the export and
+    # import in sync.
+    capacity_columns: list[tuple[str, str]] = [
+        (h, BOX_HEADER_TO_CODE[_normalize_box_header(h)])
+        for h in TISSUE_BOX_CAPACITY_HEADERS
+    ]
+
+    for tissue in tissues:
+        row = [
+            tissue.tissue_code,
+            tissue.description or "",
+            tissue.unit_weight_lb,
+        ]
+        for _header, box_code in capacity_columns:
+            row.append(cap_index.get((tissue.tissue_code, box_code), 0))
+        row.append(tissue.notes or "")
+        writer.writerow(row)
+
+    return output.getvalue()
+
+
+def replace_sc_tissue_codes(
+    tissues: list[SCTissueCode], capacities: list[SCTissueBoxCapacity]
+) -> None:
+    """Truncate + reload both SC tissue tables for the SC rate-set.
+
+    Wraps the two-table replace in a single flush so a constraint
+    failure rolls back both halves. The caller commits the surrounding
+    audit row.
+    """
+
+    SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE
+    ).delete(synchronize_session=False)
+    SCTissueCode.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE
+    ).delete(synchronize_session=False)
+    db.session.flush()
+    for tissue in tissues:
+        tissue.rate_set = RATE_SET_SCIENCE_CARE
+    for cap in capacities:
+        cap.rate_set = RATE_SET_SCIENCE_CARE
+    db.session.bulk_save_objects(tissues)
+    db.session.bulk_save_objects(capacities)
+
+
+def append_sc_tissue_codes(
+    tissues: list[SCTissueCode], capacities: list[SCTissueBoxCapacity]
+) -> tuple[int, int]:
+    """Upsert tissue + capacity rows by tissue code, returning (added, skipped).
+
+    A duplicate tissue code in the CSV that already exists in the DB
+    counts as skipped (no overwrite) - matches the behaviour of
+    :func:`app.services.bulk_import.save_unique` used by the other SC
+    tables. New tissue codes get their parent row plus every capacity
+    row inserted in one flush.
+    """
+
+    existing_codes = {
+        code for (code,) in db.session.query(SCTissueCode.tissue_code)
+        .filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .all()
+    }
+    fresh_tissues = [
+        t for t in tissues if t.tissue_code not in existing_codes
+    ]
+    fresh_codes = {t.tissue_code for t in fresh_tissues}
+    fresh_caps = [c for c in capacities if c.tissue_code in fresh_codes]
+    for tissue in fresh_tissues:
+        tissue.rate_set = RATE_SET_SCIENCE_CARE
+    for cap in fresh_caps:
+        cap.rate_set = RATE_SET_SCIENCE_CARE
+    db.session.bulk_save_objects(fresh_tissues)
+    db.session.bulk_save_objects(fresh_caps)
+    return len(fresh_tissues), len(tissues) - len(fresh_tissues)
