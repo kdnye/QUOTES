@@ -216,9 +216,17 @@ established lane.
   flagged with a `skip_reason`.
 - SC-to-SC fallback: if no established rate exists, the cheapest of Air /
   Hotshot is used instead so the leg still produces a freight cost.
+- Established rate resolution (`_lookup_established`) tries `(origin_zip,
+  dest_zip)` first. On a miss, it derives the leg's `(city, state)` from
+  `Zipcode_Zones.csv` (via `app.services.zip_city_lookup`) and falls back
+  to any lane row whose `dest_city` + `dest_state` match. This mirrors the
+  source workbook's `lab_code + "City,State"` VLOOKUP so a different ZIP
+  in the same metro still picks up the lane price. The exact ZIP match
+  always wins when both rows exist.
 
 **Code location:** `app/services/science_care_quote.py`,
-`_cheapest_for_leg()` (~line 480) and `_lookup_established()` (~line 519).
+`_cheapest_for_leg()` (~line 480) and `_lookup_established()` (~line 519);
+ZIP→city helper in `app/services/zip_city_lookup.py`.
 
 **Worked example:** Outbound leg, Air = $300, Hotshot = $250, Established
 = $200:
@@ -234,4 +242,4 @@ Same totals but `routing_type = "SC to SC"`:
 
     winner = ("Hotshot", 250)  # fall through to cheapest-of
 
-**Last verified:** 2026-06-22
+**Last verified:** 2026-06-22 (added dest_city/dest_state fallback)

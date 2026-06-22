@@ -365,6 +365,114 @@ def test_established_lane_respects_effective_dates(
     assert leg.winner_mode == "Established"
 
 
+def test_established_lane_city_state_fallback(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A lane row with no exact dest_zip but matching dest_city/dest_state
+    should still apply when the leg's dest_zip resolves to that city/state
+    via the ZIP→city helper.
+
+    Mirrors the workbook's lab + "City,State" VLOOKUP: a lane priced for
+    "SCPA → Mahwah, NJ" applies to any Mahwah ZIP, not just one
+    representative one.
+    """
+
+    from app.services import zip_city_lookup
+
+    _seed_reference(app)
+    # Lane keyed by metro, NOT by ZIP. dest_zip is required by the schema
+    # so use a sentinel ZIP that does NOT match the leg's dest_zip - the
+    # match must come from the city/state columns.
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="00000",
+            dest_city="Mahwah",
+            dest_state="NJ",
+            service_type="Any",
+            rate=825.0,
+        )
+    )
+    db.session.commit()
+
+    # Stub the ZIP→city helper instead of depending on the production
+    # Zipcode_Zones.csv being present in the test environment.
+    monkeypatch.setattr(
+        zip_city_lookup,
+        "lookup_city_state",
+        lambda zip_code: ("MAHWAH", "NJ") if zip_code == "07495" else None,
+    )
+    # _lookup_established imports the helper by name, so patch both
+    # bindings to be safe.
+    monkeypatch.setattr(svc, "lookup_city_state", lambda z: ("MAHWAH", "NJ") if z == "07495" else None)
+
+    _stub_create_quote(
+        monkeypatch,
+        {("Air", "07495"): 1200.0, ("Hotshot", "07495"): 1100.0},
+    )
+    form = _form(dest_zip_1="07495")
+    result = svc.compute_sc_multileg(form, user=_make_user(), request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.established_rate == 825.0
+    # Established is cheaper than both Air (1200) and Hotshot (1100), so
+    # it wins the cheapest-of-three rollup automatically.
+    assert leg.winner_mode == "Established"
+    assert leg.winner_total == 825.0
+
+
+def test_established_lane_zip_match_wins_over_city_fallback(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When both a ZIP-keyed lane AND a metro-keyed lane exist for the same
+    origin, the exact ZIP match must win — even if the metro row is cheaper.
+
+    The ZIP match represents the admin's specific intent (this exact lane,
+    this exact price); the metro fallback is a safety net for "any ZIP in
+    this city". Letting the cheaper metro row override the explicit ZIP
+    row would be surprising.
+    """
+
+    from app.services import zip_city_lookup
+
+    _seed_reference(app)
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="07495",
+            service_type="Any",
+            rate=900.0,
+        )
+    )
+    db.session.add(
+        SCEstablishedLane(
+            origin_zip="85705",
+            dest_zip="00000",
+            dest_city="Mahwah",
+            dest_state="NJ",
+            service_type="Any",
+            rate=500.0,
+        )
+    )
+    db.session.commit()
+
+    monkeypatch.setattr(
+        zip_city_lookup,
+        "lookup_city_state",
+        lambda zip_code: ("MAHWAH", "NJ"),
+    )
+    monkeypatch.setattr(svc, "lookup_city_state", lambda z: ("MAHWAH", "NJ"))
+
+    _stub_create_quote(
+        monkeypatch,
+        {("Air", "07495"): 2000.0, ("Hotshot", "07495"): 2000.0},
+    )
+    form = _form(dest_zip_1="07495", routing_type_1="SC to SC")
+    result = svc.compute_sc_multileg(form, user=_make_user(), request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    # Exact ZIP wins (900) - cheaper metro row (500) is ignored.
+    assert leg.established_rate == 900.0
+
+
 def test_unknown_tissue_code_skips_leg(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

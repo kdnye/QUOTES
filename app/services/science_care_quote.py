@@ -39,6 +39,7 @@ from app.models import (
 )
 from app.services.constants import DIM_DIVISOR
 from app.services.quote import create_quote
+from app.services.zip_city_lookup import lookup_city_state
 
 
 # Maximum number of shipment legs surfaced by the form. Mirrors the
@@ -637,19 +638,29 @@ def _lookup_established(
 ) -> float | None:
     """Return the lowest Established Lane rate that covers a leg today.
 
+    Resolution order, mirroring the workbook's behaviour:
+
+    1. Exact ``(origin_zip, dest_zip)`` match.
+    2. If no ZIP match, resolve ``dest_zip`` to its ``(city, state)``
+       via ``Zipcode_Zones.csv`` and match any lane row for the same
+       ``origin_zip`` whose ``dest_city`` / ``dest_state`` align. This
+       mirrors the spreadsheet's ``lab_code + "City,State"`` VLOOKUP -
+       a lane for "Mahwah, NJ" applies to any Mahwah ZIP, not just the
+       one representative ZIP seeded into ``dest_zip``.
+
     Honours ``effective_from`` / ``effective_to`` so expired or
     not-yet-active rates don't leak into the rollup. A NULL bound is
-    treated as open-ended (no lower or upper limit).
+    treated as open-ended (no lower or upper limit). The lowest active
+    rate across whichever match path produced rows is returned.
     """
 
     if not origin_zip or not dest_zip:
         return None
     today = date.today()
-    rows = (
+    active = (
         SCEstablishedLane.query.filter_by(
             rate_set=RATE_SET_SCIENCE_CARE,
             origin_zip=origin_zip,
-            dest_zip=dest_zip,
         )
         .filter(SCEstablishedLane.service_type.in_(["Air", "Hotshot", "Any"]))
         .filter(
@@ -662,10 +673,27 @@ def _lookup_established(
                 SCEstablishedLane.effective_to >= today,
             ),
         )
-        .all()
     )
-    rates = [float(r.rate) for r in rows if r.rate is not None]
-    return min(rates) if rates else None
+
+    zip_rows = active.filter(SCEstablishedLane.dest_zip == dest_zip).all()
+    rates = [float(r.rate) for r in zip_rows if r.rate is not None]
+    if rates:
+        return min(rates)
+
+    # ZIP miss: fall back to metro match. lookup_city_state returns
+    # uppercase; pushing the uppercase compare into SQL via db.func.upper
+    # keeps the row transfer small and avoids a per-request Python scan
+    # over every lane row for the origin.
+    city_state = lookup_city_state(dest_zip)
+    if city_state is None:
+        return None
+    city, state = city_state
+    metro_rows = active.filter(
+        db.func.upper(SCEstablishedLane.dest_city) == city,
+        db.func.upper(SCEstablishedLane.dest_state) == state,
+    ).all()
+    metro_rates = [float(r.rate) for r in metro_rows if r.rate is not None]
+    return min(metro_rates) if metro_rates else None
 
 
 # --- public entry point ------------------------------------------------------

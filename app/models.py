@@ -723,6 +723,12 @@ class SCEstablishedLane(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     origin_zip = db.Column(db.String(10), nullable=False)
     dest_zip = db.Column(db.String(10), nullable=False)
+    # Optional metro fallback. When both columns are set, the SC quote
+    # service matches this lane for any leg whose dest_zip resolves to
+    # the same (city, state) via Zipcode_Zones.csv - mirroring the
+    # workbook's lab+"City,State" VLOOKUP.
+    dest_city = db.Column(db.String(80), nullable=True)
+    dest_state = db.Column(db.String(2), nullable=True)
     service_type = db.Column(
         db.String(10), nullable=False, default="Any", server_default="Any"
     )

@@ -96,18 +96,21 @@ that single cell and re-upload `sc_labs.csv`.
 The workbook's "Established Lanes" sheet stores destinations as
 `City,State` strings (e.g. `Las Vegas,NV`) or as SC lab codes
 (e.g. `SCCO` for SC-to-SC). The `SCEstablishedLane` schema has a
-`dest_zip` column. The seed maps:
+`dest_zip` column **plus** optional `dest_city` / `dest_state` columns
+that mirror the workbook's lab + "City,State" VLOOKUP. The seed maps:
 
-- **SC-to-SC** destinations → the destination lab's `origin_zip`.
-- **City destinations** → a representative ZIP per metro, hand-picked
-  by the seed script (see the script in this commit for the table).
+- **SC-to-SC** destinations → the destination lab's `origin_zip`
+  (`dest_city` / `dest_state` left blank; ZIP match only).
+- **City destinations** → a representative ZIP per metro AND the
+  `Dest City` / `Dest State` columns populated so any ZIP in the
+  metro picks up the lane.
 
-This means an established lane only matches when the leg's
-destination ZIP **exactly equals** the mapped representative ZIP
-(e.g. for "Mahwah,NJ" only ZIP `07430` will trigger the $825 lane).
-A leg to ZIP `07431` (which also serves Mahwah) won't pick up the
-established rate. If this becomes a real-world problem the schema
-could grow a list-of-zips per lane; for now, accept the simplification.
+At lookup time, `_lookup_established()` tries the exact `(origin_zip,
+dest_zip)` match first; on a miss it derives the leg's `(city, state)`
+from `Zipcode_Zones.csv` and falls back to any lane row with matching
+`origin_zip` + `dest_city` + `dest_state`. A leg to ZIP `07495` (which
+also serves Mahwah, NJ) therefore picks up the $825 SCPA → Mahwah lane
+that's seeded with the representative ZIP `07430`.
 
 ## Source workbook lineage
 
