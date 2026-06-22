@@ -813,6 +813,28 @@ def test_sc_tissue_row_renders_total_lbs_and_kg_columns(app: Flask) -> None:
     assert 'value="72"' in html
 
 
+def test_quote_form_enables_htmx_template_fragments(app: Flask) -> None:
+    # Regression: without useTemplateFragments=true, HTMX wraps tissue
+    # row responses in a synthetic <table><tbody> for table-context
+    # parsing. The OOB <div>s alongside the <tr> in the same response
+    # are then foster-parented out of the table, and the main <tr>
+    # swap silently stops applying - users see Description / Avg lbs
+    # / Total lbs / Total kg / Box dropdown stay empty even though the
+    # server returned the right data. The <meta name="htmx-config">
+    # tag swaps the parse context to a <template> element where both
+    # <tr> and <div> are valid siblings.
+    user = _make_user(
+        "tplfrag@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True)
+    assert 'name="htmx-config"' in body
+    assert '"useTemplateFragments":true' in body
+
+
 def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
     # Regression: the JS that wires consumable Qty inputs to the
     # box-counts endpoint used to use /_(\d+)$/, which captured the
