@@ -7,6 +7,10 @@ Services portal.
 ## Features
 
 - Sign up, log in, and reset passwords
+- After login, users are routed to a rate-set-specific landing page (see
+  [Post-login landing pages](#post-login-landing-pages)). Users tagged with the
+  `scicr` / `science_care` rate set land on `/sc/quote`; everyone else lands on
+  `/quotes/new`.
 - Global request throttling protects login and password reset endpoints
 - Freight Services sign-ups using `@freightservices.net` emails are created as
   pending employees so administrators can approve their access
@@ -401,6 +405,28 @@ domains, map the domain in Cloud Run or point an external HTTPS load balancer
 at the service. The load balancer configuration also lets you layer on Cloud
 Armor policies or IAP if you need additional access control beyond Cloud Run's
 ingress settings.
+
+## Post-login landing pages
+
+When a user successfully authenticates (form login, OIDC SSO, or visiting the
+`/` index while signed in), the server redirects them to a landing endpoint
+based on their `rate_set`. The mapping lives in
+`app/services/rate_sets.py` under `RATE_SET_LANDING_ENDPOINTS`:
+
+| `rate_set` value | Landing endpoint | URL |
+| --- | --- | --- |
+| `scicr` | `science_care.sc_quote_form` | `/sc/quote` |
+| `science_care` | `science_care.sc_quote_form` | `/sc/quote` |
+| _(everything else)_ | `quotes.new_quote` | `/quotes/new` |
+
+To give another rate set its own landing page, add an entry to
+`RATE_SET_LANDING_ENDPOINTS`. The lookup runs the user's stored `rate_set`
+through `normalize_rate_set` first, so the keys must be lowercase and
+trimmed.
+
+The `sc_user_required` and `sc_admin_required` policies in `app/policies.py`
+treat both `scicr` and `science_care` as Science Care tenants, so users
+landing on `/sc/quote` are not 403'd by the access gate.
 
 ## Advanced
 

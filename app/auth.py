@@ -58,6 +58,7 @@ from app.services.auth_utils import (
 from app.services.mail import MailRateLimitError, send_email
 from app import limiter
 from app.services.oidc_client import get_oidc_client, is_oidc_configured
+from app.services.rate_sets import landing_endpoint_for_user
 
 auth_bp = Blueprint("auth", __name__, template_folder="templates")
 
@@ -354,7 +355,7 @@ def login() -> Union[str, Response]:
             current_app.logger.info(
                 "login successful for %s", getattr(user, "email", "<missing>")
             )
-            return redirect(url_for("quotes.new_quote"))
+            return redirect(url_for(landing_endpoint_for_user(user)))
         flash("Invalid credentials", "danger")
 
     return render_template(
@@ -536,7 +537,7 @@ def login_oidc_callback() -> Response:
         return redirect(url_for("auth.login"))
 
     login_user(user)
-    return redirect(url_for("quotes.new_quote"))
+    return redirect(url_for(landing_endpoint_for_user(user)))
 
 
 @auth_bp.route("/register", methods=["GET", "POST"])

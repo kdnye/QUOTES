@@ -8,6 +8,8 @@ from typing import Callable, Iterable, Set
 from flask import abort, redirect, request, url_for
 from flask_login import current_user
 
+from app.services.rate_sets import SCIENCE_CARE_RATE_SETS, normalize_rate_set
+
 
 def _expand_roles(roles: Iterable[str]) -> Set[str]:
     """Translate high-level role selectors into stored values.
@@ -145,8 +147,10 @@ def sc_user_required(view: Callable) -> Callable:
     """Restrict access to Science Care users (and FSI super-admins).
 
     Gates the customer-facing ``/sc/quote`` workflow. Any authenticated user
-    whose :attr:`app.models.User.rate_set` equals ``"science_care"`` may pass.
-    FSI super-admins always pass so they can triage.
+    whose :attr:`app.models.User.rate_set` resolves to a Science Care tag
+    (``"science_care"`` or the legacy ``"scicr"`` value assigned via the
+    admin user form) may pass. FSI super-admins always pass so they can
+    triage.
     """
 
     @wraps(view)
@@ -155,7 +159,8 @@ def sc_user_required(view: Callable) -> Callable:
             return redirect(url_for("auth.login", next=request.url))
         if getattr(current_user, "is_admin", False):
             return view(*args, **kwargs)
-        if getattr(current_user, "rate_set", None) != "science_care":
+        rate_set = normalize_rate_set(getattr(current_user, "rate_set", None))
+        if rate_set not in SCIENCE_CARE_RATE_SETS:
             abort(403)
         return view(*args, **kwargs)
 
@@ -166,11 +171,11 @@ def sc_admin_required(view: Callable) -> Callable:
     """Restrict access to Science Care reference-table maintenance.
 
     Gates ``/sc/reference`` endpoints. Requires either a flagged SC admin
-    *whose ``rate_set`` is also ``"science_care"``* or an FSI super-admin
+    *whose ``rate_set`` is also a Science Care tag* or an FSI super-admin
     (``is_admin``). The dual ``rate_set`` + ``is_sc_admin`` check enforces
     strict tenant isolation: a user from a different rate-set who is
     accidentally flagged ``is_sc_admin`` still cannot edit the SC tables.
-    Regular SC users (``rate_set == "science_care"`` without the
+    Regular SC users (a Science Care ``rate_set`` without the
     ``is_sc_admin`` flag) are 403'd so they can quote without editing the
     underlying reference tables.
     """
@@ -181,8 +186,9 @@ def sc_admin_required(view: Callable) -> Callable:
             return redirect(url_for("auth.login", next=request.url))
         if getattr(current_user, "is_admin", False):
             return view(*args, **kwargs)
+        rate_set = normalize_rate_set(getattr(current_user, "rate_set", None))
         if (
-            getattr(current_user, "rate_set", None) != "science_care"
+            rate_set not in SCIENCE_CARE_RATE_SETS
             or not getattr(current_user, "is_sc_admin", False)
         ):
             abort(403)
