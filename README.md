@@ -292,6 +292,15 @@ python scripts/sync_eia_rates.py
 | `EIA_TIMEOUT_SECONDS` | HTTP request timeout in seconds per EIA API call. | `15` |
 | `EIA_COMMIT_STRATEGY` | `all_or_nothing` commits all regions in one transaction; `per_region` commits each independently so partial updates succeed. | `all_or_nothing` |
 
+Every successful region sync explicitly bumps `FuelSurcharge.last_updated` to
+the current UTC time, even when EIA returns an unchanged rate value. The
+`/admin/ria-rates` snapshot reads `MAX(fuel_surcharges.last_updated)` directly
+from the database to display the **true** most recent pull time, bypassing the
+web service's in-memory settings cache (which would otherwise stay stale until
+the next container restart, since the Cloud Run job writes from a separate
+process). The `vsc_last_update` setting is still maintained as a secondary
+sentinel and shown alongside for diagnostics.
+
 ### Rate CSV formats
 
 The `Zipcode_Zones.csv` file must include a header row with these columns in
