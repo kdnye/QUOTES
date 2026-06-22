@@ -268,10 +268,13 @@
           <fieldset class="mb-3">
             <legend class="h6">Consumables</legend>
             <p class="small text-body-secondary mb-2">
-              Optional — enter the number of consumable units for this
-              leg only if you want them factored into the shipment
-              weight. Leaving every field blank contributes 0 lb of
-              consumables.
+              Defaults: <strong>Frozen</strong> legs get
+              <em>1 domestic dry ice per box</em> and
+              <strong>Ready to Use</strong> legs get
+              <em>1 domestic gel pack per box</em> automatically.
+              Override by typing a number — including <code>0</code>
+              to suppress the default for a specific row. Non-matching
+              consumables stay at 0 unless you enter a Qty.
             </p>
             <div class="row g-2">
               {% for cons in consumables %}

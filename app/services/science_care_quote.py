@@ -430,28 +430,92 @@ def allocate_boxes(
     return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
+def _default_consumable_for_mode(
+    temp_mode: str,
+    consumable_index: list[SCConsumable],
+) -> SCConsumable | None:
+    """Return the consumable that gets auto-applied for ``temp_mode``.
+
+    Business rule: a leg with no user-entered consumable quantity still
+    needs the standard temperature packaging budget. ``frozen`` legs
+    default to one **domestic dry ice** unit per box; ``rtu`` (ready to
+    use) legs default to one **domestic gel pack** per box. The match
+    is case-insensitive on ``consumable_type`` and ``scope`` so a CSV
+    upload that titlecases ``Dry_Ice`` doesn't bypass the default.
+
+    Returns ``None`` when no matching ``SCConsumable`` row is
+    configured for the tenant - the orchestrator silently skips the
+    default in that case so a freshly-migrated SC tenant doesn't crash
+    waiting on reference data.
+    """
+
+    tm = (temp_mode or "").strip().lower()
+    if tm == "frozen":
+        target_type = "dry_ice"
+    elif tm in {"rtu", "ready_to_use", "ready to use"}:
+        target_type = "gel_pack"
+    else:
+        return None
+    for cons in consumable_index:
+        if (
+            (cons.consumable_type or "").strip().lower() == target_type
+            and (cons.scope or "").strip().lower() == "domestic"
+        ):
+            return cons
+    return None
+
+
 def _consumable_picks_from_form(
     form: Mapping[str, str],
     leg: int,
     consumable_index: list[SCConsumable],
+    *,
+    total_boxes: int = 0,
+    temp_mode: str = "",
 ) -> tuple[float, dict[int, int]]:
     """Read the user's per-consumable Qty inputs for one leg.
 
     Returns ``(total_weight, picks)``. ``picks`` is a dict mapping
     :class:`SCConsumable.id` to the qty the user typed (only non-zero
-    entries appear). Consumables only contribute weight when the user
-    has explicitly entered a quantity; a blank/zero leg contributes
-    0 lb of consumables.
+    entries appear).
+
+    Semantics — matches the "prefill blank only" rule used by
+    box-count overrides:
+
+    * Any non-blank typed value wins (including a deliberate ``0``,
+      which means "no units of this consumable").
+    * A truly blank input falls back to the temp_mode default - one
+      domestic dry ice per box for ``frozen``, one domestic gel pack
+      per box for ``rtu`` - applied to the matching consumable row
+      only. Non-matching rows stay at 0 unless the user types.
+    * The default needs ``total_boxes`` and ``temp_mode``; callers
+      that don't pass them get the legacy "no auto-default" behaviour.
     """
+
+    auto_default = _default_consumable_for_mode(
+        temp_mode, consumable_index
+    )
+    # SCConsumable.id is already an int after commit; no cast needed.
+    # Skipping the int() also avoids a TypeError on transient or mocked
+    # rows whose id hasn't been assigned yet.
+    default_id = auto_default.id if auto_default is not None else None
 
     total = 0.0
     picks: dict[int, int] = {}
     for row in consumable_index:
         raw = form.get(f"cons_qty_{leg}_{row.id}")
-        qty = _as_int(raw, default=0)
+        if raw is None or str(raw).strip() == "":
+            # Blank input: auto-apply the temp_mode default ONLY for
+            # the matching consumable row. Anything else stays at 0.
+            if row.id == default_id and total_boxes > 0:
+                qty = total_boxes
+            else:
+                qty = 0
+        else:
+            qty = _as_int(raw, default=0)
         if qty <= 0:
             continue
-        picks[int(row.id)] = qty
+        picks[row.id] = qty
         total += float(row.weight_lb_per_box or 0.0) * qty
     return total, picks
 
@@ -483,11 +547,17 @@ def compute_leg_subtotals(
         if code in box_index
     )
 
-    # Consumables only contribute weight when the user has explicitly
-    # entered a quantity. A blank/zero leg yields 0 lb of consumables
-    # (no auto fallback).
+    # Explicit user picks win (including a typed 0). A blank input on
+    # the temp_mode-matching consumable falls back to ``1 per box`` so
+    # the live subtotal card mirrors what the orchestrator will use.
+    total_boxes = int(sum(boxes_by_type.values()))
+    temp_mode = (form.get(f"temp_mode_{leg}") or "").strip()
     consumable_lb, _picks = _consumable_picks_from_form(
-        form, leg, consumable_index
+        form,
+        leg,
+        consumable_index,
+        total_boxes=total_boxes,
+        temp_mode=temp_mode,
     )
 
     total_lb = tissue_lb + box_tare_lb + consumable_lb
@@ -920,11 +990,16 @@ def compute_sc_multileg(
             legs.append(result)
             continue
 
-        # Consumables only contribute weight when the user has
-        # explicitly entered a quantity. A leg with every Qty blank or
-        # zero adds 0 lb of consumables to the leg's billable weight.
+        # Consumables: explicit user values win (including 0); blanks
+        # fall back to the temp_mode default - 1 domestic dry_ice per
+        # box for frozen, 1 domestic gel_pack per box for rtu. See
+        # _default_consumable_for_mode().
         consumable_weight, picks = _consumable_picks_from_form(
-            form, n, consumable_index
+            form,
+            n,
+            consumable_index,
+            total_boxes=total_boxes,
+            temp_mode=result.temp_mode,
         )
         result.consumable_picks = picks
         total_weight += consumable_weight

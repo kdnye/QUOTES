@@ -250,9 +250,10 @@ def test_full_orchestration_persists_session_and_picks_winner(
     assert leg.winner_total == 250.0
     assert leg.air_quote is not None and leg.air_quote.total == 300.0
     assert leg.hotshot_quote is not None
-    # No consumables entered -> 79 lb tissue + 14 lb tare = 93 lb.
-    # Consumables only contribute when the user types a Qty.
-    assert leg.total_weight_lb == pytest.approx(93.0)
+    # 79 lb tissue + 14 lb tare + 25 lb dry-ice default (1 unit × 25
+    # lb/box × 1 box, auto-applied because temp_mode=frozen and no
+    # explicit cons_qty_* was typed) = 118 lb.
+    assert leg.total_weight_lb == pytest.approx(118.0)
 
     # 2 calls × 1 leg = 2 stub invocations.
     assert len(calls) == 2
@@ -581,11 +582,11 @@ def test_consumable_picks_drive_weight(
     assert leg.consumable_picks == {dry_ice.id: 2}
 
 
-def test_blank_picks_contribute_zero_consumable_weight(
+def test_frozen_default_dry_ice_applied_when_qty_blank(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Consumables are opt-in: a leg with every Qty blank contributes
-    # 0 lb of consumables. Tissue + tare make up the full leg weight.
+    """Blank consumable Qty + temp_mode=frozen -> 1 dry ice per box."""
+
     _seed_reference(app)
     user = _make_user()
     _stub_create_quote(
@@ -595,8 +596,122 @@ def test_blank_picks_contribute_zero_consumable_weight(
         _form(), user, request_ip="127.0.0.1"
     )
     leg = result["legs"][0]
-    # 79 lb tissue + 14 lb XL tare = 93 lb. No auto consumable add.
+    # 1 XL box × 25 lb dry ice = 25 lb auto-applied.
+    assert leg.consumable_weight_lb == pytest.approx(25.0)
+    # The pick lands on consumable_picks so the persisted leg row
+    # records why the weight bumped (audit trail).
+    dry_ice = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+    ).one()
+    assert leg.consumable_picks == {dry_ice.id: 1}
+
+
+def test_rtu_default_gel_pack_applied_when_qty_blank(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """temp_mode=rtu -> 1 domestic gel pack per box auto-applied."""
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    form = _form(temp_mode_1="rtu")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    gel = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="gel_pack",
+        temp_mode="rtu",
+        scope="domestic",
+    ).one()
+    # 1 XL box × 20 lb gel pack = 20 lb auto-applied.
+    assert leg.consumable_weight_lb == pytest.approx(20.0)
+    assert leg.consumable_picks == {gel.id: 1}
+
+
+def test_explicit_zero_qty_suppresses_default(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typing 0 in the dry-ice Qty must override the auto-default.
+
+    Same "blank=auto, typed value wins (including 0)" semantic as the
+    per-leg box-count override path. Without this, the user has no way
+    to ship a frozen leg without any dry ice.
+    """
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    dry_ice = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+    ).one()
+    form = _form(**{f"cons_qty_1_{dry_ice.id}": "0"})
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    # 79 lb tissue + 14 lb tare, no consumables (user typed 0).
+    assert leg.consumable_weight_lb == 0.0
+    assert leg.consumable_picks == {}
     assert leg.total_weight_lb == pytest.approx(93.0)
+
+
+def test_explicit_qty_overrides_default(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Typing a non-zero Qty must override the auto-default exactly."""
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    dry_ice = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+    ).one()
+    # User wants 3 units of dry ice (not the 1-per-box default).
+    form = _form(**{f"cons_qty_1_{dry_ice.id}": "3"})
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.consumable_picks == {dry_ice.id: 3}
+    assert leg.consumable_weight_lb == pytest.approx(75.0)  # 3 × 25
+
+
+def test_default_silently_skips_when_matching_consumable_missing(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No matching SCConsumable row -> no crash, just no default add.
+
+    Freshly migrated SC tenants may not have the dry_ice / gel_pack
+    reference data uploaded yet. The orchestrator must not crash; the
+    user just gets 0 lb consumables until the CSV is uploaded.
+    """
+
+    _seed_reference(app)
+    # Remove the seeded dry-ice row to simulate a tenant without it.
+    SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        consumable_type="dry_ice",
+    ).delete()
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    leg = result["legs"][0]
     assert leg.consumable_weight_lb == 0.0
     assert leg.consumable_picks == {}
 
@@ -667,8 +782,9 @@ def test_box_overrides_drive_counts(
     result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
     leg = result["legs"][0]
     assert leg.box_counts == {"MED": 3}
-    # 79 lb tissue + 3 * 4 lb tare = 91 lb. No consumables entered.
-    assert leg.total_weight_lb == pytest.approx(91.0)
+    # 79 lb tissue + 3 × 4 lb tare + 3 × 25 lb dry-ice default
+    # (temp_mode=frozen, 1 unit per box, 3 boxes) = 79 + 12 + 75 = 166.
+    assert leg.total_weight_lb == pytest.approx(166.0)
 
 
 def test_blank_box_overrides_fall_back_to_auto(
@@ -685,8 +801,9 @@ def test_blank_box_overrides_fall_back_to_auto(
         _form(), user, request_ip="127.0.0.1"
     )
     leg = result["legs"][0]
-    # Same as test_full_orchestration_persists_session_and_picks_winner.
-    assert leg.total_weight_lb == pytest.approx(93.0)
+    # Same as test_full_orchestration_persists_session_and_picks_winner:
+    # 79 lb tissue + 14 lb tare + 25 lb auto dry-ice = 118 lb.
+    assert leg.total_weight_lb == pytest.approx(118.0)
     # box_counts surfaces the auto allocation (1 XL from PELV03 default).
     assert leg.box_counts == {"XL": 1}
 
@@ -920,9 +1037,9 @@ def test_capacity_driven_orchestration(
     )
     leg = result["legs"][0]
     # Capacity table now ships PELV03 in a Medium box instead of XL.
-    # 79 lb tissue + 4 lb MED tare = 83 lb. No consumables entered.
+    # 79 lb tissue + 4 lb MED tare + 25 lb auto dry-ice = 108 lb.
     assert leg.box_counts == {"MED": 1}
-    assert leg.total_weight_lb == pytest.approx(83.0)
+    assert leg.total_weight_lb == pytest.approx(108.0)
 
 
 def test_per_row_box_choice_override_from_form(
@@ -953,8 +1070,8 @@ def test_per_row_box_choice_override_from_form(
     leg = result["legs"][0]
     # User forces XL even though MED would also fit a single PELV03.
     assert leg.box_counts == {"XL": 1}
-    # 79 lb tissue + 14 lb XL tare = 93 lb. No consumables entered.
-    assert leg.total_weight_lb == pytest.approx(93.0)
+    # 79 lb tissue + 14 lb XL tare + 25 lb auto dry-ice = 118 lb.
+    assert leg.total_weight_lb == pytest.approx(118.0)
 
 
 # --- Weight breakdown (tissue / consumables / box tare) ----------------------
@@ -975,11 +1092,11 @@ def test_leg_result_carries_weight_breakdown(
         _form(), user, request_ip="127.0.0.1"
     )
     leg = result["legs"][0]
-    # PELV03 qty 1 -> 79 lb tissue, 1 XL box (14 lb tare), no
-    # consumables entered, 93 lb total.
+    # PELV03 qty 1 -> 79 lb tissue, 1 XL box (14 lb tare), and the
+    # temp_mode=frozen default contributes 1 × 25 lb dry ice = 25 lb.
     assert leg.tissue_weight_lb == pytest.approx(79.0)
     assert leg.box_tare_weight_lb == pytest.approx(14.0)
-    assert leg.consumable_weight_lb == 0.0
+    assert leg.consumable_weight_lb == pytest.approx(25.0)
     assert leg.total_weight_lb == pytest.approx(
         leg.tissue_weight_lb
         + leg.box_tare_weight_lb
@@ -1036,12 +1153,12 @@ def test_weight_breakdown_with_box_override(
     form = _form(**{f"box_count_1_{med_box.id}": "3"})
     result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
     leg = result["legs"][0]
-    # Override 3 MED boxes (3 × 4 lb tare = 12 lb); tissue 79 lb; no
-    # consumables entered. 79 + 12 = 91 lb.
+    # Override 3 MED boxes (3 × 4 lb tare = 12 lb); tissue 79 lb; auto
+    # dry-ice default (3 boxes × 25 lb) = 75 lb. 79 + 12 + 75 = 166 lb.
     assert leg.tissue_weight_lb == pytest.approx(79.0)
     assert leg.box_tare_weight_lb == pytest.approx(12.0)
-    assert leg.consumable_weight_lb == 0.0
-    assert leg.total_weight_lb == pytest.approx(91.0)
+    assert leg.consumable_weight_lb == pytest.approx(75.0)
+    assert leg.total_weight_lb == pytest.approx(166.0)
 
 
 # --- compute_leg_subtotals (live HTMX subtotals helper) ---------------------
@@ -1087,9 +1204,11 @@ def test_compute_leg_subtotals_uses_picks_when_present() -> None:
     })
 
 
-def test_compute_leg_subtotals_zero_consumables_when_no_picks() -> None:
-    # Blank consumable Qty contributes 0 lb (opt-in behaviour). The
-    # helper must match the orchestrator - no auto fallback.
+def test_compute_leg_subtotals_applies_frozen_dry_ice_default() -> None:
+    # Blank consumable Qty + temp_mode=frozen + a domestic dry_ice row
+    # in the index -> the live subtotals helper auto-applies 1 unit
+    # per box. The live form must mirror what the orchestrator will
+    # bill so the user sees the right weight before pricing fires.
     from werkzeug.datastructures import ImmutableMultiDict
 
     rows = [
@@ -1117,7 +1236,48 @@ def test_compute_leg_subtotals_zero_consumables_when_no_picks() -> None:
         box_index=box_index,
         consumable_index=[cons],
     )
-    # No cons_qty_* in the form -> 0 lb consumables.
+    # 2 LRG boxes × 25 lb dry ice = 50 lb auto-applied. 24 + 50 + 16 = 90.
+    assert subtotals == pytest.approx({
+        "tissue_lb": 24.0,
+        "consumable_lb": 50.0,
+        "box_tare_lb": 16.0,
+        "total_lb": 90.0,
+    })
+
+
+def test_compute_leg_subtotals_explicit_zero_suppresses_default() -> None:
+    # Typing 0 in the consumable Qty must respect the user choice and
+    # NOT auto-apply the temp_mode default - same "blank=auto, typed
+    # value wins (including 0)" rule as the box-count overrides.
+    from werkzeug.datastructures import ImmutableMultiDict
+
+    rows = [
+        TissueRow(tissue_code="ARM01", qty=2, unit_weight_lb=12.0),
+    ]
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+    }
+    cons = SCConsumable(
+        id=1,
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    form = ImmutableMultiDict(
+        {"temp_mode_1": "frozen", "cons_qty_1_1": "0"}.items()
+    )
+    subtotals = svc.compute_leg_subtotals(
+        form,
+        leg=1,
+        tissue_rows=rows,
+        boxes_by_type={"LRG": 2},
+        box_index=box_index,
+        consumable_index=[cons],
+    )
     assert subtotals == pytest.approx({
         "tissue_lb": 24.0,
         "consumable_lb": 0.0,

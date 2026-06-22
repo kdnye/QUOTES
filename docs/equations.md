@@ -130,15 +130,20 @@ see what is driving the leg's billable weight).
 
     tissue_weight_lb     = Σ_tissue ( qty × unit_weight )
     box_tare_weight_lb   = Σ_box ( count_box × tare_weight )
-    consumable_weight_lb = Σ_picked_row ( weight_per_box × user_qty )
+    consumable_weight_lb = Σ_resolved_row ( weight_per_box × resolved_qty )
 
     leg_weight_lb = tissue_weight_lb + box_tare_weight_lb + consumable_weight_lb
 
-Consumables are **opt-in**: only rows where the user typed a non-zero
-`cons_qty_<leg>_<id>` contribute. A leg with every Qty blank or zero adds
-0 lb of consumables. (Prior versions auto-applied a `temp_mode` × `scope` ×
-`total_boxes` fallback when every Qty was blank; that fallback was removed
-on 2026-06-22 so the weight users see matches what they entered.)
+`resolved_qty` follows a "blank input gets the temp_mode default; any typed
+value (including 0) wins" rule. Concretely:
+
+* `temp_mode = frozen` and the row is `consumable_type=dry_ice, scope=domestic`
+  → default `resolved_qty = total_boxes` (one domestic dry ice per box).
+* `temp_mode = rtu` and the row is `consumable_type=gel_pack, scope=domestic`
+  → default `resolved_qty = total_boxes` (one domestic gel pack per box).
+* Any other row → `resolved_qty = 0` unless the user types a Qty.
+* Any non-blank `cons_qty_<leg>_<id>` value overrides the default, including
+  a typed `0` (which suppresses the auto-default for that specific row).
 
 **Variables:**
 
@@ -153,8 +158,14 @@ on 2026-06-22 so the weight users see matches what they entered.)
 
 **Constraints:**
 
-- Consumables only contribute weight when the user enters a non-zero Qty for
-  a given consumable row. Blank / zero Qty contributes 0 lb.
+- Consumable Qty inputs follow the same "prefill blank only" semantic as the
+  per-leg box-count overrides: blank → auto (temp_mode default for the
+  matching row, 0 otherwise); any non-blank value wins exactly as typed,
+  including `0` which suppresses the default for that row.
+- The temp_mode auto-default only applies to the row that matches
+  `(consumable_type, scope) ∈ {(dry_ice, domestic), (gel_pack, domestic)}`
+  for `temp_mode ∈ {frozen, rtu}` respectively. Other consumables stay at 0
+  unless the user types a Qty.
 - A leg with `leg_weight_lb <= 0` is skipped (no quote attempted).
 - Box overrides at the leg level (`box_count_<leg>_<box_id>`) replace the
   auto-allocator's per-tissue boxes; the tissue weight does NOT change, only
@@ -166,18 +177,28 @@ helper for the form's Shipment-weight card), and the breakdown derivation in
 `compute_sc_multileg()` (post-pricing results).
 
 **Worked example:** Leg with one `PELV03` (79 lb) shipping in 1 X-Large box
-(tare 14 lb), no consumables entered:
+(tare 14 lb), `temp_mode=frozen`, no consumable Qty inputs touched:
 
     tissue_weight_lb     = 1 × 79 = 79 lb
     box_tare_weight_lb   = 1 × 14 = 14 lb
-    consumable_weight_lb = 0 lb (nothing entered)
+    consumable_weight_lb = 1 × 25 = 25 lb  (auto: 1 domestic dry ice per box, 25 lb/box)
+    leg_weight_lb        = 79 + 14 + 25 = 118 lb
+
+Same leg with `temp_mode=rtu` (Ready to Use), gel pack at 20 lb/box:
+
+    consumable_weight_lb = 1 × 20 = 20 lb  (auto: 1 domestic gel pack per box)
+    leg_weight_lb        = 79 + 14 + 20 = 113 lb
+
+If the user types `0` in the dry-ice Qty box to suppress the default (same
+override semantic as the per-leg box-count inputs):
+
+    consumable_weight_lb = 0 lb
     leg_weight_lb        = 79 + 14 + 0 = 93 lb
 
-If the user adds 1 unit of "Dry Ice · Frozen · Domestic" (25 lb/box) to the
-Consumables section on the same leg:
+If the user types `3` to bump the dry-ice qty above the per-box default:
 
-    consumable_weight_lb = 1 × 25 = 25 lb
-    leg_weight_lb        = 79 + 14 + 25 = 118 lb
+    consumable_weight_lb = 3 × 25 = 75 lb
+    leg_weight_lb        = 79 + 14 + 75 = 168 lb
 
 Each component lands on `LegResult.{tissue_weight_lb, consumable_weight_lb,
 box_tare_weight_lb}` so the results card can render them as separate columns
