@@ -47,6 +47,7 @@ SC_ACCESSORIAL_MAP_TABLE = "sc_accessorial_map"
 SC_QUOTE_SESSIONS_TABLE = "sc_quote_sessions"
 SC_QUOTE_SESSION_LEGS_TABLE = "sc_quote_session_legs"
 SC_USER_LAB_SLOTS_TABLE = "sc_user_lab_slots"
+SC_TISSUE_BOX_CAPACITY_TABLE = "sc_tissue_box_capacity"
 
 RATE_SET_DEFAULT = "default"
 RATE_SET_SCIENCE_CARE = "science_care"
@@ -626,6 +627,43 @@ class SCBoxType(db.Model):
         db.Float, nullable=False, default=0.0, server_default="0"
     )
     max_payload_lb = db.Column(db.Float)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCTissueBoxCapacity(db.Model):
+    """How many pieces of a tissue code fit in a given box type.
+
+    Replaces the legacy single-choice (default_box_type_code, pieces_per_box)
+    pair on :class:`SCTissueCode` with a full per-(tissue, box) matrix that
+    matches the customer-supplied template (avg weight + qty per Medium /
+    Large / X-Large / Small Airtray / Airtray).
+
+    A missing row OR a row with ``pieces_per_box <= 0`` means the box type
+    cannot be used to ship that tissue. The allocator picks the box that
+    minimises ``ceil(qty / pieces_per_box)``, ties broken by smaller box
+    interior volume.
+    """
+
+    __tablename__ = SC_TISSUE_BOX_CAPACITY_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "tissue_code",
+            "box_code",
+            name="uq_sc_tissue_box_capacity_rate_set_tissue_box",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    tissue_code = db.Column(db.String(40), nullable=False)
+    box_code = db.Column(db.String(20), nullable=False)
+    pieces_per_box = db.Column(db.Integer, nullable=False)
     rate_set = db.Column(
         db.String(50),
         nullable=False,

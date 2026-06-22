@@ -24,6 +24,8 @@ from app.models import (
     SCAccessorialMap,
     SCBoxType,
     SCLab,
+    SCTissueBoxCapacity,
+    SCTissueCode,
     User,
     db,
 )
@@ -193,7 +195,9 @@ def test_upload_round_trip_appends_rows(app: Flask) -> None:
     rows = SCBoxType.query.filter_by(
         rate_set=RATE_SET_SCIENCE_CARE
     ).order_by(SCBoxType.code).all()
-    assert [r.code for r in rows] == ["LRG", "MED"]
+    # SMALL_AIRTRAY is seeded by the SC tissue-box-capacity migration,
+    # so the upload's two new rows land alongside it.
+    assert sorted(r.code for r in rows) == ["LRG", "MED", "SMALL_AIRTRAY"]
     assert all(r.rate_set == RATE_SET_SCIENCE_CARE for r in rows)
 
 
@@ -324,3 +328,227 @@ def test_accessorial_map_csv_round_trip(app: Flask) -> None:
     ).order_by(SCAccessorialMap.form_field).all()
     assert [r.form_field for r in rows] == ["J3", "J8"]
     assert rows[0].accessorial_name == "PickUp 4 Hour Window (e.g 10:00-14:00)"
+
+
+# --- Tissue codes with per-box capacity columns -----------------------------
+
+
+def _tissue_csv(*rows: str) -> io.BytesIO:
+    return _csv_bytes(
+        [
+            "Tissue Code,Description,Unit Weight (lb),Medium,Large,X-Large,Small Airtray,Airtray,Notes",
+            *rows,
+        ]
+    )
+
+
+def test_tissue_codes_replace_loads_capacity_rows(app: Flask) -> None:
+    # Replace mode wipes both sc_tissue_codes and sc_tissue_box_capacity
+    # for the SC tenant, then writes the new parent + capacity rows in
+    # one transaction.
+    user = _make_user(
+        "tissue-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    csv = _tissue_csv(
+        "ARM01,Arm Whole,12,0,7,10,0,0,",
+        "CADV02,Embalmed Cadaver,300,0,0,0,0,1,",
+    )
+    response = client.post(
+        "/sc/reference/sc_tissue_codes/upload",
+        data={"file": (csv, "tissue.csv"), "action": "replace"},
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302, response.get_data(as_text=True)
+
+    tissues = {
+        t.tissue_code: t
+        for t in SCTissueCode.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        )
+    }
+    assert set(tissues) == {"ARM01", "CADV02"}
+    assert tissues["ARM01"].unit_weight_lb == pytest.approx(12.0)
+    # ARM01 capacity rows: only the non-zero columns become rows.
+    arm01 = SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="ARM01"
+    ).all()
+    assert {(r.box_code, r.pieces_per_box) for r in arm01} == {
+        ("LRG", 7), ("XLG", 10)
+    }
+    cadv02 = SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="CADV02"
+    ).all()
+    assert {(r.box_code, r.pieces_per_box) for r in cadv02} == {
+        ("AIRTRAY", 1)
+    }
+
+
+def test_tissue_codes_replace_does_not_touch_other_tenant(
+    app: Flask,
+) -> None:
+    # Another tenant's tissue + capacity rows survive an SC replace.
+    db.session.add_all(
+        [
+            SCTissueCode(
+                tissue_code="OTHER01",
+                description="Other tenant",
+                unit_weight_lb=1.0,
+                rate_set="other_tenant",
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="OTHER01",
+                box_code="MED",
+                pieces_per_box=5,
+                rate_set="other_tenant",
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user(
+        "tenant-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    csv = _tissue_csv("ARM01,Arm Whole,12,0,7,10,0,0,")
+    response = client.post(
+        "/sc/reference/sc_tissue_codes/upload",
+        data={"file": (csv, "tissue.csv"), "action": "replace"},
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    other = SCTissueCode.query.filter_by(
+        rate_set="other_tenant", tissue_code="OTHER01"
+    ).one()
+    assert other.unit_weight_lb == pytest.approx(1.0)
+    other_caps = SCTissueBoxCapacity.query.filter_by(
+        rate_set="other_tenant", tissue_code="OTHER01"
+    ).all()
+    assert len(other_caps) == 1
+
+
+def test_tissue_codes_append_skips_duplicates(app: Flask) -> None:
+    # Append mode preserves existing tissue codes and only inserts
+    # tissues whose code is brand new.
+    db.session.add_all(
+        [
+            SCTissueCode(
+                tissue_code="ARM01",
+                description="Existing arm",
+                unit_weight_lb=12.0,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="ARM01",
+                box_code="XLG",
+                pieces_per_box=10,
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user(
+        "dup-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    csv = _tissue_csv(
+        # Duplicate of ARM01: skipped.
+        "ARM01,Arm Whole replacement,99,0,0,0,0,0,",
+        # Brand new: inserted with its capacity rows.
+        "ARM02,Mid-Humerus,5,6,10,15,0,0,",
+    )
+    response = client.post(
+        "/sc/reference/sc_tissue_codes/upload",
+        data={"file": (csv, "tissue.csv"), "action": "add"},
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    arm01 = SCTissueCode.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="ARM01"
+    ).one()
+    # Original record stays - description must not be overwritten.
+    assert arm01.description == "Existing arm"
+    arm01_caps = SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="ARM01"
+    ).all()
+    assert {(c.box_code, c.pieces_per_box) for c in arm01_caps} == {
+        ("XLG", 10)
+    }
+    # ARM02 added.
+    arm02_caps = SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="ARM02"
+    ).all()
+    assert {(c.box_code, c.pieces_per_box) for c in arm02_caps} == {
+        ("MED", 6), ("LRG", 10), ("XLG", 15)
+    }
+
+
+def test_tissue_codes_download_round_trips_customer_template(
+    app: Flask,
+) -> None:
+    # Download produces the customer template's exact column shape
+    # (Medium / Large / X-Large / Small Airtray / Airtray). Zeros fill
+    # every cell that has no capacity row.
+    db.session.add_all(
+        [
+            SCTissueCode(
+                tissue_code="ARM01",
+                description="Arm Whole",
+                unit_weight_lb=12.0,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="ARM01", box_code="LRG", pieces_per_box=7
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="ARM01", box_code="XLG", pieces_per_box=10
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user(
+        "dl-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/reference/sc_tissue_codes/download")
+    assert response.status_code == 200
+    body = response.get_data(as_text=True).splitlines()
+    assert body[0] == (
+        "Tissue Code,Description,Unit Weight (lb),"
+        "Medium,Large,X-Large,Small Airtray,Airtray,Notes"
+    )
+    assert body[1].startswith("ARM01,Arm Whole,12")
+    cells = body[1].split(",")
+    # Medium / Large / X-Large / Small Airtray / Airtray
+    assert cells[3:8] == ["0", "7", "10", "0", "0"]
+
+
+def test_tissue_codes_upload_rejects_negative_pieces(app: Flask) -> None:
+    user = _make_user(
+        "neg-admin@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        is_sc_admin=True,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    csv = _tissue_csv("ARM01,Arm Whole,12,0,-5,0,0,0,")
+    response = client.post(
+        "/sc/reference/sc_tissue_codes/upload",
+        data={"file": (csv, "tissue.csv"), "action": "replace"},
+        content_type="multipart/form-data",
+        follow_redirects=False,
+    )
+    # 400 from form validation error.
+    assert response.status_code == 400
+    assert SCTissueCode.query.count() == 0

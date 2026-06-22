@@ -25,11 +25,17 @@ from app.models import (
     SCLab,
     SCQuoteSession,
     SCQuoteSessionLeg,
+    SCTissueBoxCapacity,
     SCTissueCode,
     User,
     db,
 )
 from app.services import science_care_quote as svc
+from app.services.science_care_quote import (
+    TissueRow,
+    allocate_boxes,
+    recommended_box_for_qty,
+)
 
 
 class TestSCQuoteServiceConfig:
@@ -612,3 +618,235 @@ def test_box_overrides_persisted_on_leg(
     )
     assert leg_row.boxes_json is not None
     assert json.loads(leg_row.boxes_json) == {"MED": 2}
+
+
+# --- Per-tissue box capacity (refined allocator) -----------------------------
+#
+# These tests exercise the new SCTissueBoxCapacity-driven allocator: a tissue
+# is shipped using the box that minimises ceil(qty / pieces_per_box), ties
+# broken by smaller interior volume. The per-row Box dropdown override is
+# honoured when the user picks a specific code.
+
+
+def _box(**kwargs: Any) -> SCBoxType:
+    """Build an unsaved SCBoxType for the pure-Python allocator tests."""
+
+    defaults = dict(
+        rate_set=RATE_SET_SCIENCE_CARE,
+        length_in=0.0,
+        width_in=0.0,
+        height_in=0.0,
+        tare_weight_lb=0.0,
+    )
+    defaults.update(kwargs)
+    return SCBoxType(**defaults)
+
+
+def test_recommended_box_picks_smallest_box_count() -> None:
+    # ARM01-like: LRG holds 7, XLG holds 10. For qty 8 the XLG wins
+    # (1 box vs 2). For qty 7 they tie at 1 box each, so the smaller
+    # interior wins (LRG: 32*18*20=11520 < XLG: 52*20*15=15600).
+    box_index = {
+        "LRG": _box(code="LRG", length_in=32, width_in=18, height_in=20),
+        "XLG": _box(code="XLG", length_in=52, width_in=20, height_in=15),
+    }
+    caps = {"LRG": 7, "XLG": 10}
+    assert recommended_box_for_qty(8, caps, box_index) == ("XLG", 10)
+    assert recommended_box_for_qty(7, caps, box_index) == ("LRG", 7)
+    assert recommended_box_for_qty(1, caps, box_index) == ("LRG", 7)
+
+
+def test_recommended_box_skips_zero_volume() -> None:
+    # SMALL_AIRTRAY placeholder has zero dimensions until an SC admin
+    # populates real ones. The allocator must skip it so the freight
+    # weight isn't silently undercounted by a zero dim-weight box.
+    box_index = {
+        "SMALL_AIRTRAY": _box(
+            code="SMALL_AIRTRAY", length_in=0, width_in=0, height_in=0
+        ),
+        "AIRTRAY": _box(
+            code="AIRTRAY", length_in=79, width_in=24, height_in=15
+        ),
+    }
+    caps = {"SMALL_AIRTRAY": 1, "AIRTRAY": 1}
+    assert recommended_box_for_qty(1, caps, box_index) == ("AIRTRAY", 1)
+
+
+def test_allocate_boxes_uses_capacity_table_over_legacy_default() -> None:
+    # Tissue has a capacity row pointing at LRG and a legacy default of
+    # XLG. The new allocator must pick LRG because the capacity table is
+    # the source of truth.
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+        "XLG": _box(
+            code="XLG", length_in=52, width_in=20, height_in=15,
+            tare_weight_lb=14.0,
+        ),
+    }
+    tissue_index = {
+        "TST01": SCTissueCode(
+            tissue_code="TST01",
+            unit_weight_lb=4.0,
+            default_box_type_code="XLG",
+            pieces_per_box=10,
+        ),
+    }
+    capacity_index = {"TST01": {"LRG": 7, "XLG": 10}}
+    rows = [TissueRow(tissue_code="TST01", qty=7)]
+    weight, count, by_type, dim, unknown = allocate_boxes(
+        rows, tissue_index, box_index, capacity_index=capacity_index
+    )
+    # 7 pieces of 4 lb = 28 lb tissue + 1 LRG (8 lb tare) = 36 lb.
+    assert weight == pytest.approx(36.0)
+    assert count == 1
+    assert by_type == {"LRG": 1}
+    assert unknown == []
+
+
+def test_allocate_boxes_honours_user_box_pick() -> None:
+    # User dropdown override: tissue's recommended box is LRG but the
+    # user explicitly selected XLG. The allocator must use the user's
+    # pick (as long as the capacity table allows it).
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+        "XLG": _box(
+            code="XLG", length_in=52, width_in=20, height_in=15,
+            tare_weight_lb=14.0,
+        ),
+    }
+    tissue_index = {
+        "TST01": SCTissueCode(
+            tissue_code="TST01", unit_weight_lb=4.0,
+            default_box_type_code="LRG", pieces_per_box=7,
+        ),
+    }
+    capacity_index = {"TST01": {"LRG": 7, "XLG": 10}}
+    rows = [
+        TissueRow(tissue_code="TST01", qty=7, user_box_code="XLG"),
+    ]
+    weight, count, by_type, dim, unknown = allocate_boxes(
+        rows, tissue_index, box_index, capacity_index=capacity_index
+    )
+    assert by_type == {"XLG": 1}
+    # 28 lb tissue + 14 lb XLG tare = 42 lb.
+    assert weight == pytest.approx(42.0)
+
+
+def test_allocate_boxes_ignores_invalid_user_box_pick() -> None:
+    # The user dropdown override only wins when the capacity table
+    # has a non-zero entry for that box. Picking an unallowed box
+    # falls back to the recommendation so the leg still produces a
+    # quote rather than dropping to zero boxes.
+    box_index = {
+        "LRG": _box(
+            code="LRG", length_in=32, width_in=18, height_in=20,
+            tare_weight_lb=8.0,
+        ),
+        "XLG": _box(
+            code="XLG", length_in=52, width_in=20, height_in=15,
+            tare_weight_lb=14.0,
+        ),
+    }
+    tissue_index = {
+        "TST01": SCTissueCode(
+            tissue_code="TST01", unit_weight_lb=4.0,
+        ),
+    }
+    capacity_index = {"TST01": {"LRG": 7}}
+    rows = [TissueRow(tissue_code="TST01", qty=7, user_box_code="XLG")]
+    _, _, by_type, _, _ = allocate_boxes(
+        rows, tissue_index, box_index, capacity_index=capacity_index
+    )
+    assert by_type == {"LRG": 1}
+
+
+def test_allocate_boxes_legacy_fallback_when_no_capacities() -> None:
+    # Tenants who haven't reloaded their CSV still have only the legacy
+    # default_box_type_code + pieces_per_box on SCTissueCode. The
+    # allocator must keep producing quotes for them until they migrate.
+    box_index = {
+        "XL": _box(
+            code="XL", length_in=52, width_in=20, height_in=15,
+            tare_weight_lb=14.0,
+        ),
+    }
+    tissue_index = {
+        "PELV03": SCTissueCode(
+            tissue_code="PELV03", unit_weight_lb=79.0,
+            default_box_type_code="XL", pieces_per_box=1,
+        ),
+    }
+    rows = [TissueRow(tissue_code="PELV03", qty=1)]
+    weight, count, by_type, _, _ = allocate_boxes(
+        rows, tissue_index, box_index
+    )
+    assert by_type == {"XL": 1}
+    # 79 lb tissue + 14 lb tare = 93 lb (consumables added by caller).
+    assert weight == pytest.approx(93.0)
+
+
+def test_capacity_driven_orchestration(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # End-to-end: capacity rows for the seeded tissue codes drive the
+    # orchestrator's box pick, overriding the legacy
+    # default_box_type_code on SCTissueCode.
+    _seed_reference(app)
+    db.session.add_all(
+        [
+            SCTissueBoxCapacity(
+                tissue_code="PELV03", box_code="MED", pieces_per_box=1
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    leg = result["legs"][0]
+    # Capacity table now ships PELV03 in a Medium box instead of XL.
+    # 79 lb tissue + 4 lb MED tare + 25 lb auto dry-ice = 108 lb.
+    assert leg.box_counts == {"MED": 1}
+    assert leg.total_weight_lb == pytest.approx(108.0)
+
+
+def test_per_row_box_choice_override_from_form(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The user can pick a non-recommended box from the per-row dropdown
+    # (box_choice_<leg>_<i>) and the allocator must honour it. Here we
+    # seed both MED and XL capacities for PELV03, set the recommendation
+    # to MED via capacity table, and then override via the form.
+    _seed_reference(app)
+    db.session.add_all(
+        [
+            SCTissueBoxCapacity(
+                tissue_code="PELV03", box_code="MED", pieces_per_box=1
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="PELV03", box_code="XL", pieces_per_box=2
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    form = _form(box_choice_1_1="XL")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    # User forces XL even though MED would also fit a single PELV03.
+    assert leg.box_counts == {"XL": 1}
+    # 79 lb tissue + 14 lb XL tare + 25 lb dry ice = 118 lb.
+    assert leg.total_weight_lb == pytest.approx(118.0)

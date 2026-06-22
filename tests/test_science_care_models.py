@@ -16,6 +16,7 @@ from app.models import (
     SCLab,
     SCQuoteSession,
     SCQuoteSessionLeg,
+    SCTissueBoxCapacity,
     SCTissueCode,
     User,
     db,
@@ -329,3 +330,49 @@ def test_sc_quote_session_leg_boxes_json_round_trip(app: Flask) -> None:
     )
     assert json.loads(rows[0].boxes_json) == {"MED": 2, "XLG": 1}
     assert rows[1].boxes_json is None
+
+
+def test_sc_tissue_box_capacity_unique_per_tissue_box(app: Flask) -> None:
+    # Capacity rows are deduped on (rate_set, tissue_code, box_code).
+    # The same (tissue, box) pair under a different tenant is allowed
+    # so the data partition stays tenant-aligned.
+    db.session.add(
+        SCTissueBoxCapacity(
+            tissue_code="ARM01", box_code="LRG", pieces_per_box=7
+        )
+    )
+    db.session.commit()
+
+    db.session.add(
+        SCTissueBoxCapacity(
+            tissue_code="ARM01", box_code="LRG", pieces_per_box=99
+        )
+    )
+    with pytest.raises(IntegrityError):
+        db.session.commit()
+    db.session.rollback()
+
+    # Same (tissue, box) for another tenant is fine.
+    db.session.add(
+        SCTissueBoxCapacity(
+            tissue_code="ARM01",
+            box_code="LRG",
+            pieces_per_box=5,
+            rate_set="other_tenant",
+        )
+    )
+    db.session.commit()
+
+
+def test_sc_small_airtray_seeded_by_migration(app: Flask) -> None:
+    # The capacity migration inserts SMALL_AIRTRAY into sc_box_types so
+    # the per-row dropdown can always offer it. The placeholder
+    # dimensions are zero - an SC admin must populate them before the
+    # allocator will use the box for quoting.
+    box = SCBoxType.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, code="SMALL_AIRTRAY"
+    ).one()
+    assert box.length_in == 0.0
+    assert box.width_in == 0.0
+    assert box.height_in == 0.0
+    assert box.tare_weight_lb == 0.0

@@ -2,4 +2,5 @@ Code,Label,Length (in),Width (in),Height (in),Tare Weight (lb),Max Payload (lb)
 MED,Medium 20x15x18,20,15,18,4,
 LRG,Large 32x18x20,32,18,20,8,
 XLG,X-Large 52x20x15,52,20,15,14,
+SMALL_AIRTRAY,Small Airtray,0,0,0,0,
 AIRTRAY,Airtray (BOX05) 79x24x15,79,24,15,50,

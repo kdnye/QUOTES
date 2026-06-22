@@ -33,6 +33,7 @@ from app.models import (
     SCLab,
     SCQuoteSession,
     SCQuoteSessionLeg,
+    SCTissueBoxCapacity,
     SCTissueCode,
     db,
 )
@@ -76,13 +77,20 @@ class TissueRow:
     """One row of a leg's tissue table after form parsing.
 
     Attributes mirror the columns rendered by ``templates/sc/_tissue_row.html``.
-    ``box_type_code`` and ``tare_weight_lb`` are filled in during box
-    allocation; ``pieces`` defaults to 1 when the user leaves the qty
-    blank for a code that prefilled.
+
+    * ``user_box_code`` is the box-type code the user picked from the
+      per-row dropdown (empty string when the user has not picked one
+      yet). The allocator treats it as a hard override - even when the
+      capacity table would recommend a different box.
+    * ``box_type_code`` and ``tare_weight_lb`` are filled in during box
+      allocation from the final resolved box (user pick > recommendation).
+    * ``pieces`` defaults to 1 when the user leaves the qty blank for a
+      code that prefilled.
     """
 
     tissue_code: str
     qty: int
+    user_box_code: str = ""
     unit_weight_lb: float = 0.0
     box_type_code: str | None = None
     box_dims: tuple[float, float, float] | None = None
@@ -146,7 +154,12 @@ def _normalize_zip(value: Any) -> str:
 def _collect_tissue_rows(
     form: Mapping[str, str], leg: int
 ) -> list[TissueRow]:
-    """Read every ``tissue_code_<leg>_<i>`` / ``qty_<leg>_<i>`` pair."""
+    """Read every ``tissue_code_<leg>_<i>`` / ``qty_<leg>_<i>`` pair.
+
+    Also picks up the per-row box override (``box_choice_<leg>_<i>``)
+    when the user changed the dropdown - empty / missing means "use the
+    recommended box for this tissue + qty".
+    """
 
     rows: list[TissueRow] = []
     # Index is 1-based and may be sparse if the user removed rows in the
@@ -157,15 +170,110 @@ def _collect_tissue_rows(
     while consecutive_blanks < 32:
         code = (form.get(f"tissue_code_{leg}_{i}") or "").strip().upper()
         qty = _as_int(form.get(f"qty_{leg}_{i}"), default=0)
+        box_pick = (
+            form.get(f"box_choice_{leg}_{i}") or ""
+        ).strip().upper()
         if not code and qty == 0:
             consecutive_blanks += 1
             i += 1
             continue
         consecutive_blanks = 0
         if code:
-            rows.append(TissueRow(tissue_code=code, qty=max(0, qty)))
+            rows.append(
+                TissueRow(
+                    tissue_code=code,
+                    qty=max(0, qty),
+                    user_box_code=box_pick,
+                )
+            )
         i += 1
     return rows
+
+
+def _tissue_box_capacity_index(
+    tissue_codes: list[str] | None = None,
+) -> dict[str, dict[str, int]]:
+    """Return ``{tissue_code: {box_code: pieces_per_box}}`` for the SC tenant.
+
+    Passing ``tissue_codes`` filters the query to a subset (used by the
+    live tissue-lookup endpoint so each keystroke does not scan the
+    whole capacity table). Leaving it ``None`` loads everything for the
+    multi-leg orchestrator's pre-cache.
+    """
+
+    query = SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE
+    )
+    if tissue_codes is not None:
+        codes = sorted({c for c in tissue_codes if c})
+        if not codes:
+            return {}
+        query = query.filter(SCTissueBoxCapacity.tissue_code.in_(codes))
+    rows = query.all()
+    index: dict[str, dict[str, int]] = {}
+    for row in rows:
+        if row.pieces_per_box is None or row.pieces_per_box <= 0:
+            continue
+        index.setdefault(row.tissue_code, {})[row.box_code] = int(
+            row.pieces_per_box
+        )
+    return index
+
+
+def recommended_box_for_qty(
+    qty: int,
+    capacities: dict[str, int],
+    box_index: dict[str, SCBoxType],
+) -> tuple[str | None, int]:
+    """Pick the box code that minimises the number of boxes for ``qty``.
+
+    Ties on box count are broken by smaller interior volume - the
+    customer's template was built around the same intuition (use the
+    smallest box that still fits the items in one shot). Boxes whose
+    dimensions are zero in ``box_index`` are skipped because the dim
+    weight calculation would collapse to zero, which would silently
+    undercount the freight.
+
+    Returns ``(box_code, pieces_per_box)`` for the winning box, or
+    ``(None, 0)`` when no capacity rows exist (the caller skips the
+    leg with an "unknown capacity" error rather than guess).
+    """
+
+    if qty <= 0 or not capacities:
+        return None, 0
+
+    best: tuple[str, int] | None = None
+    best_box_count = 0
+    best_volume = 0.0
+
+    for box_code, per_box in capacities.items():
+        if per_box <= 0:
+            continue
+        box = box_index.get(box_code)
+        if box is None:
+            continue
+        volume = (
+            float(box.length_in or 0.0)
+            * float(box.width_in or 0.0)
+            * float(box.height_in or 0.0)
+        )
+        # Zero-dimension boxes (SMALL_AIRTRAY placeholder) are not
+        # quote-able yet - the dim-weight contribution would be zero.
+        if volume <= 0.0:
+            continue
+        boxes_needed = math.ceil(qty / per_box)
+        if (
+            best is None
+            or boxes_needed < best_box_count
+            or (boxes_needed == best_box_count and volume < best_volume)
+        ):
+            best = (box_code, per_box)
+            best_box_count = boxes_needed
+            best_volume = volume
+
+    if best is None:
+        return None, 0
+    return best
 
 
 def _finalize_box_totals(
@@ -208,6 +316,7 @@ def allocate_boxes(
     tissue_rows: list[TissueRow],
     tissue_index: dict[str, SCTissueCode],
     box_index: dict[str, SCBoxType],
+    capacity_index: dict[str, dict[str, int]] | None = None,
     box_overrides: dict[str, int] | None = None,
 ) -> tuple[float, int, dict[str, int], float, list[str]]:
     """Resolve tissue rows into total weight, box counts, and dim weight.
@@ -227,6 +336,16 @@ def allocate_boxes(
       not in ``tissue_index``. The caller skips the whole leg when this
       list is non-empty so a single typo can't undercount the freight.
 
+    Per-tissue box choice is resolved in this order:
+
+    1. ``row.user_box_code`` if the user picked a box from the dropdown
+       AND the capacity table allows that pairing.
+    2. The recommended box from :func:`recommended_box_for_qty` (smallest
+       box count for ``row.qty``, ties → smaller interior volume).
+    3. The legacy ``default_box_type_code`` on :class:`SCTissueCode` when
+       no capacity rows exist yet (lets tenants who haven't loaded the
+       expanded CSV still get a quote).
+
     ``box_overrides`` (optional) lets the caller replace the auto box
     allocation entirely. When supplied with at least one non-zero entry,
     the tissue weight calculation is unchanged but the box counts (and
@@ -234,6 +353,9 @@ def allocate_boxes(
     verbatim. Unknown box codes are silently dropped via
     :func:`_finalize_box_totals`.
     """
+
+    if capacity_index is None:
+        capacity_index = {}
 
     tissue_only_weight = 0.0
     auto_boxes: dict[str, int] = {}
@@ -244,19 +366,37 @@ def allocate_boxes(
             unknown_codes.append(row.tissue_code)
             continue
         row.unit_weight_lb = float(tissue.unit_weight_lb or 0.0)
-        row.box_type_code = tissue.default_box_type_code or ""
-        row.pieces_per_box = tissue.pieces_per_box or 1
         if row.qty <= 0:
             continue
         tissue_only_weight += row.unit_weight_lb * row.qty
-        if not row.box_type_code:
+
+        capacities = capacity_index.get(row.tissue_code, {})
+        chosen_box: str | None = None
+        chosen_per_box: int = 0
+        user_pick = (row.user_box_code or "").strip().upper()
+        if user_pick and capacities.get(user_pick, 0) > 0:
+            chosen_box = user_pick
+            chosen_per_box = capacities[user_pick]
+        elif capacities:
+            chosen_box, chosen_per_box = recommended_box_for_qty(
+                row.qty, capacities, box_index
+            )
+
+        # Legacy fall-through: tenants whose CSV upload predates the
+        # capacity table still have default_box_type_code populated on
+        # SCTissueCode. Use it so they keep getting quotes.
+        if chosen_box is None and tissue.default_box_type_code:
+            chosen_box = tissue.default_box_type_code
+            chosen_per_box = max(1, int(tissue.pieces_per_box or 1))
+
+        row.box_type_code = chosen_box or ""
+        row.pieces_per_box = chosen_per_box or None
+        if not chosen_box:
             continue
-        per_box = max(1, row.pieces_per_box)
+        per_box = max(1, chosen_per_box)
         box_count = math.ceil(row.qty / per_box)
-        auto_boxes[row.box_type_code] = (
-            auto_boxes.get(row.box_type_code, 0) + box_count
-        )
-        box = box_index.get(row.box_type_code)
+        auto_boxes[chosen_box] = auto_boxes.get(chosen_box, 0) + box_count
+        box = box_index.get(chosen_box)
         if box is not None:
             row.tare_weight_lb = float(box.tare_weight_lb or 0.0)
             row.box_dims = (
@@ -508,6 +648,7 @@ def compute_sc_multileg(
             rate_set=RATE_SET_SCIENCE_CARE
         ).all()
     }
+    capacity_index = _tissue_box_capacity_index()
     consumable_index = SCConsumable.query.filter_by(
         rate_set=RATE_SET_SCIENCE_CARE
     ).all()
@@ -580,7 +721,11 @@ def compute_sc_multileg(
             dim_weight,
             unknown_codes,
         ) = allocate_boxes(
-            tissue_rows, tissue_index, box_index, box_overrides=box_overrides
+            tissue_rows,
+            tissue_index,
+            box_index,
+            capacity_index=capacity_index,
+            box_overrides=box_overrides,
         )
         result.box_counts = dict(boxes_by_type)
         if unknown_codes:
