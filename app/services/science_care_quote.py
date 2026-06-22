@@ -771,13 +771,12 @@ def compute_sc_multileg(
         # tissue+tare folded into total_weight - re-derive each piece
         # from the same primitives (tissue qty × unit_weight; box tare ×
         # count) so the three numbers sum to total_weight_lb exactly.
-        tissue_weight = sum(
-            (tissue_index[r.tissue_code].unit_weight_lb or 0.0) * r.qty
-            for r in tissue_rows
-            if r.tissue_code in tissue_index and r.qty > 0
-        )
+        # `unit_weight_lb` is already resolved + float-cast on every row
+        # by allocate_boxes; the box tare is float-cast here to match
+        # _finalize_box_totals's behaviour with Decimal-typed columns.
+        tissue_weight = sum(r.unit_weight_lb * r.qty for r in tissue_rows)
         box_tare_weight = sum(
-            (box_index[code].tare_weight_lb or 0.0) * count
+            float(box_index[code].tare_weight_lb or 0.0) * count
             for code, count in boxes_by_type.items()
             if code in box_index
         )
