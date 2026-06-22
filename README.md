@@ -467,19 +467,34 @@ Box dimensions and tare weights live in `sc_box_types`. The migration seeds a
 placeholder `SMALL_AIRTRAY` row with zero dimensions – an SC admin must populate
 real dimensions before the allocator will pick that box.
 
-### Weight breakdown on results
+### Live weight breakdown
 
-Every leg in the results card surfaces its total billable weight broken into
-three components so the user can see what is driving freight cost:
+The quote form shows the three weight components in two places:
 
-- **Tissue (lb)** – `Σ qty × unit_weight` across the leg's tissue rows.
-- **Consumables (lb)** – per-pick weight when the user filled the per-consumable
+**Per-row (tissue table)** — each tissue line shows **Avg lbs** (per piece) plus
+**Total lbs** (`qty × avg`) and **Total kg** (`Total lbs × 0.4536`, rounded to a
+whole kg). The Total cells update client-side as the user types qty so the
+numbers stay responsive even between server round-trips.
+
+**Per-leg (Shipment weight card)** — below the Boxes section a card shows live
+subtotals for the leg:
+
+- **Tissue** – `Σ qty × unit_weight` across the leg's tissue rows.
+- **Consumables** – per-pick weight when the user filled the per-consumable
   Qty inputs, otherwise the auto fallback (`temp_mode × scope → weight/box ×
   total_boxes`).
-- **Box tare (lb)** – `Σ tare_weight × count` for every box on the leg.
+- **Box tare** – `Σ tare_weight × count` for every box on the leg.
+- **TOTAL** – the three summed; matches the client workbook's
+  "TOTAL SHIPMENT WEIGHT" cell.
 
-The three columns sum to **Total weight (lb)** on every row, and a footer row
-shows the grand totals across all legs.
+The card updates whenever any of the leg's inputs change (tissue code, qty,
+box override, consumable Qty, temp_mode, intl_country) — all of them route
+through the same `/sc/quote/leg/<n>/box-counts` HTMX endpoint which emits the
+subtotals card as an OOB swap.
+
+After running the multi-leg quote, the **results card** repeats the same three
+columns per leg plus a Grand-total row, so the breakdown is visible during
+form entry AND after pricing.
 
 ### Reference table CSV admin
 

@@ -708,3 +708,106 @@ def test_sc_tissue_lookup_dropdown_disabled_when_no_box_options(
     assert "no box configured" in html
     # The dropdown is rendered as disabled.
     assert "disabled" in html
+
+
+# --- Per-leg weight subtotals card -----------------------------------------
+
+
+def _seed_subtotal_fixtures():
+    """Tissue + capacity + box + consumable rows used by the subtotal tests."""
+
+    from app.models import SCBoxType, SCConsumable, SCTissueBoxCapacity
+
+    xlg = SCBoxType(
+        code="XLG",
+        label="X-Large",
+        length_in=52,
+        width_in=20,
+        height_in=15,
+        tare_weight_lb=14.0,
+    )
+    tissue = SCTissueCode(
+        tissue_code="PELV03",
+        description="Pelvis",
+        unit_weight_lb=79.0,
+    )
+    cap = SCTissueBoxCapacity(
+        tissue_code="PELV03", box_code="XLG", pieces_per_box=1
+    )
+    cons = SCConsumable(
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    db.session.add_all([xlg, tissue, cap, cons])
+    db.session.commit()
+    return xlg, cons
+
+
+def test_sc_box_counts_partial_emits_weight_subtotals(app: Flask) -> None:
+    # The qty / box-count endpoint must also emit the per-leg weight
+    # subtotals card as an OOB swap so the form's "Shipment weight"
+    # block stays in sync with whatever the user just changed.
+    user = _make_user(
+        "subtotal@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "1",
+            "temp_mode_1": "frozen",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # OOB swap wrapper for the subtotals card.
+    assert 'id="sc-weight-subtotals-1"' in html
+    assert "Shipment weight" in html
+    # 79 lb tissue + 14 lb XLG tare + 25 lb auto dry ice = 118 lb total.
+    assert "79.0" in html
+    assert "14.0" in html
+    assert "25.0" in html
+    assert "118.0" in html
+
+
+def test_sc_tissue_lookup_emits_subtotals_oob(app: Flask) -> None:
+    # Tissue-code change must also refresh the subtotals card in the
+    # same round-trip (alongside the OOB box-counts swap).
+    user = _make_user(
+        "sub-tissue@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&qty_1_1=1&temp_mode_1=frozen"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="sc-weight-subtotals-1"' in html
+    assert "118.0" in html  # total weight
+
+
+def test_sc_tissue_row_renders_total_lbs_and_kg_columns(app: Flask) -> None:
+    # The tissue row shows Total lbs (qty × avg) and Total kg
+    # (rounded to whole kg). PELV03 qty 2 → 158 lb / 72 kg.
+    user = _make_user("totals@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&qty_1_1=2"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The total lbs input must carry qty × unit_weight (2 × 79 = 158 lb).
+    assert 'name="tissue_total_lbs_1_1"' in html
+    assert 'value="158.0"' in html
+    # And the kg cell rounds 158 × 0.4536 = 71.67 → 72 kg.
+    assert 'name="tissue_total_kg_1_1"' in html
+    assert 'value="72"' in html

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Union
+from typing import Mapping, Union
 
 import pandas as pd
 from flask import (
@@ -55,6 +55,7 @@ from app.services.science_care_quote import (
     _collect_tissue_rows,
     _tissue_box_capacity_index,
     allocate_boxes,
+    compute_leg_subtotals,
     compute_sc_multileg,
     recommended_box_for_qty,
 )
@@ -263,8 +264,8 @@ def sc_tissue_row_partial() -> str:
         i=row_index,
         prefill=None,
         code="",
+        qty_for_row=0,
         box_types=_box_type_choices(),
-        allowed_box_codes=[],
         capacities={},
         recommended_box_code=None,
         recommended_pieces_per_box=0,
@@ -364,19 +365,20 @@ def sc_tissue_lookup_partial() -> str:
         i=row_index,
         prefill=prefill,
         code=code,
+        qty_for_row=qty_for_row,
         box_types=box_types,
-        allowed_box_codes=sorted(capacities_for_row.keys()),
         capacities=capacities_for_row,
         recommended_box_code=recommended_box,
         recommended_pieces_per_box=recommended_per_box,
         user_box_pick=user_box_pick,
     )
 
-    # OOB recompute of the leg's box counts. Mirrors the qty trigger in
-    # /sc/quote/leg/<n>/box-counts but here it's piggy-backed on the
-    # tissue-code response so swapping a code (e.g. ARM01 -> PELV03)
-    # updates the Boxes section in the same round-trip. `request.args`
-    # carries the full leg body via the input's hx-include.
+    # OOB recompute of the leg's box counts AND its weight subtotals
+    # card. Mirrors the qty trigger in /sc/quote/leg/<n>/box-counts but
+    # piggy-backs on this response so swapping a tissue code (e.g.
+    # ARM01 -> PELV03) updates the Boxes section + subtotals in the
+    # same round-trip. `request.args` carries the full leg body via
+    # the input's hx-include.
     #
     # The freshly-typed code may not yet be reflected in request.args
     # because the user is still editing the input. Splice it in so the
@@ -385,28 +387,10 @@ def sc_tissue_lookup_partial() -> str:
     args = request.args.copy()
     if prefill:
         args[f"tissue_code_{leg}_{row_index}"] = prefill.tissue_code
-    tissue_rows = _collect_tissue_rows(args, leg)
-    tissue_index = _tissue_index_for_rows(tissue_rows)
-    leg_capacity_index = _tissue_box_capacity_index(
-        [r.tissue_code for r in tissue_rows]
+    box_counts_html, subtotals_html = _render_box_counts_and_subtotals(
+        args, leg, box_types, box_index, oob=True
     )
-    _, _, auto_boxes_by_type, _, _ = allocate_boxes(
-        tissue_rows,
-        tissue_index,
-        box_index,
-        capacity_index=leg_capacity_index,
-    )
-    box_values = _resolve_box_values(
-        args, leg, box_types, auto_boxes_by_type
-    )
-    box_counts_html = render_template(
-        "sc/_box_count_inputs.html",
-        leg=leg,
-        box_types=box_types,
-        box_values=box_values,
-        oob=True,
-    )
-    return tissue_row_html + box_counts_html
+    return tissue_row_html + box_counts_html + subtotals_html
 
 
 @science_care_bp.get("/quote/lab-lookup")
@@ -521,11 +505,44 @@ def sc_box_counts_partial(leg: int) -> str:
     box_types = _box_type_choices()
     box_index = {b.code: b for b in box_types}
 
-    tissue_rows = _collect_tissue_rows(request.form, leg)
+    box_counts_html, subtotals_html = _render_box_counts_and_subtotals(
+        request.form, leg, box_types, box_index, oob=False
+    )
+    # box-counts swaps target #box-counts-<leg> via outerHTML; subtotals
+    # ride along as an OOB swap so HTMX repaints the weight card too.
+    return box_counts_html + subtotals_html
+
+
+def _render_box_counts_and_subtotals(
+    form: Mapping[str, str],
+    leg: int,
+    box_types,
+    box_index: dict[str, SCBoxType],
+    oob: bool,
+) -> tuple[str, str]:
+    """Render the box-counts grid + the weight subtotals card for ``leg``.
+
+    Shared by ``sc_box_counts_partial`` (qty / box override / consumable
+    Qty / temp_mode triggers) and ``sc_tissue_lookup_partial`` (tissue
+    code change). Returning both halves as a tuple keeps the two
+    endpoints from drifting on the allocation + subtotal computation.
+
+    When ``oob`` is True, the box-counts partial is rendered with
+    ``oob=True`` so HTMX swaps it into ``#box-counts-<leg>``. The
+    subtotals partial is always emitted with ``oob=True`` because it
+    swaps into a different target (``#sc-weight-subtotals-<leg>``).
+    """
+
+    tissue_rows = _collect_tissue_rows(form, leg)
     tissue_index = _tissue_index_for_rows(tissue_rows)
     capacity_index = _tissue_box_capacity_index(
         [r.tissue_code for r in tissue_rows]
     )
+    # allocate_boxes (without overrides) populates per-row unit_weight_lb
+    # AND returns the auto allocation. Per-input typed overrides win in
+    # _resolve_box_values below ("prefill empty inputs only" semantic);
+    # we then re-key the displayed values back to box-code form to feed
+    # the subtotal's box_tare math.
     _, _, auto_boxes_by_type, _, _ = allocate_boxes(
         tissue_rows,
         tissue_index,
@@ -534,15 +551,41 @@ def sc_box_counts_partial(leg: int) -> str:
     )
 
     box_values = _resolve_box_values(
-        request.form, leg, box_types, auto_boxes_by_type
+        form, leg, box_types, auto_boxes_by_type
     )
-
-    return render_template(
+    box_counts_html = render_template(
         "sc/_box_count_inputs.html",
         leg=leg,
         box_types=box_types,
         box_values=box_values,
+        oob=oob,
     )
+
+    # Rebuild boxes_by_type from the merged values so the subtotal's
+    # box-tare row matches what the user is looking at in the Boxes
+    # section. _resolve_box_values keys by box.id; flip back to code.
+    final_boxes_by_type: dict[str, int] = {}
+    for box in box_types:
+        count = int(box_values.get(int(box.id), 0))
+        if count > 0:
+            final_boxes_by_type[box.code] = count
+
+    consumable_index = _consumable_choices()
+    subtotals = compute_leg_subtotals(
+        form,
+        leg,
+        tissue_rows,
+        final_boxes_by_type,
+        box_index,
+        consumable_index,
+    )
+    subtotals_html = render_template(
+        "sc/_leg_weight_subtotals.html",
+        leg=leg,
+        subtotals=subtotals,
+        oob=True,
+    )
+    return box_counts_html, subtotals_html
 
 
 @science_care_bp.get("/quote/defaults")

@@ -384,8 +384,40 @@ def _register_template_helpers(app: Flask) -> None:
             if box.code in counts and counts[box.code]
         }
 
+    def sc_initial_subtotals_for_leg(leg_result) -> dict:
+        """Return the per-leg weight subtotals dict for the initial
+        page render (and the post-orchestration re-render).
+
+        Pulled from :class:`LegResult` when available so a re-rendered
+        quote page shows the totals it actually produced; defaults to
+        zeros for a fresh visit. Mirrors the keys consumed by
+        ``sc/_leg_weight_subtotals.html`` and the
+        ``sc_box_counts_partial`` OOB swap.
+        """
+
+        if leg_result is None:
+            return {
+                "tissue_lb": 0.0,
+                "consumable_lb": 0.0,
+                "box_tare_lb": 0.0,
+                "total_lb": 0.0,
+            }
+        return {
+            "tissue_lb": float(getattr(leg_result, "tissue_weight_lb", 0.0) or 0.0),
+            "consumable_lb": float(
+                getattr(leg_result, "consumable_weight_lb", 0.0) or 0.0
+            ),
+            "box_tare_lb": float(
+                getattr(leg_result, "box_tare_weight_lb", 0.0) or 0.0
+            ),
+            "total_lb": float(getattr(leg_result, "total_weight_lb", 0.0) or 0.0),
+        }
+
     app.jinja_env.globals["csrf_input"] = csrf_input
     app.jinja_env.globals["sc_box_values_for_leg"] = sc_box_values_for_leg
+    app.jinja_env.globals["sc_initial_subtotals_for_leg"] = (
+        sc_initial_subtotals_for_leg
+    )
     app.jinja_env.filters["currency"] = currency
 
 

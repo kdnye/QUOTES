@@ -198,18 +198,20 @@
             <table class="table table-sm align-middle">
               <thead>
                 <tr>
-                  <th style="width:18%">Tissue code</th>
-                  <th style="width:28%">Description</th>
-                  <th style="width:12%">Qty</th>
-                  <th style="width:14%">Unit weight (lb)</th>
-                  <th style="width:28%">Box</th>
+                  <th style="width:14%">Tissue code</th>
+                  <th style="width:24%">Description</th>
+                  <th style="width:8%">Qty</th>
+                  <th style="width:10%" title="Per-piece average weight">Avg lbs</th>
+                  <th style="width:10%" title="Qty × Avg lbs">Total lbs</th>
+                  <th style="width:8%" title="Total lbs × 0.4536, rounded to whole kg">Total kg</th>
+                  <th style="width:26%">Box</th>
                 </tr>
               </thead>
               <tbody>
                 {% with i = 1,
                         prefill = None,
                         code = "",
-                        allowed_box_codes = [],
+                        qty_for_row = 0,
                         capacities = {},
                         recommended_box_code = None,
                         recommended_pieces_per_box = 0,
@@ -237,6 +239,14 @@
               {% include "sc/_box_count_inputs.html" %}
             {% endwith %}
           </fieldset>
+
+          {# Per-leg weight subtotals: matches the client workbook's
+             TOTAL SHIPMENT WEIGHT block. Initial render is all zeros;
+             the box-counts HTMX endpoint emits this as an OOB swap so
+             the numbers stay in sync as the user types. #}
+          {% with subtotals = sc_initial_subtotals_for_leg(leg_result) %}
+            {% include "sc/_leg_weight_subtotals.html" %}
+          {% endwith %}
         </div>
       </div>
     </div>
@@ -300,6 +310,60 @@
     };
     input.addEventListener("input", sync);
     sync(); // paint once at page load so prefills show immediately.
+  });
+
+  // Update each tissue row's "Total lbs" / "Total kg" cells immediately
+  // on qty change. The unit (per-piece) weight rides on the row as a
+  // data-unit-weight attribute set when the tissue code was looked up.
+  // Without this, the user would only see the new line total after the
+  // server round-trip that refreshes the row - the leg's box-counts
+  // OOB swap doesn't repaint the tissue rows.
+  const LB_TO_KG = 0.453592;
+  document.addEventListener("input", (event) => {
+    const target = event.target;
+    if (!target || !target.classList || !target.classList.contains("sc-qty-input")) {
+      return;
+    }
+    const row = target.closest("tr");
+    if (!row) return;
+    const unitWeight = parseFloat(row.dataset.unitWeight || "0");
+    const qty = parseInt(target.value || "0", 10) || 0;
+    const totalLbs = unitWeight * qty;
+    const lbsCell = row.querySelector(".sc-line-total-lbs");
+    const kgCell = row.querySelector(".sc-line-total-kg");
+    if (lbsCell) {
+      lbsCell.value = totalLbs > 0 ? totalLbs.toFixed(1) : "";
+    }
+    if (kgCell) {
+      kgCell.value = totalLbs > 0
+        ? Math.round(totalLbs * LB_TO_KG).toString()
+        : "";
+    }
+  });
+
+  // Wire the consumable Qty inputs and the leg-level temp_mode /
+  // intl_country selects to the same box-counts HTMX endpoint so the
+  // weight subtotals card refreshes when those change. The endpoint
+  // already responds to qty + box overrides; piggy-backing keeps the
+  // four subtotal values in sync no matter which control the user
+  // touches.
+  document.querySelectorAll(
+    'input[name^="cons_qty_"], select[name^="temp_mode_"], input[name^="intl_country_"]'
+  ).forEach((control) => {
+    const match = control.name.match(/_(\d+)$/);
+    if (!match) return;
+    const leg = match[1];
+    control.setAttribute(
+      "hx-post",
+      `/sc/quote/leg/${leg}/box-counts`
+    );
+    control.setAttribute("hx-trigger", "change");
+    control.setAttribute("hx-include", `#sc-leg-${leg}`);
+    control.setAttribute("hx-target", `#box-counts-${leg}`);
+    control.setAttribute("hx-swap", "outerHTML");
+    if (window.htmx) {
+      window.htmx.process(control);
+    }
   });
 </script>
 {% endblock %}
