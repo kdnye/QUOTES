@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+
+{% block title %}Look up Multi-Leg Quote{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+  <div>
+    <h1 class="h3 mb-1">Look up multi-leg quote</h1>
+    <p class="text-body-secondary mb-0">
+      Enter the unified reference printed on the quote summary or the
+      customer's <code>SCMQNNNN</code> number.
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm"
+     href="{{ url_for('science_care.sc_quote_form') }}">
+    Back to quote form
+  </a>
+</div>
+
+<form method="post" action="{{ url_for('science_care.sc_quote_lookup') }}" class="mb-4">
+  {{ csrf_input() }}
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6 col-lg-4">
+      <label for="sc-lookup-ref" class="form-label">Multi-leg reference</label>
+      <input type="text"
+             class="form-control"
+             id="sc-lookup-ref"
+             name="multi_reference"
+             maxlength="64"
+             autocomplete="off"
+             placeholder="SCMQ0001"
+             value="{{ looked_up_ref or '' }}"
+             required>
+    </div>
+    <div class="col-md-3 col-lg-2">
+      <button class="btn btn-primary" type="submit">Look up</button>
+    </div>
+  </div>
+</form>
+
+{% if session %}
+<div class="card border-primary">
+  <div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
+    <strong>Multi-leg quote summary</strong>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <span class="badge bg-dark">Ref: {{ session.multi_reference }}</span>
+      <span class="badge bg-primary">Session #{{ session.id }}</span>
+      <a class="btn btn-success btn-sm"
+         href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=session.id) }}">
+        Email Ops for Booking
+      </a>
+    </div>
+  </div>
+  <div class="card-body small text-body-secondary">
+    Submitted {{ session.submitted_at.strftime('%Y-%m-%d %H:%M UTC') if session.submitted_at else '—' }}.
+  </div>
+  <div class="table-responsive">
+    <table class="table table-sm align-middle mb-0">
+      <thead class="table-light">
+        <tr>
+          <th>Leg</th>
+          <th>Origin → Destination</th>
+          <th class="text-end">Weight (lb)</th>
+          <th class="text-end">Air</th>
+          <th class="text-end">Hot Shot</th>
+          <th class="text-end">Established</th>
+          <th>Winner</th>
+          <th class="text-end">Subtotal</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for leg in legs %}
+        <tr>
+          <td>{{ leg.leg_index }}</td>
+          <td>
+            {% if leg.origin or leg.destination %}
+              {{ leg.origin or '—' }} → {{ leg.destination or '—' }}
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.weight %}{{ '%.1f'|format(leg.weight) }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.air_total %}{{ leg.air_total | currency }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.hotshot_total %}{{ leg.hotshot_total | currency }}{% else %}—{% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.established_rate %}{{ leg.established_rate | currency }}{% else %}—{% endif %}
+          </td>
+          <td>
+            {% if leg.winner_mode %}
+              <span class="badge bg-success">{{ leg.winner_mode }}</span>
+            {% else %}
+              <span class="badge bg-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.winner_total %}
+              <strong>{{ leg.winner_total | currency }}</strong>
+            {% else %}
+              <span class="text-body-secondary">$0.00</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if leg.skip_reason %}
+              <span class="text-warning">Skipped — {{ leg.skip_reason }}</span>
+            {% else %}
+              <span class="text-success">Success</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="table-primary">
+          <th colspan="7" class="text-end">Total S&amp;H</th>
+          <th class="text-end">{{ grand_total | currency }}</th>
+          <th></th>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}

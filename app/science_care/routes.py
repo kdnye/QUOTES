@@ -40,10 +40,13 @@ from flask_login import current_user, login_required
 from app.admin import CSVUploadForm, _parse_csv_rows
 from app.models import (
     RATE_SET_SCIENCE_CARE,
+    Quote,
     SCAccessorialMap,
     SCBoxType,
     SCConsumable,
     SCLab,
+    SCQuoteSession,
+    SCQuoteSessionLeg,
     SCTissueBoxCapacity,
     SCTissueCode,
     SCUserLabSlot,
@@ -53,6 +56,7 @@ from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import (
     TissueRow,
     _collect_tissue_rows,
+    _normalize_multi_reference,
     _tissue_box_capacity_index,
     allocate_boxes,
     compute_leg_subtotals,
@@ -210,9 +214,16 @@ def sc_quote_calculate() -> str:
     can use the same result context.
     """
 
-    context = compute_sc_multileg(
-        request.form, current_user, request.remote_addr
-    )
+    try:
+        context = compute_sc_multileg(
+            request.form, current_user, request.remote_addr
+        )
+    except ValueError as exc:
+        # Reference validation / duplicate. Render an inline error in
+        # the results card so HTMX swaps a usable message in place.
+        return render_template(
+            "sc/_results_error.html", error_message=str(exc)
+        )
     return render_template("sc/_results_partial.html", **context)
 
 
@@ -227,9 +238,13 @@ def sc_quote_submit():
     button path instead of HTMX.
     """
 
-    context = compute_sc_multileg(
-        request.form, current_user, request.remote_addr
-    )
+    try:
+        context = compute_sc_multileg(
+            request.form, current_user, request.remote_addr
+        )
+    except ValueError as exc:
+        flash(str(exc), "danger")
+        context = None
     return render_template(
         "sc/quote.html",
         leg_count=SC_LEG_COUNT,
@@ -691,6 +706,173 @@ def sc_lab_defaults_save():
         f"Saved {len(new_rows)} default lab slot(s).", "success"
     )
     return redirect(url_for("science_care.sc_quote_form"))
+
+
+# --- Booking email & lookup -------------------------------------------------
+
+
+def _load_sc_session_or_404(session_id: int) -> SCQuoteSession:
+    """Fetch an :class:`SCQuoteSession` by primary key or abort 404.
+
+    Used by the booking-email render path. SC scope is enforced by the
+    ``@sc_user_required`` guard on the route - we deliberately do NOT
+    filter by ``current_user.id`` because operations on a multi-leg
+    quote (lookup, ops-email) may be initiated by a different SC user
+    helping a customer find their previously generated shipment.
+    """
+
+    session = SCQuoteSession.query.filter_by(id=session_id).first()
+    if session is None:
+        abort(404)
+    return session
+
+
+def _load_sc_session_legs(session: SCQuoteSession) -> list[SCQuoteSessionLeg]:
+    """Return the leg rows for ``session`` ordered by ``leg_index``."""
+
+    return (
+        SCQuoteSessionLeg.query.filter_by(session_id=session.id)
+        .order_by(SCQuoteSessionLeg.leg_index)
+        .all()
+    )
+
+
+def _hydrate_legs_for_display(
+    legs: list[SCQuoteSessionLeg],
+) -> list[dict]:
+    """Join each persisted leg with its winning :class:`Quote` row.
+
+    Returns a list of dicts shaped for ``sc/email_ops_request.html`` and
+    ``sc/_lookup_summary.html``: origin/destination ZIP, billable
+    weight, winner mode/total, and a status string. Skipped legs are
+    included so the booking email + lookup page can show why a leg has
+    no price.
+    """
+
+    quote_ids = {
+        leg.air_quote_id
+        for leg in legs
+        if leg.air_quote_id is not None
+    } | {
+        leg.hotshot_quote_id
+        for leg in legs
+        if leg.hotshot_quote_id is not None
+    }
+    quotes_by_id: dict[int, Quote] = {}
+    if quote_ids:
+        quotes_by_id = {
+            q.id: q
+            for q in Quote.query.filter(Quote.id.in_(sorted(quote_ids))).all()
+        }
+
+    out: list[dict] = []
+    for leg in legs:
+        air = quotes_by_id.get(leg.air_quote_id) if leg.air_quote_id else None
+        hot = (
+            quotes_by_id.get(leg.hotshot_quote_id)
+            if leg.hotshot_quote_id
+            else None
+        )
+        # Prefer the winning mode's Quote for origin/destination/weight
+        # display so the booking email mirrors the row the user picked.
+        # Fall back to whichever Quote is non-null otherwise.
+        primary = (
+            hot if (leg.winner_mode or "").lower() == "hotshot" else air
+        ) or air or hot
+        out.append(
+            {
+                "leg_index": leg.leg_index,
+                "origin": primary.origin if primary else "",
+                "destination": primary.destination if primary else "",
+                "weight": float(primary.weight) if primary else 0.0,
+                "winner_mode": leg.winner_mode,
+                "winner_total": float(leg.winner_total or 0.0),
+                "skip_reason": leg.skip_reason,
+                "air_total": float(air.total) if air and air.total else None,
+                "hotshot_total": (
+                    float(hot.total) if hot and hot.total else None
+                ),
+                "established_rate": (
+                    float(leg.established_rate)
+                    if leg.established_rate is not None
+                    else None
+                ),
+            }
+        )
+    return out
+
+
+@science_care_bp.get("/quote/<int:session_id>/email-ops")
+@login_required
+@sc_user_required
+def sc_email_ops_for_booking(session_id: int):
+    """Render the aggregated multi-leg booking email page.
+
+    Unlike :func:`app.quotes.routes.email_request_form`, this view
+    intentionally adds **no** admin / booking fee to the grand total -
+    SC multi-leg jobs are billed off the raw cheapest-of total. The
+    page generates a ``mailto:operations@freightservices.net`` link
+    pre-populated with one block per non-skipped leg, the grand total,
+    and the multi-leg reference in the subject.
+    """
+
+    session = _load_sc_session_or_404(session_id)
+    leg_rows = _load_sc_session_legs(session)
+    legs = _hydrate_legs_for_display(leg_rows)
+    return render_template(
+        "sc/email_ops_request.html",
+        session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=getattr(current_user, "name", "") or "",
+        user_email=getattr(current_user, "email", "") or "",
+        user_company=getattr(current_user, "company", "") or "",
+    )
+
+
+@science_care_bp.get("/quote/lookup")
+@login_required
+@sc_user_required
+def sc_quote_lookup_form() -> str:
+    """Render the multi-leg quote lookup form."""
+
+    return render_template("sc/lookup.html")
+
+
+@science_care_bp.post("/quote/lookup")
+@login_required
+@sc_user_required
+def sc_quote_lookup():
+    """Resolve a multi-leg reference to its persisted summary.
+
+    SC-scoped across users: any SC user can look up any multi-leg
+    reference. This is intentional - the lookup is how an SC user
+    helps a customer find their job by the printed SCMQ number.
+    """
+
+    reference, error = _normalize_multi_reference(
+        request.form.get("multi_reference")
+    )
+    if error or not reference:
+        flash(error or "Reference is required.", "danger")
+        return redirect(url_for("science_care.sc_quote_lookup_form"))
+
+    session = (
+        SCQuoteSession.query.filter_by(multi_reference=reference).first()
+    )
+    if session is None:
+        flash(f"No multi-leg quote found for {reference}.", "warning")
+        return redirect(url_for("science_care.sc_quote_lookup_form"))
+
+    leg_rows = _load_sc_session_legs(session)
+    legs = _hydrate_legs_for_display(leg_rows)
+    return render_template(
+        "sc/lookup.html",
+        session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        looked_up_ref=reference,
+    )
 
 
 # Display order + per-table descriptions for the reference index page.

@@ -141,6 +141,7 @@ def create_quote(
     rate_set: str | None = None,
     quote_source: str | None = None,
     request_ip: str | None = None,
+    client_reference: str | None = None,
 ):
     """Generate a quote and persist to the database.
 
@@ -267,6 +268,7 @@ def create_quote(
             warnings=warning,
             quote_source=quote_source,
             request_ip=request_ip,
+            client_reference=client_reference,
         )
         db.add(q)
         db.commit()

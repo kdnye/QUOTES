@@ -796,6 +796,14 @@ class SCQuoteSession(db.Model):
         server_default=RATE_SET_SCIENCE_CARE,
         index=True,
     )
+    # Unified reference that ties together every leg of a multi-leg SC
+    # submission. Auto-assigned as ``SCMQ0001``, ``SCMQ0002``, … when the
+    # form leaves the field blank; otherwise honours a customer-supplied
+    # value (validated by ``_normalize_client_reference``). Indexed
+    # because both the booking-email and lookup endpoints scan by it.
+    multi_reference = db.Column(
+        db.String(64), unique=True, index=True, nullable=True
+    )
 
 
 class SCQuoteSessionLeg(db.Model):

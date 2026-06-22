@@ -1124,3 +1124,211 @@ def test_compute_leg_subtotals_zero_consumables_when_no_picks() -> None:
         "box_tare_lb": 16.0,
         "total_lb": 40.0,
     })
+
+
+# --- multi_reference assignment + stamping ----------------------------------
+
+
+class TestMultiReferenceNormalization:
+    """Pure helper tests - no DB / app context needed."""
+
+    def test_blank_input_returns_none(self) -> None:
+        assert svc._normalize_multi_reference("") == (None, None)
+        assert svc._normalize_multi_reference("   ") == (None, None)
+        assert svc._normalize_multi_reference(None) == (None, None)
+
+    def test_uppercase_and_trim(self) -> None:
+        ref, err = svc._normalize_multi_reference("  acme-2026-Q4  ")
+        assert err is None
+        assert ref == "ACME-2026-Q4"
+
+    def test_rejects_oversize(self) -> None:
+        # 64 chars would overflow Quote.client_reference (64) once the
+        # ``-L<n>-{AIR,HOT}`` per-leg suffix is appended. The cap is
+        # ``64 - len("-L7-HOT") = 57`` - one over must be rejected, exactly
+        # at the cap must pass.
+        ref, err = svc._normalize_multi_reference("A" * 58)
+        assert ref is None
+        assert err is not None
+        ref, err = svc._normalize_multi_reference("A" * 57)
+        assert err is None
+        assert ref == "A" * 57
+
+    def test_cap_leaves_room_for_per_leg_suffix(self) -> None:
+        """Max-length base + worst-case suffix must fit Quote.client_reference."""
+        from app.models import Quote
+
+        column_len = Quote.__table__.c.client_reference.type.length
+        base = "A" * svc.MAX_MULTI_REFERENCE_LENGTH
+        # Worst case: 7 legs (single digit) and 3-letter mode tag.
+        assert len(f"{base}-L7-HOT") <= column_len
+
+    def test_rejects_bad_chars(self) -> None:
+        ref, err = svc._normalize_multi_reference("WAT*!")
+        assert ref is None
+        assert err is not None
+
+
+def test_auto_assigned_multi_reference_starts_at_scmq0001(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    assert result["session"].multi_reference == "SCMQ0001"
+
+
+def test_auto_assigned_multi_reference_increments(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    s1 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    s2 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    s3 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    assert s1["session"].multi_reference == "SCMQ0001"
+    assert s2["session"].multi_reference == "SCMQ0002"
+    assert s3["session"].multi_reference == "SCMQ0003"
+
+
+def test_customer_supplied_multi_reference_used_verbatim(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    form = _form(multi_reference="ACME-2026-Q4")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    assert result["session"].multi_reference == "ACME-2026-Q4"
+
+
+def test_duplicate_customer_reference_rejected(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    svc.compute_sc_multileg(
+        _form(multi_reference="DUP-001"), user, request_ip="127.0.0.1"
+    )
+    with pytest.raises(ValueError, match="already in use"):
+        svc.compute_sc_multileg(
+            _form(multi_reference="DUP-001"),
+            user,
+            request_ip="127.0.0.1",
+        )
+
+
+def test_multi_reference_stamped_on_per_leg_quotes(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each underlying Quote row carries the unified ref + leg suffix.
+
+    Bypasses the stub: confirms the orchestrator passes the right
+    ``client_reference`` value down to ``create_quote``. The leg-+-mode
+    suffix is what keeps the per-user UNIQUE(user_id, client_reference)
+    constraint from blowing up when one customer submits two sessions
+    in a row.
+    """
+
+    _seed_reference(app)
+    user = _make_user()
+    calls = _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    svc.compute_sc_multileg(
+        _form(multi_reference="JOB-7"), user, request_ip="127.0.0.1"
+    )
+    # One active leg fires two create_quote calls (Air + Hotshot).
+    assert {call["client_reference"] for call in calls} == {
+        "JOB-7-L1-AIR",
+        "JOB-7-L1-HOT",
+    }
+
+
+def test_invalid_multi_reference_raises(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(monkeypatch, {})
+    with pytest.raises(ValueError):
+        svc.compute_sc_multileg(
+            _form(multi_reference="bad*chars"),
+            user,
+            request_ip="127.0.0.1",
+        )
+
+
+def test_retry_path_re_stamps_per_leg_quote_client_reference(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent collision must NOT leave stale per-leg client_refs.
+
+    Simulates the race where two SC users grab SCMQ0001 simultaneously
+    by pre-seeding a session with that reference. The orchestrator's
+    first flush fails on UNIQUE(multi_reference); the retry path picks
+    SCMQ0002 and must update each leg's already-committed Quote row so
+    a customer looking up the leg by ``SCMQ0002-L1-AIR`` finds it (and
+    a stale ``SCMQ0001-L1-AIR`` no longer points at this session).
+    """
+
+    from app.models import Quote
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    # Reserve SCMQ0001 with another user so our orchestrator's first
+    # flush hits IntegrityError and retries. Using a different user
+    # avoids tripping the Quote-level UNIQUE(user_id, client_reference)
+    # constraint inside create_quote() before the retry can fire.
+    other = User(
+        email="sc-other@example.com",
+        name="SC Other",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(other)
+    db.session.flush()
+    db.session.add(
+        SCQuoteSession(
+            user_id=other.id,
+            grand_total=0.0,
+            payload_json="{}",
+            multi_reference="SCMQ0001",
+        )
+    )
+    db.session.commit()
+
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    assert result["session"].multi_reference == "SCMQ0002"
+
+    # The per-leg Quote rows for the new session must carry the FINAL
+    # reference, not the stale SCMQ0001 one we initially stamped.
+    leg = result["legs"][0]
+    db.session.refresh(leg.air_quote)
+    db.session.refresh(leg.hotshot_quote)
+    assert leg.air_quote.client_reference == "SCMQ0002-L1-AIR"
+    assert leg.hotshot_quote.client_reference == "SCMQ0002-L1-HOT"
+    # And no orphan Quote row claims the now-conflicting SCMQ0001 ref
+    # for this user (would surface as a spurious match in the customer
+    # lookup).
+    stale = Quote.query.filter_by(
+        user_id=user.id, client_reference="SCMQ0001-L1-AIR"
+    ).first()
+    assert stale is None

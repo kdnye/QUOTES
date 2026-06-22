@@ -2,9 +2,20 @@
    Expected context: legs (list[LegResult]), grand_total (float),
    skipped (list[LegResult]), session (SCQuoteSession). #}
 <div class="card border-primary mt-3">
-  <div class="card-header bg-primary-subtle d-flex justify-content-between align-items-center">
+  <div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
     <strong>Multi-leg quote summary</strong>
-    <span class="badge bg-primary">Session #{{ session.id }}</span>
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      {% if session.multi_reference %}
+        <span class="badge bg-dark" title="Unified reference - stamped on every leg">
+          Ref: {{ session.multi_reference }}
+        </span>
+      {% endif %}
+      <span class="badge bg-primary">Session #{{ session.id }}</span>
+      <a class="btn btn-success btn-sm"
+         href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=session.id) }}">
+        Email Ops for Booking
+      </a>
+    </div>
   </div>
   {% set tissue_total = legs|sum(attribute='tissue_weight_lb') %}
   {% set consumable_total = legs|sum(attribute='consumable_weight_lb') %}

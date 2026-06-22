@@ -51,6 +51,34 @@
 <form id="sc-form" method="post" action="{{ url_for('science_care.sc_quote_submit') }}">
   {{ csrf_input() }}
 
+  <div class="row g-3 mb-3 align-items-end">
+    <div class="col-md-6 col-lg-4">
+      <label for="sc-multi-reference" class="form-label">
+        Multi-leg reference
+        <span class="text-body-secondary fw-normal">(optional)</span>
+      </label>
+      <input type="text"
+             class="form-control"
+             id="sc-multi-reference"
+             name="multi_reference"
+             maxlength="57"
+             autocomplete="off"
+             placeholder="Auto-assign (SCMQ0001…)"
+             value="{{ request.form.get('multi_reference', '') }}">
+      <div class="form-text">
+        Leave blank to auto-assign the next <code>SCMQNNNN</code>
+        number. Stamps every leg's quote and the booking email so ops
+        can look up the full shipment by one reference.
+      </div>
+    </div>
+    <div class="col-md-6 col-lg-4">
+      <a class="btn btn-outline-secondary"
+         href="{{ url_for('science_care.sc_quote_lookup_form') }}">
+        Look up an existing multi-leg quote
+      </a>
+    </div>
+  </div>
+
   <div class="accordion mb-4" id="sc-shipments">
     {% for leg in legs %}
     <div class="accordion-item">

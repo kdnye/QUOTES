@@ -1,0 +1,161 @@
+{% extends "base.html" %}
+
+{% block title %}Email Ops for Booking — {{ session.multi_reference or ('Session ' ~ session.id) }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+  <div>
+    <h1 class="h3 mb-1">Email Ops for Booking</h1>
+    <p class="text-body-secondary mb-0">
+      Aggregated booking request for the Science Care multi-leg quote.
+      {% if session.multi_reference %}
+        Reference <strong>{{ session.multi_reference }}</strong>.
+      {% endif %}
+      <span class="text-success">No booking fee is applied to SC multi-leg quotes.</span>
+    </p>
+  </div>
+  <a class="btn btn-outline-secondary btn-sm"
+     href="{{ url_for('science_care.sc_quote_form') }}">
+    Back to quote form
+  </a>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Booking summary preview</strong>
+    <div class="d-flex gap-2">
+      <button type="button"
+              class="btn btn-outline-secondary btn-sm"
+              id="sc-copy-body-btn">
+        Copy body
+      </button>
+      <a class="btn btn-success btn-sm" id="sc-mailto-btn" href="#">
+        Open in mail client
+      </a>
+    </div>
+  </div>
+  <div class="card-body">
+    <dl class="row mb-3">
+      <dt class="col-sm-3">Multi-leg reference</dt>
+      <dd class="col-sm-9">
+        <code>{{ session.multi_reference or '—' }}</code>
+      </dd>
+      <dt class="col-sm-3">Session ID</dt>
+      <dd class="col-sm-9">{{ session.id }}</dd>
+      <dt class="col-sm-3">Total (no booking fee)</dt>
+      <dd class="col-sm-9">
+        <strong>{{ grand_total | currency }}</strong>
+      </dd>
+    </dl>
+
+    <div class="table-responsive">
+      <table class="table table-sm align-middle mb-0">
+        <thead class="table-light">
+          <tr>
+            <th>Leg</th>
+            <th>Origin → Destination</th>
+            <th class="text-end">Weight (lb)</th>
+            <th>Winner</th>
+            <th class="text-end">Subtotal</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for leg in legs %}
+          <tr>
+            <td>{{ leg.leg_index }}</td>
+            <td>
+              {% if leg.origin or leg.destination %}
+                {{ leg.origin or '—' }} → {{ leg.destination or '—' }}
+              {% else %}
+                <span class="text-body-secondary">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if leg.weight %}{{ '%.1f'|format(leg.weight) }}{% else %}—{% endif %}
+            </td>
+            <td>
+              {% if leg.winner_mode %}
+                <span class="badge bg-success">{{ leg.winner_mode }}</span>
+              {% else %}
+                <span class="badge bg-secondary">—</span>
+              {% endif %}
+            </td>
+            <td class="text-end">
+              {% if leg.winner_total %}
+                <strong>{{ leg.winner_total | currency }}</strong>
+              {% else %}
+                <span class="text-body-secondary">$0.00</span>
+              {% endif %}
+            </td>
+            <td>
+              {% if leg.skip_reason %}
+                <span class="text-warning">Skipped — {{ leg.skip_reason }}</span>
+              {% else %}
+                <span class="text-success">Ready to book</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr class="table-primary">
+            <th colspan="4" class="text-end">Total S&amp;H</th>
+            <th class="text-end">{{ grand_total | currency }}</th>
+            <th></th>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="card mb-3">
+  <div class="card-header"><strong>Email body</strong></div>
+  <div class="card-body p-0">
+    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{%- set ref_display = session.multi_reference or ('Session ' ~ session.id) -%}
+SCIENCE CARE MULTI-LEG BOOKING REQUEST
+==========================================
+Reference:   {{ ref_display }}
+Requested by: {{ user_name }}{% if user_company %} ({{ user_company }}){% endif %}
+Email:       {{ user_email }}
+
+LEG SUMMARY
+------------------------------------------
+{% for leg in legs -%}
+Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} -> {{ leg.destination or '—' }}{% if leg.skip_reason %} [SKIPPED: {{ leg.skip_reason }}]{% else %}
+  Weight: {{ '%.1f'|format(leg.weight) }} lb
+  Mode:   {{ leg.winner_mode or '—' }}
+  Total:  {{ leg.winner_total | currency }}{% endif %}
+
+{% endfor -%}
+==========================================
+GRAND TOTAL (no booking fee): {{ grand_total | currency }}
+==========================================
+
+Please book the above shipment(s). Reference {{ ref_display }} on all paperwork.</pre>
+  </div>
+</div>
+
+<script>
+  (function () {
+    const body = document.getElementById('sc-email-body').textContent;
+    const ref = {{ (session.multi_reference or ('Session ' ~ session.id)) | tojson }};
+    const subject = `SC Multi-leg Booking Request — ${ref}`;
+    const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    document.getElementById('sc-mailto-btn').setAttribute('href', mailto);
+
+    const copyBtn = document.getElementById('sc-copy-body-btn');
+    copyBtn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(body);
+        copyBtn.textContent = 'Copied';
+        setTimeout(() => { copyBtn.textContent = 'Copy body'; }, 1500);
+      } catch (err) {
+        copyBtn.textContent = 'Copy failed';
+        setTimeout(() => { copyBtn.textContent = 'Copy body'; }, 1500);
+      }
+    });
+  })();
+</script>
+{% endblock %}
