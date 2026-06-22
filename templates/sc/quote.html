@@ -2,6 +2,18 @@
 
 {% block title %}Science Care Multi-Lab Quote{% endblock %}
 
+{# Force HTMX to parse swap responses inside a <template> fragment.
+   Without this, a response that mixes a <tr> main swap with sibling
+   OOB <div>s (subtotals, box-count grid, per-section pills) trips
+   the browser's table-foster-parenting rule: <div> is invalid inside
+   <tbody>, so the parser yanks the divs out of the table HTMX
+   synthesised to host the <tr>, and the main <tr> swap silently
+   stops applying. Using <template> as the parse context removes the
+   table restriction so both the row and the OOB divs land cleanly. #}
+{% block head %}
+  <meta name="htmx-config" content='{"useTemplateFragments":true}'>
+{% endblock %}
+
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
   <div>
