@@ -130,12 +130,15 @@ see what is driving the leg's billable weight).
 
     tissue_weight_lb     = Σ_tissue ( qty × unit_weight )
     box_tare_weight_lb   = Σ_box ( count_box × tare_weight )
-    consumable_weight_lb = picked-or-auto weight (see below)
+    consumable_weight_lb = Σ_picked_row ( weight_per_box × user_qty )
 
     leg_weight_lb = tissue_weight_lb + box_tare_weight_lb + consumable_weight_lb
 
-    consumable_weight = (Σ_picked_row weight_per_box × user_qty)  if user picked any
-                      = Σ_matching_consumable weight_per_box × total_boxes  otherwise
+Consumables are **opt-in**: only rows where the user typed a non-zero
+`cons_qty_<leg>_<id>` contribute. A leg with every Qty blank or zero adds
+0 lb of consumables. (Prior versions auto-applied a `temp_mode` × `scope` ×
+`total_boxes` fallback when every Qty was blank; that fallback was removed
+on 2026-06-22 so the weight users see matches what they entered.)
 
 **Variables:**
 
@@ -146,13 +149,12 @@ see what is driving the leg's billable weight).
 | `count_box` | int | count | Auto-allocator or override | Boxes of this size on the leg |
 | `tare_weight` | float | lb | `SCBoxType.tare_weight_lb` | Empty-box weight |
 | `weight_per_box` | float | lb | `SCConsumable.weight_lb_per_box` | Dry ice / gel pack added per box |
-| `user_qty` | int | count | Form field `cons_qty_<leg>_<id>` | Per-consumable user override |
-| `total_boxes` | int | count | Sum of `count_box` across all boxes | Used by the auto-consumable fallback |
+| `user_qty` | int | count | Form field `cons_qty_<leg>_<id>` | Per-consumable user quantity |
 
 **Constraints:**
 
-- Consumable rows are filtered by `temp_mode` (frozen / rtu) and `scope`
-  (domestic / intl); `"any"` acts as a wildcard.
+- Consumables only contribute weight when the user enters a non-zero Qty for
+  a given consumable row. Blank / zero Qty contributes 0 lb.
 - A leg with `leg_weight_lb <= 0` is skipped (no quote attempted).
 - Box overrides at the leg level (`box_count_<leg>_<box_id>`) replace the
   auto-allocator's per-tissue boxes; the tissue weight does NOT change, only
@@ -164,11 +166,17 @@ helper for the form's Shipment-weight card), and the breakdown derivation in
 `compute_sc_multileg()` (post-pricing results).
 
 **Worked example:** Leg with one `PELV03` (79 lb) shipping in 1 X-Large box
-(tare 14 lb) at `frozen` / `domestic`, no user-picked consumables:
+(tare 14 lb), no consumables entered:
 
     tissue_weight_lb     = 1 × 79 = 79 lb
     box_tare_weight_lb   = 1 × 14 = 14 lb
-    consumable_weight_lb = 1 box × 25 lb (dry ice frozen / domestic) = 25 lb
+    consumable_weight_lb = 0 lb (nothing entered)
+    leg_weight_lb        = 79 + 14 + 0 = 93 lb
+
+If the user adds 1 unit of "Dry Ice · Frozen · Domestic" (25 lb/box) to the
+Consumables section on the same leg:
+
+    consumable_weight_lb = 1 × 25 = 25 lb
     leg_weight_lb        = 79 + 14 + 25 = 118 lb
 
 Each component lands on `LegResult.{tissue_weight_lb, consumable_weight_lb,

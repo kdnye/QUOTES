@@ -428,37 +428,6 @@ def allocate_boxes(
     return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
-def _auto_consumable_weight(
-    temp_mode: str,
-    scope: str,
-    total_boxes: int,
-    consumable_index: list[SCConsumable],
-) -> float:
-    """Sum the per-box consumable weight applicable to a leg automatically.
-
-    Used as the fallback when the SC user submits a leg with every
-    consumable Qty blank/zero. Pre-feature behaviour: pick every
-    :class:`SCConsumable` row matching the leg's ``temp_mode`` + ``scope``
-    (with ``"any"`` acting as a wildcard) and multiply its per-box
-    weight by the leg's total box count.
-    """
-
-    if total_boxes <= 0:
-        return 0.0
-    temp = (temp_mode or "").strip().lower()
-    scp = (scope or "").strip().lower()
-    total = 0.0
-    for row in consumable_index:
-        row_temp = (row.temp_mode or "").lower()
-        row_scope = (row.scope or "").lower()
-        if row_temp not in (temp, "any"):
-            continue
-        if row_scope not in (scp, "any"):
-            continue
-        total += float(row.weight_lb_per_box or 0.0) * total_boxes
-    return total
-
-
 def _consumable_picks_from_form(
     form: Mapping[str, str],
     leg: int,
@@ -468,8 +437,9 @@ def _consumable_picks_from_form(
 
     Returns ``(total_weight, picks)``. ``picks`` is a dict mapping
     :class:`SCConsumable.id` to the qty the user typed (only non-zero
-    entries appear). When every Qty for the leg is blank or zero the
-    weight is zero and the caller falls back to :func:`_auto_consumable_weight`.
+    entries appear). Consumables only contribute weight when the user
+    has explicitly entered a quantity; a blank/zero leg contributes
+    0 lb of consumables.
     """
 
     total = 0.0
@@ -511,19 +481,12 @@ def compute_leg_subtotals(
         if code in box_index
     )
 
-    # Consumable weight follows the same picks-first rule as the
-    # orchestrator: user-typed Qty totals beat the auto fallback.
-    consumable_lb, picks = _consumable_picks_from_form(
+    # Consumables only contribute weight when the user has explicitly
+    # entered a quantity. A blank/zero leg yields 0 lb of consumables
+    # (no auto fallback).
+    consumable_lb, _picks = _consumable_picks_from_form(
         form, leg, consumable_index
     )
-    if not picks:
-        temp_mode = (form.get(f"temp_mode_{leg}") or "").strip()
-        intl_country = (form.get(f"intl_country_{leg}") or "").strip()
-        scope = "intl" if intl_country else "domestic"
-        total_boxes = sum(boxes_by_type.values())
-        consumable_lb = _auto_consumable_weight(
-            temp_mode, scope, total_boxes, consumable_index
-        )
 
     total_lb = tissue_lb + box_tare_lb + consumable_lb
     return {
@@ -824,18 +787,12 @@ def compute_sc_multileg(
             legs.append(result)
             continue
 
-        scope = "intl" if result.intl_country else "domestic"
-        # Picks-first: trust the user's explicit Qty inputs when they
-        # entered any. Otherwise fall back to the auto formula so SC
-        # users who haven't started filling in the new fields still
-        # get a reasonable consumable estimate.
+        # Consumables only contribute weight when the user has
+        # explicitly entered a quantity. A leg with every Qty blank or
+        # zero adds 0 lb of consumables to the leg's billable weight.
         consumable_weight, picks = _consumable_picks_from_form(
             form, n, consumable_index
         )
-        if not picks:
-            consumable_weight = _auto_consumable_weight(
-                result.temp_mode, scope, total_boxes, consumable_index
-            )
         result.consumable_picks = picks
         total_weight += consumable_weight
 
