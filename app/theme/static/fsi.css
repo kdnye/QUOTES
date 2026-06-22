@@ -417,3 +417,28 @@ body {
     white-space: pre-wrap;
 }
 
+/*
+ * App-wide container width.
+ *
+ * Bootstrap's default `.container` caps at 1140px (xl) / 1320px (xxl). On
+ * modern monitors that leaves a lot of whitespace and forces multi-column
+ * forms like the Science Care multi-leg quote into a narrower grid than
+ * the screen can comfortably show. We introduce two larger custom
+ * breakpoints (1600px / 1920px) so widescreen monitors get ~33% more
+ * horizontal real estate while still keeping outer margins (each
+ * `max-width` stays below its breakpoint's `min-width`). Sub-1600px
+ * viewports (laptops, tablets, mobile) continue to use Bootstrap's
+ * stock xl / xxl widths.
+ */
+@media (min-width: 1600px) {
+    .container {
+        max-width: 1520px;
+    }
+}
+
+@media (min-width: 1920px) {
+    .container {
+        max-width: 1760px;
+    }
+}
+
