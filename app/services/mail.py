@@ -122,6 +122,40 @@ def validate_sender_domain(sender: str) -> None:
         raise ValueError("MAIL_DEFAULT_SENDER must include a domain component.")
 
 
+def validate_postmark_smtp_configuration(
+    server: Optional[str], username: Optional[str], password: Optional[str]
+) -> None:
+    """Validate that SMTP settings match the Postmark-only delivery policy.
+
+    Args:
+        server: Configured SMTP hostname.
+        username: SMTP username (Postmark server token).
+        password: SMTP password.
+
+    Returns:
+        ``None``. This helper raises only on invalid configuration.
+
+    Raises:
+        ValueError: If the SMTP host is not Postmark or credentials are absent.
+
+    External dependencies:
+        * None.
+    """
+
+    normalized_server = (server or "").strip().lower()
+    if normalized_server != "smtp.postmarkapp.com":
+        raise ValueError(
+            "MAIL_SERVER must be smtp.postmarkapp.com when MAIL_POSTMARK_ONLY is enabled."
+        )
+
+    token = (username or "").strip()
+    secret = (password or "").strip()
+    if not token or not secret:
+        raise ValueError(
+            "MAIL_USERNAME and MAIL_PASSWORD are required for Postmark SMTP."
+        )
+
+
 def user_has_mail_privileges(user: Optional[User]) -> bool:
     """Return ``True`` when ``user`` is cleared to use staff-only mail features.
 
@@ -257,6 +291,7 @@ __all__ = [
     "log_email_dispatch",
     "send_email",
     "user_has_mail_privileges",
+    "validate_postmark_smtp_configuration",
     "validate_sender_domain",
 ]
 
@@ -364,6 +399,9 @@ def send_email(
         if getattr(overrides, "password", None)
         else current_app.config.get("MAIL_PASSWORD")
     )
+    postmark_only = current_app.config.get("MAIL_POSTMARK_ONLY", True)
+    if postmark_only:
+        validate_postmark_smtp_configuration(server, username, password)
 
     if use_ssl:
         smtp_cls = smtplib.SMTP_SSL
