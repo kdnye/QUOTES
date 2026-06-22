@@ -347,17 +347,33 @@
   // already responds to qty + box overrides; piggy-backing keeps the
   // four subtotal values in sync no matter which control the user
   // touches.
+  //
+  // `cons_qty` field names look like `cons_qty_<leg>_<consumable_id>`
+  // so we anchor the regex on the known prefix and capture the FIRST
+  // digit group - the trailing `_<id>` would otherwise win a generic
+  // `_(\d+)$` match and route the HTMX request to the wrong leg.
   document.querySelectorAll(
     'input[name^="cons_qty_"], select[name^="temp_mode_"], input[name^="intl_country_"]'
   ).forEach((control) => {
-    const match = control.name.match(/_(\d+)$/);
+    const match = control.name.match(
+      /^(?:cons_qty|temp_mode|intl_country)_(\d+)/
+    );
     if (!match) return;
     const leg = match[1];
     control.setAttribute(
       "hx-post",
       `/sc/quote/leg/${leg}/box-counts`
     );
-    control.setAttribute("hx-trigger", "change");
+    // Free-form inputs (number Qty + text intl_country) use
+    // input+debounce so each keystroke retunes the subtotals; selects
+    // (temp_mode) fire on change since their value space is discrete.
+    // Gating on tagName covers both <input type="number"> and
+    // <input type="text"> with one branch.
+    const isFreeFormInput = control.tagName === "INPUT";
+    control.setAttribute(
+      "hx-trigger",
+      isFreeFormInput ? "input delay:300ms" : "change"
+    );
     control.setAttribute("hx-include", `#sc-leg-${leg}`);
     control.setAttribute("hx-target", `#box-counts-${leg}`);
     control.setAttribute("hx-swap", "outerHTML");

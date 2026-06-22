@@ -811,3 +811,52 @@ def test_sc_tissue_row_renders_total_lbs_and_kg_columns(app: Flask) -> None:
     # And the kg cell rounds 158 × 0.4536 = 71.67 → 72 kg.
     assert 'name="tissue_total_kg_1_1"' in html
     assert 'value="72"' in html
+
+
+def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
+    # Regression: the JS that wires consumable Qty inputs to the
+    # box-counts endpoint used to use /_(\d+)$/, which captured the
+    # consumable_id from cons_qty_<leg>_<id> instead of the leg number.
+    # The anchored regex /^(?:cons_qty|temp_mode|intl_country)_(\d+)/
+    # is the fix and must stay in the rendered page.
+    user = _make_user(
+        "js-regex@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "/^(?:cons_qty|temp_mode|intl_country)_(\\d+)/" in html
+    # And the regression bait should NOT come back: a bare /_(\d+)$/
+    # against the same name set would re-introduce the bug.
+    assert "match(/_(\\d+)$/)" not in html
+
+
+def test_box_count_inputs_carry_hx_post_for_live_subtotals(app: Flask) -> None:
+    # Regression: typing a box-count override must trigger a recompute
+    # of the per-leg Shipment-weight card. The override input needs its
+    # own hx-post (the qty/consumable JS wiring on the parent page
+    # can't reach OOB-swapped inputs).
+    user = _make_user("box-input-hx@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "1",
+            "temp_mode_1": "frozen",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The box-count input must declare an hx-post wired to the leg's
+    # box-counts endpoint - without it, no recompute fires when the
+    # user manually overrides a box count.
+    assert 'name="box_count_1_' in html
+    assert 'hx-post="/sc/quote/leg/1/box-counts"' in html
+    # And it must use the input+debounce trigger so each keystroke
+    # retunes the subtotals (matches the qty input behaviour).
+    assert 'hx-trigger="input delay:300ms"' in html
