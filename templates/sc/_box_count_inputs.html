@@ -24,6 +24,11 @@
         tare {{ box.tare_weight_lb }} lb)
       </span>
     </label>
+    {# hx-post on each input keeps the per-leg Shipment-weight card and
+       the auto-allocator in sync the moment the user overrides a box
+       count. The endpoint already preserves typed values ("prefill
+       empty inputs only" semantic) so re-rendering the grid won't lose
+       the user's edit. #}
     <input class="form-control form-control-sm"
            type="number"
            min="0"
@@ -31,7 +36,12 @@
            id="box_count_{{ leg }}_{{ box.id }}"
            name="box_count_{{ leg }}_{{ box.id }}"
            value="{{ box_values.get(box.id, '') }}"
-           placeholder="0" />
+           placeholder="0"
+           hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
+           hx-trigger="input delay:300ms"
+           hx-include="#sc-leg-{{ leg }}"
+           hx-target="#box-counts-{{ leg }}"
+           hx-swap="outerHTML" />
   </div>
   {% endfor %}
 </div>
