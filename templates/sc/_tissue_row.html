@@ -18,12 +18,20 @@
    * user_box_pick (str) - the box the user explicitly chose, if any
      (empty string means "use the recommendation")
 #}
-{% set unit_weight = prefill.unit_weight_lb if prefill else 0 %}
-{% set effective_qty = qty_for_row if qty_for_row else 0 %}
-{% set total_lbs = (unit_weight or 0) * effective_qty %}
-{# 1 lb = 0.453592 kg; round to nearest whole kg for display parity with
-   the client's workbook (which rounds the Total kg column to integers). #}
-{% set total_kg = (total_lbs * 0.453592) %}
+{#- Whitespace-control on the leading Jinja blocks (the leading dash
+    on this comment plus the leading and trailing dashes on the four
+    `set` directives below) is mandatory: when this partial is
+    returned as an HTMX response that targets `closest tr` with
+    outerHTML, any leading text nodes before the `<tr>` prevent the
+    browser's table parser from re-attaching the new row, so the swap
+    silently no-ops and the DOM stays empty even though the server
+    returned the right data. 1 lb = 0.453592 kg; round to nearest
+    whole kg for display parity with the client's workbook (which
+    rounds the Total kg column to integers). -#}
+{%- set unit_weight = prefill.unit_weight_lb if prefill else 0 -%}
+{%- set effective_qty = qty_for_row if qty_for_row else 0 -%}
+{%- set total_lbs = (unit_weight or 0) * effective_qty -%}
+{%- set total_kg = (total_lbs * 0.453592) -%}
 <tr data-unit-weight="{{ unit_weight or 0 }}">
   <td>
     <input class="form-control form-control-sm {% if code and not prefill %}is-invalid{% endif %}"
