@@ -10,9 +10,10 @@
            name="tissue_code_{{ leg }}_{{ i }}"
            value="{{ prefill.tissue_code if prefill else (code or '') }}"
            hx-get="{{ url_for('science_care.sc_tissue_lookup_partial') }}"
-           hx-trigger="change delay:250ms"
+           hx-trigger="input delay:300ms"
            hx-target="closest tr"
            hx-swap="outerHTML"
+           hx-include="#sc-leg-{{ leg }}"
            hx-vals='{"leg": {{ leg }}, "i": {{ i }} }'
            placeholder="Pick or type a code…"
            autocomplete="off" />
