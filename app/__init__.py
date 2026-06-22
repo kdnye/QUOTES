@@ -54,6 +54,7 @@ from app.services.mail import (
 )
 from app.services.settings import is_quote_email_smtp_enabled, reload_overrides
 from app.services.oidc_client import init_oidc_oauth
+from app.services.rate_sets import landing_endpoint_for_user
 
 login_manager = LoginManager()
 login_manager.login_view = "auth.login"
@@ -751,8 +752,9 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
 
         Returns:
             Redirect response to :func:`auth.login` when the requester is not
-            authenticated, or to :func:`quotes.new_quote` when already signed
-            in.
+            authenticated, or to the rate-set-specific landing endpoint
+            resolved by :func:`app.services.rate_sets.landing_endpoint_for_user`
+            when already signed in (defaults to :func:`quotes.new_quote`).
 
         External dependencies:
             * Reads :data:`flask_login.current_user` for authentication state.
@@ -761,7 +763,7 @@ def create_app(config_class: Union[str, type] = "config.Config") -> Flask:
         """
 
         if current_user.is_authenticated:
-            return redirect(url_for("quotes.new_quote"))
+            return redirect(url_for(landing_endpoint_for_user(current_user)))
         return redirect(url_for("auth.login"))
 
     @app.route("/healthz", methods=["GET"])

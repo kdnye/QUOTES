@@ -19,7 +19,7 @@ from app.database import (
     CostZone,
     BeyondRate,
 )
-from app.models import RATE_SET_DEFAULT
+from app.models import RATE_SET_DEFAULT, RATE_SET_SCIENCE_CARE
 
 # Sourced from app.models.RATE_SET_DEFAULT so the two historically
 # divergent names stay in lock-step. Both spellings exist for back-
@@ -41,6 +41,48 @@ PRECONFIGURED_RATE_SETS: Dict[str, str] = {
     "swiba": "SWIBA",
     "lsa": "Life Science Anotomical",
 }
+
+# Default endpoint used after login when no rate-set-specific landing
+# is configured.
+DEFAULT_LANDING_ENDPOINT = "quotes.new_quote"
+
+# Maps normalized rate-set identifiers to the Flask endpoint a user
+# should be redirected to after authenticating. Add additional rate
+# sets here to give them a custom landing page; any rate set not
+# present falls back to :data:`DEFAULT_LANDING_ENDPOINT`. Both the
+# legacy ``"scicr"`` tag used in admin assignments and the
+# ``"science_care"`` constant are mapped to the multi-lab quote form.
+RATE_SET_LANDING_ENDPOINTS: Dict[str, str] = {
+    "scicr": "science_care.sc_quote_form",
+    RATE_SET_SCIENCE_CARE: "science_care.sc_quote_form",
+}
+
+# Rate sets that should be treated as Science Care for tenant
+# authorization. Kept here so :mod:`app.policies` and the landing
+# map stay aligned.
+SCIENCE_CARE_RATE_SETS: frozenset[str] = frozenset(
+    {"scicr", RATE_SET_SCIENCE_CARE}
+)
+
+
+def landing_endpoint_for_user(user: Any) -> str:
+    """Return the Flask endpoint a user should land on after login.
+
+    Args:
+        user: Authenticated principal whose ``rate_set`` attribute is read.
+            ``None`` and objects without a ``rate_set`` attribute fall back
+            to :data:`DEFAULT_LANDING_ENDPOINT`.
+
+    Returns:
+        Endpoint name suitable for :func:`flask.url_for`. Looks up the
+        user's normalized ``rate_set`` in :data:`RATE_SET_LANDING_ENDPOINTS`
+        and falls back to :data:`DEFAULT_LANDING_ENDPOINT` when no mapping
+        is configured.
+    """
+
+    raw_rate_set = getattr(user, "rate_set", None)
+    normalized = normalize_rate_set(raw_rate_set)
+    return RATE_SET_LANDING_ENDPOINTS.get(normalized, DEFAULT_LANDING_ENDPOINT)
 
 
 def normalize_rate_set(raw_value: Optional[str]) -> str:

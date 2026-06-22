@@ -62,6 +62,7 @@ Key tables:
 ### Authentication (`app/auth.py`)
 - Routes for login, registration, logout, password reset request, and token-based reset.
 - Uses helpers in `services.auth_utils` for validation and token management.
+- After a successful login (form, OIDC callback, or visiting `/` while signed in), the redirect target is resolved by `app.services.rate_sets.landing_endpoint_for_user`. Users whose `rate_set` resolves to `scicr` or `science_care` are sent to `/sc/quote`; all other rate sets fall back to `/quotes/new`. Extend the `RATE_SET_LANDING_ENDPOINTS` mapping to add additional per-rate-set landing pages.
 
 ### Quote Workflow (`app/quotes/routes.py`)
 - `/quotes/new` displays the form for creating quotes or accepts JSON payloads.
