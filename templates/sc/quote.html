@@ -151,6 +151,16 @@
             </div>
           </fieldset>
 
+          {# Hoisted from after the tissue table so the Consumables
+             subtotal pill below can see its initial weight. Tissue +
+             Boxes subtotals reuse the same `subtotals_initial` dict. #}
+          {% set leg_result = (
+              results.legs[leg - 1]
+              if results and results.legs|length >= leg
+              else none
+          ) %}
+          {% set subtotals_initial = sc_initial_subtotals_for_leg(leg_result) %}
+
           <fieldset class="mb-3">
             <legend class="h6">Consumables</legend>
             <p class="small text-body-secondary mb-2">
@@ -198,13 +208,6 @@
               + Add tissue row
             </button>
           </div>
-
-          {% set leg_result = (
-              results.legs[leg - 1]
-              if results and results.legs|length >= leg
-              else none
-          ) %}
-          {% set subtotals_initial = sc_initial_subtotals_for_leg(leg_result) %}
 
           <div id="tissue-rows-{{ leg }}" class="table-responsive">
             <table class="table table-sm align-middle">
