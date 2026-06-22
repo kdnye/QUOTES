@@ -680,22 +680,18 @@ def _lookup_established(
     if rates:
         return min(rates)
 
-    # ZIP miss: fall back to metro match. The CSV stores city/state
-    # uppercase; lane rows from the admin upload may be mixed-case so
-    # both sides are normalised before comparing.
+    # ZIP miss: fall back to metro match. lookup_city_state returns
+    # uppercase; pushing the uppercase compare into SQL via db.func.upper
+    # keeps the row transfer small and avoids a per-request Python scan
+    # over every lane row for the origin.
     city_state = lookup_city_state(dest_zip)
     if city_state is None:
         return None
     city, state = city_state
-    metro_rows = [
-        r
-        for r in active.filter(
-            SCEstablishedLane.dest_city.isnot(None),
-            SCEstablishedLane.dest_state.isnot(None),
-        ).all()
-        if (r.dest_city or "").strip().upper() == city
-        and (r.dest_state or "").strip().upper() == state
-    ]
+    metro_rows = active.filter(
+        db.func.upper(SCEstablishedLane.dest_city) == city,
+        db.func.upper(SCEstablishedLane.dest_state) == state,
+    ).all()
     metro_rates = [float(r.rate) for r in metro_rows if r.rate is not None]
     return min(metro_rates) if metro_rates else None
 
