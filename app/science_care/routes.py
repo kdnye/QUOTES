@@ -50,6 +50,7 @@ from app.models import (
 )
 from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import (
+    TissueRow,
     _collect_tissue_rows,
     allocate_boxes,
     compute_sc_multileg,
@@ -377,13 +378,20 @@ def sc_lab_lookup_partial() -> str:
     )
 
 
-def _tissue_index_for_rows(tissue_rows) -> dict[str, SCTissueCode]:
+def _tissue_index_for_rows(
+    tissue_rows: list[TissueRow],
+) -> dict[str, SCTissueCode]:
     """Fetch only the SCTissueCode rows present in ``tissue_rows``.
 
     The live-recompute endpoints fire on every keystroke, so loading
     the full ``SCTissueCode`` table each time scales badly as the
     reference data grows. Scope the query to the codes actually used
     in the current leg's tissue rows.
+
+    The codes are sorted before being passed to ``.in_()`` so the SQL
+    parameter binding is deterministic across requests — matches the
+    pattern used by ``SCUserLabSlot`` queries elsewhere in this module
+    and helps the database reuse prepared-statement plans.
     """
 
     codes = {r.tissue_code for r in tissue_rows if r.tissue_code}
@@ -393,7 +401,7 @@ def _tissue_index_for_rows(tissue_rows) -> dict[str, SCTissueCode]:
         t.tissue_code: t
         for t in SCTissueCode.query.filter(
             SCTissueCode.rate_set == RATE_SET_SCIENCE_CARE,
-            SCTissueCode.tissue_code.in_(codes),
+            SCTissueCode.tissue_code.in_(sorted(codes)),
         ).all()
     }
 
