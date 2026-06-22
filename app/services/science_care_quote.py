@@ -495,9 +495,10 @@ def _consumable_picks_from_form(
     auto_default = _default_consumable_for_mode(
         temp_mode, consumable_index
     )
-    default_id = (
-        int(auto_default.id) if auto_default is not None else None
-    )
+    # SCConsumable.id is already an int after commit; no cast needed.
+    # Skipping the int() also avoids a TypeError on transient or mocked
+    # rows whose id hasn't been assigned yet.
+    default_id = auto_default.id if auto_default is not None else None
 
     total = 0.0
     picks: dict[int, int] = {}
@@ -506,10 +507,7 @@ def _consumable_picks_from_form(
         if raw is None or str(raw).strip() == "":
             # Blank input: auto-apply the temp_mode default ONLY for
             # the matching consumable row. Anything else stays at 0.
-            if (
-                int(row.id) == default_id
-                and total_boxes > 0
-            ):
+            if row.id == default_id and total_boxes > 0:
                 qty = total_boxes
             else:
                 qty = 0
@@ -517,7 +515,7 @@ def _consumable_picks_from_form(
             qty = _as_int(raw, default=0)
         if qty <= 0:
             continue
-        picks[int(row.id)] = qty
+        picks[row.id] = qty
         total += float(row.weight_lb_per_box or 0.0) * qty
     return total, picks
 
