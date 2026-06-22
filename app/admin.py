@@ -903,15 +903,37 @@ def view_ria_rates_snapshot() -> str:
         str: Rendered HTML for ``admin_ria_rates_snapshot.html``.
 
     External dependencies:
-        * Calls :func:`app.services.settings.get_settings_cache` to read the
-          ``vsc_last_update`` setting.
+        * Queries :class:`app.models.AppSetting` directly for the
+          ``vsc_last_update`` sentinel so the timestamp reflects writes made
+          by the ``sync-eia-rates`` Cloud Run job (which runs in a separate
+          process and cannot invalidate the web service's in-memory cache).
+        * Queries :class:`app.models.FuelSurcharge` for the maximum
+          ``last_updated`` column value, which is the authoritative pull time
+          based on actual rate-row persistence.
     """
 
     cache = get_settings_cache()
     zones_setting = cache.get("vsc_zones")
     matrix_setting = cache.get("vsc_matrix")
-    last_update_setting = cache.get("vsc_last_update")
-    raw_last_update = last_update_setting.raw_value if last_update_setting else None
+
+    # Bypass the in-process settings cache: the Cloud Run sync job writes to
+    # the database in another process and never invalidates this cache.
+    last_update_row = AppSetting.query.filter_by(key="vsc_last_update").first()
+    raw_last_update = (
+        last_update_row.value.strip()
+        if last_update_row and last_update_row.value
+        else None
+    )
+
+    observed_last_pull = db.session.query(
+        db.func.max(FuelSurcharge.last_updated)
+    ).scalar()
+    observed_last_pull_raw = (
+        observed_last_pull.replace(tzinfo=timezone.utc).isoformat()
+        if observed_last_pull is not None
+        else None
+    )
+
     zones = _parse_vsc_json_setting(zones_setting.raw_value if zones_setting else None)
     matrix = _parse_vsc_json_setting(matrix_setting.raw_value if matrix_setting else None)
 
@@ -919,6 +941,10 @@ def view_ria_rates_snapshot() -> str:
         "admin_ria_rates_snapshot.html",
         last_update_raw=raw_last_update,
         last_update_phoenix=_format_ria_last_update_phoenix(raw_last_update),
+        observed_last_pull_raw=observed_last_pull_raw,
+        observed_last_pull_phoenix=_format_ria_last_update_phoenix(
+            observed_last_pull_raw
+        ),
         zone_fsc_rows=_get_zone_fsc_rows(zones, matrix),
     )
 

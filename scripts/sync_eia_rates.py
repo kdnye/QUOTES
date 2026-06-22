@@ -217,16 +217,23 @@ def upsert_region_rate(region: str, rate: float) -> None:
 
     Outputs:
         Mutated SQLAlchemy session with one pending insert or update.
+        ``last_updated`` is always bumped to the current UTC time so the
+        snapshot view reflects the most recent successful pull even when
+        EIA returns an unchanged rate value.
 
     External dependencies:
         Uses ``db.session`` query/identity map operations from Flask-SQLAlchemy.
     """
 
+    now = datetime.utcnow()
     existing = FuelSurcharge.query.filter_by(padd_region=region).first()
     if existing is None:
-        db.session.add(FuelSurcharge(padd_region=region, current_rate=rate))
+        db.session.add(
+            FuelSurcharge(padd_region=region, current_rate=rate, last_updated=now)
+        )
     else:
         existing.current_rate = rate
+        existing.last_updated = now
 
 
 def sync_eia_rates(commit_strategy: str) -> int:
