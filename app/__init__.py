@@ -364,7 +364,27 @@ def _register_template_helpers(app: Flask) -> None:
         except (TypeError, ValueError):
             return ""
 
+    def sc_box_values_for_leg(box_types, leg_result) -> dict:
+        """Convert ``LegResult.box_counts`` to the ``{box.id: count}`` map
+        the ``_box_count_inputs.html`` partial expects.
+
+        ``LegResult.box_counts`` is keyed by ``SCBoxType.code`` (a stable
+        string), but the form fields use ``box.id`` so the live-update
+        HTMX endpoint can resolve overrides by primary key. This helper
+        bridges the two.
+        """
+
+        if not leg_result or not getattr(leg_result, "box_counts", None):
+            return {}
+        counts = leg_result.box_counts
+        return {
+            int(box.id): counts[box.code]
+            for box in box_types
+            if box.code in counts and counts[box.code]
+        }
+
     app.jinja_env.globals["csrf_input"] = csrf_input
+    app.jinja_env.globals["sc_box_values_for_leg"] = sc_box_values_for_leg
     app.jinja_env.filters["currency"] = currency
 
 
