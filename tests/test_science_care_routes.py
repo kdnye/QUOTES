@@ -428,6 +428,16 @@ def test_sc_quote_calculate_renders_results(
     assert "Multi-leg quote summary" in html
     assert "Hot Shot" in html
     assert "Total S&amp;H" in html or "Total S&H" in html
+    # Weight breakdown columns must surface in the results card.
+    assert "Tissue (lb)" in html
+    assert "Consumables (lb)" in html
+    assert "Box tare (lb)" in html
+    assert "Total weight (lb)" in html
+    # And the per-leg figures land in the row. MED01 qty 2 @ 10 lb each
+    # = 20 lb tissue; 1 MED box (4 lb tare); no SCConsumable rows seeded
+    # so consumables fall through to 0. Total = 24 lb.
+    assert "20.0" in html  # tissue weight
+    assert "24.0" in html  # total weight
 
 
 def test_sc_quote_form_renders_consumable_inputs(app: Flask) -> None:

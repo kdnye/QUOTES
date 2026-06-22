@@ -6,12 +6,20 @@
     <strong>Multi-leg quote summary</strong>
     <span class="badge bg-primary">Session #{{ session.id }}</span>
   </div>
+  {% set tissue_total = legs|sum(attribute='tissue_weight_lb') %}
+  {% set consumable_total = legs|sum(attribute='consumable_weight_lb') %}
+  {% set box_tare_total = legs|sum(attribute='box_tare_weight_lb') %}
+  {% set weight_grand_total = legs|sum(attribute='total_weight_lb') %}
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0">
       <thead class="table-light">
         <tr>
           <th>Leg</th>
           <th>Lab → Dest</th>
+          <th class="text-end" title="Σ tissue qty × unit weight">Tissue (lb)</th>
+          <th class="text-end" title="Dry-ice / gel packs (per-pick or auto fallback)">Consumables (lb)</th>
+          <th class="text-end" title="Empty-box tare × box count">Box tare (lb)</th>
+          <th class="text-end">Total weight (lb)</th>
           <th class="text-end">Air</th>
           <th class="text-end">Hot Shot</th>
           <th class="text-end">Established</th>
@@ -29,6 +37,34 @@
               <span class="text-body-secondary">{{ leg.lab_code or '—' }}</span>
               <span class="text-body-secondary">/</span>
               <span>{{ leg.dest_zip or '—' }}</span>
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.tissue_weight_lb %}
+              {{ '%.1f'|format(leg.tissue_weight_lb) }}
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.consumable_weight_lb %}
+              {{ '%.1f'|format(leg.consumable_weight_lb) }}
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.box_tare_weight_lb %}
+              {{ '%.1f'|format(leg.box_tare_weight_lb) }}
+            {% else %}
+              <span class="text-body-secondary">—</span>
+            {% endif %}
+          </td>
+          <td class="text-end">
+            {% if leg.total_weight_lb %}
+              <strong>{{ '%.1f'|format(leg.total_weight_lb) }}</strong>
             {% else %}
               <span class="text-body-secondary">—</span>
             {% endif %}
@@ -75,8 +111,16 @@
         {% endfor %}
       </tbody>
       <tfoot>
+        <tr class="table-secondary">
+          <th colspan="2" class="text-end">Weight totals</th>
+          <th class="text-end">{{ '%.1f'|format(tissue_total) }}</th>
+          <th class="text-end">{{ '%.1f'|format(consumable_total) }}</th>
+          <th class="text-end">{{ '%.1f'|format(box_tare_total) }}</th>
+          <th class="text-end"><strong>{{ '%.1f'|format(weight_grand_total) }}</strong></th>
+          <th colspan="6"></th>
+        </tr>
         <tr class="table-primary">
-          <th colspan="6" class="text-end">Total S&amp;H</th>
+          <th colspan="10" class="text-end">Total S&amp;H</th>
           <th class="text-end">{{ grand_total | currency }}</th>
           <th></th>
         </tr>

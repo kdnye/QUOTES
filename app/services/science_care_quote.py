@@ -115,6 +115,12 @@ class LegResult:
     temp_mode: str = ""
     intl_country: str = ""
     total_weight_lb: float = 0.0
+    # Breakdown of total_weight_lb so the results card can show which
+    # component (tissue payload vs. consumables vs. box tare) is driving
+    # the leg's billable weight. Always sums to total_weight_lb.
+    tissue_weight_lb: float = 0.0
+    consumable_weight_lb: float = 0.0
+    box_tare_weight_lb: float = 0.0
     total_boxes: int = 0
     dim_weight_lb: float = 0.0
     accessorial_labels: list[str] = field(default_factory=list)
@@ -760,7 +766,26 @@ def compute_sc_multileg(
             legs.append(result)
             continue
 
+        # Split total_weight back into its three contributing buckets so
+        # the results card can render a breakdown. allocate_boxes returns
+        # tissue+tare folded into total_weight - re-derive each piece
+        # from the same primitives (tissue qty × unit_weight; box tare ×
+        # count) so the three numbers sum to total_weight_lb exactly.
+        tissue_weight = sum(
+            (tissue_index[r.tissue_code].unit_weight_lb or 0.0) * r.qty
+            for r in tissue_rows
+            if r.tissue_code in tissue_index and r.qty > 0
+        )
+        box_tare_weight = sum(
+            (box_index[code].tare_weight_lb or 0.0) * count
+            for code, count in boxes_by_type.items()
+            if code in box_index
+        )
+
         result.total_weight_lb = total_weight
+        result.tissue_weight_lb = tissue_weight
+        result.consumable_weight_lb = consumable_weight
+        result.box_tare_weight_lb = box_tare_weight
         result.total_boxes = max(total_boxes, 1)
         result.dim_weight_lb = dim_weight
         result.accessorial_labels = _collect_accessorials(
