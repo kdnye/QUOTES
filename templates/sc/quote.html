@@ -262,7 +262,12 @@
                        id="cons_qty_{{ leg }}_{{ cons.id }}"
                        name="cons_qty_{{ leg }}_{{ cons.id }}"
                        value="{{ request.form.get('cons_qty_' ~ leg ~ '_' ~ cons.id, '') }}"
-                       placeholder="0" />
+                       placeholder="0"
+                       hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
+                       hx-trigger="input delay:300ms"
+                       hx-include="#sc-leg-{{ leg }}"
+                       hx-target="#box-counts-{{ leg }}"
+                       hx-swap="outerHTML" />
               </div>
               {% endfor %}
             </div>
@@ -371,29 +376,6 @@
       kgCell.value = totalLbs > 0
         ? Math.round(totalLbs * LB_TO_KG).toString()
         : "";
-    }
-  });
-
-  // Wire the consumable Qty inputs to the box-counts HTMX endpoint so
-  // the Shipment-weight card refreshes as the user types. Consumables
-  // only contribute when explicitly entered, so this is the one control
-  // surface that needs to retune the subtotals.
-  //
-  // `cons_qty` field names look like `cons_qty_<leg>_<consumable_id>`
-  // so we anchor the regex on the known prefix and capture the FIRST
-  // digit group - the trailing `_<id>` would otherwise win a generic
-  // `_(\d+)$` match and route the HTMX request to the wrong leg.
-  document.querySelectorAll('input[name^="cons_qty_"]').forEach((control) => {
-    const match = control.name.match(/^cons_qty_(\d+)/);
-    if (!match) return;
-    const leg = match[1];
-    control.setAttribute("hx-post", `/sc/quote/leg/${leg}/box-counts`);
-    control.setAttribute("hx-trigger", "input delay:300ms");
-    control.setAttribute("hx-include", `#sc-leg-${leg}`);
-    control.setAttribute("hx-target", `#box-counts-${leg}`);
-    control.setAttribute("hx-swap", "outerHTML");
-    if (window.htmx) {
-      window.htmx.process(control);
     }
   });
 </script>

@@ -865,23 +865,49 @@ def test_quote_form_enables_htmx_template_fragments(app: Flask) -> None:
     assert '"useTemplateFragments":true' in body
 
 
-def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
-    # Regression: the JS that wires consumable Qty inputs to the
-    # box-counts endpoint used to use /_(\d+)$/, which captured the
-    # consumable_id from cons_qty_<leg>_<id> instead of the leg number.
-    # The anchored regex /^cons_qty_(\d+)/ is the fix and must stay in
-    # the rendered page.
+def test_consumable_inputs_carry_inline_hx_attrs_per_leg(app: Flask) -> None:
+    # Regression: the consumable Qty inputs must carry per-leg HTMX
+    # attributes inlined by Jinja so each input posts to its own leg's
+    # /sc/quote/leg/<leg>/box-counts endpoint and includes only that
+    # leg's form fields. An earlier implementation wired these from JS
+    # using a regex on the input's name; that regex used /_(\d+)$/
+    # which captured the trailing consumable_id from
+    # cons_qty_<leg>_<id> and routed every request to the wrong leg.
+    # Inlining the attributes per render avoids the regex entirely.
+    from app.models import SCConsumable
+
     user = _make_user(
-        "js-regex@example.com", rate_set=RATE_SET_SCIENCE_CARE
+        "cons-hx@example.com", rate_set=RATE_SET_SCIENCE_CARE
     )
+    cons = SCConsumable(
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    db.session.add(cons)
+    db.session.commit()
+
     client = app.test_client()
     _login(client, user.id)
     response = client.get("/sc/quote")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "/^cons_qty_(\\d+)/" in html
-    # And the regression bait should NOT come back: a bare /_(\d+)$/
-    # against the same name set would re-introduce the bug.
+    for leg in range(1, 8):
+        # Each input carries its own leg-scoped hx-post / hx-include /
+        # hx-target. Co-locating the input name and these attrs in the
+        # same rendered fragment means the leg number can never drift.
+        assert (
+            f'hx-post="/sc/quote/leg/{leg}/box-counts"' in html
+        ), f"leg {leg} missing hx-post"
+        assert (
+            f'hx-include="#sc-leg-{leg}"' in html
+        ), f"leg {leg} missing hx-include"
+        assert (
+            f'hx-target="#box-counts-{leg}"' in html
+        ), f"leg {leg} missing hx-target"
+    # The JS wiring block is gone - guarantee no future contributor
+    # re-introduces the brittle regex it relied on.
     assert "match(/_(\\d+)$/)" not in html
 
 
