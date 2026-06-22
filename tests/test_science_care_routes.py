@@ -998,3 +998,174 @@ def test_box_count_inputs_carry_hx_post_for_live_subtotals(app: Flask) -> None:
     # And it must use the input+debounce trigger so each keystroke
     # retunes the subtotals (matches the qty input behaviour).
     assert 'hx-trigger="input delay:300ms"' in html
+
+
+# --- multi_reference / booking-email / lookup -------------------------------
+
+
+def _seed_sc_session(
+    user_id: int,
+    *,
+    multi_reference: str | None = "SCMQ0001",
+    grand_total: float = 250.0,
+) -> "SCQuoteSession":
+    """Insert a minimal SCQuoteSession + one leg with linked Quote rows."""
+
+    from app.models import (
+        Quote,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+    )
+
+    session = SCQuoteSession(
+        user_id=user_id,
+        grand_total=grand_total,
+        payload_json="{}",
+        multi_reference=multi_reference,
+    )
+    db.session.add(session)
+    db.session.flush()
+    air = Quote(
+        user_id=user_id,
+        user_email="sc-buyer@example.com",
+        quote_type="Air",
+        origin="85705",
+        destination="98101",
+        weight=93.0,
+        pieces=1,
+        zone="X",
+        total=300.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        client_reference=(
+            f"{multi_reference}-L1-AIR" if multi_reference else None
+        ),
+    )
+    hot = Quote(
+        user_id=user_id,
+        user_email="sc-buyer@example.com",
+        quote_type="Hotshot",
+        origin="85705",
+        destination="98101",
+        weight=93.0,
+        pieces=1,
+        zone="X",
+        total=250.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        client_reference=(
+            f"{multi_reference}-L1-HOT" if multi_reference else None
+        ),
+    )
+    db.session.add_all([air, hot])
+    db.session.flush()
+    db.session.add(
+        SCQuoteSessionLeg(
+            session_id=session.id,
+            leg_index=1,
+            air_quote_id=air.id,
+            hotshot_quote_id=hot.id,
+            winner_mode="Hotshot",
+            winner_total=250.0,
+        )
+    )
+    db.session.commit()
+    return session
+
+
+def test_sc_quote_form_renders_multi_reference_input(app: Flask) -> None:
+    user = _make_user("sc-ref-form@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get("/sc/quote").get_data(as_text=True)
+    # New field surfaces with the auto-assign hint.
+    assert 'name="multi_reference"' in html
+    assert "Auto-assign" in html or "SCMQ" in html
+
+
+def test_sc_email_ops_renders_with_no_booking_fee(app: Flask) -> None:
+    user = _make_user(
+        "sc-ops-email@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session = _seed_sc_session(user.id, multi_reference="SCMQ0042")
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(f"/sc/quote/{session.id}/email-ops")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The unified reference must appear in both the page header and the
+    # generated email body (subject + body link).
+    assert "SCMQ0042" in html
+    # Explicit "no booking fee" copy must surface so ops + the user can
+    # both confirm the divergence from the standard /quotes flow.
+    assert "no booking fee" in html.lower() or "no booking fee" in html
+    # The mailto: link must point at operations and not include a $15
+    # admin fee suffix anywhere in the displayed total.
+    assert "mailto:operations@freightservices.net" in html or "operations@freightservices.net" in html
+    # Grand total surfaces as $250.00 - no $15 fee added.
+    assert "$250.00" in html
+    assert "$265.00" not in html  # i.e. NOT total + admin fee
+
+
+def test_sc_email_ops_404s_for_unknown_session(app: Flask) -> None:
+    user = _make_user(
+        "sc-ops-404@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    assert (
+        client.get("/sc/quote/999999/email-ops").status_code == 404
+    )
+
+
+def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
+    sc_user = _make_user(
+        "sc-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session = _seed_sc_session(sc_user.id)
+    non_sc = _make_user("not-sc@example.com", rate_set="default")
+    client = app.test_client()
+    _login(client, non_sc.id)
+    response = client.get(f"/sc/quote/{session.id}/email-ops")
+    # sc_user_required must short-circuit before the view loads.
+    assert response.status_code in {302, 403}
+
+
+def test_sc_lookup_resolves_session_across_users(app: Flask) -> None:
+    """Any SC user can look up any SCMQ reference.
+
+    This is intentional - the lookup is how a customer-service SC user
+    helps a customer find the multi-leg quote they generated. A future
+    PR can tighten this if a privacy review demands per-user scope.
+    """
+
+    owner = _make_user("sc-owner-2@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    _seed_sc_session(owner.id, multi_reference="SCMQ0007")
+    # Different SC user (no role escalation, no admin flag).
+    other = _make_user("sc-helper@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    client = app.test_client()
+    _login(client, other.id)
+    response = client.post(
+        "/sc/quote/lookup",
+        data={"multi_reference": "scmq0007"},  # case-insensitive
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "SCMQ0007" in html
+    # The looked-up summary shows the persisted grand total.
+    assert "$250.00" in html
+
+
+def test_sc_lookup_unknown_reference_flashes_warning(app: Flask) -> None:
+    user = _make_user("sc-lookup-miss@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/lookup",
+        data={"multi_reference": "SCMQNOPE"},
+        follow_redirects=True,
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "No multi-leg quote found" in html

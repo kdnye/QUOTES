@@ -1124,3 +1124,131 @@ def test_compute_leg_subtotals_zero_consumables_when_no_picks() -> None:
         "box_tare_lb": 16.0,
         "total_lb": 40.0,
     })
+
+
+# --- multi_reference assignment + stamping ----------------------------------
+
+
+class TestMultiReferenceNormalization:
+    """Pure helper tests - no DB / app context needed."""
+
+    def test_blank_input_returns_none(self) -> None:
+        assert svc._normalize_multi_reference("") == (None, None)
+        assert svc._normalize_multi_reference("   ") == (None, None)
+        assert svc._normalize_multi_reference(None) == (None, None)
+
+    def test_uppercase_and_trim(self) -> None:
+        ref, err = svc._normalize_multi_reference("  acme-2026-Q4  ")
+        assert err is None
+        assert ref == "ACME-2026-Q4"
+
+    def test_rejects_oversize(self) -> None:
+        ref, err = svc._normalize_multi_reference("A" * 65)
+        assert ref is None
+        assert err is not None
+
+    def test_rejects_bad_chars(self) -> None:
+        ref, err = svc._normalize_multi_reference("WAT*!")
+        assert ref is None
+        assert err is not None
+
+
+def test_auto_assigned_multi_reference_starts_at_scmq0001(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    assert result["session"].multi_reference == "SCMQ0001"
+
+
+def test_auto_assigned_multi_reference_increments(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    s1 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    s2 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    s3 = svc.compute_sc_multileg(_form(), user, request_ip="127.0.0.1")
+    assert s1["session"].multi_reference == "SCMQ0001"
+    assert s2["session"].multi_reference == "SCMQ0002"
+    assert s3["session"].multi_reference == "SCMQ0003"
+
+
+def test_customer_supplied_multi_reference_used_verbatim(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    form = _form(multi_reference="ACME-2026-Q4")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    assert result["session"].multi_reference == "ACME-2026-Q4"
+
+
+def test_duplicate_customer_reference_rejected(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    svc.compute_sc_multileg(
+        _form(multi_reference="DUP-001"), user, request_ip="127.0.0.1"
+    )
+    with pytest.raises(ValueError, match="already in use"):
+        svc.compute_sc_multileg(
+            _form(multi_reference="DUP-001"),
+            user,
+            request_ip="127.0.0.1",
+        )
+
+
+def test_multi_reference_stamped_on_per_leg_quotes(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Each underlying Quote row carries the unified ref + leg suffix.
+
+    Bypasses the stub: confirms the orchestrator passes the right
+    ``client_reference`` value down to ``create_quote``. The leg-+-mode
+    suffix is what keeps the per-user UNIQUE(user_id, client_reference)
+    constraint from blowing up when one customer submits two sessions
+    in a row.
+    """
+
+    _seed_reference(app)
+    user = _make_user()
+    calls = _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    svc.compute_sc_multileg(
+        _form(multi_reference="JOB-7"), user, request_ip="127.0.0.1"
+    )
+    # One active leg fires two create_quote calls (Air + Hotshot).
+    assert {call["client_reference"] for call in calls} == {
+        "JOB-7-L1-AIR",
+        "JOB-7-L1-HOT",
+    }
+
+
+def test_invalid_multi_reference_raises(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(monkeypatch, {})
+    with pytest.raises(ValueError):
+        svc.compute_sc_multileg(
+            _form(multi_reference="bad*chars"),
+            user,
+            request_ip="127.0.0.1",
+        )

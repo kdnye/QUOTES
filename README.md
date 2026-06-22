@@ -16,6 +16,7 @@ Services portal.
   pending employees so administrators can approve their access
 - Admin area to approve users, edit rates, and review the quote history
 - Staff-only booking helpers let approved Freight Services employees email booking or volume-pricing requests directly from a quote
+- Science Care multi-leg quotes (`/sc/quote`) stamp a unified **multi-leg reference** (auto-assigned `SCMQNNNN` or customer-supplied) across every leg, expose an aggregated **Email Ops for Booking** action that ships the full multi-leg summary to operations **without** the $15 booking fee that the single-quote workflow applies, and offer an SC-scoped **multi-leg lookup** (`/sc/quote/lookup`) so any SC user can pull up a prior multi-leg quote by its reference number.
 - Super admins can manage Office 365 SMTP credentials from the dashboard
 - Price engine uses Google Maps and rate tables
 - "Create New Quote" validates origin and destination ZIP codes against Google Places when a Maps key is configured
@@ -32,6 +33,8 @@ Services portal.
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Accepts form and JSON submissions and persists quotes. |
 | Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. |
+| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Aggregates every leg of a Science Care multi-leg quote into one ops booking email. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Uses the unified `SCMQNNNN` (or customer-supplied) reference in the subject so ops can match the email to the in-flight job. |
+| SC multi-leg lookup (`/sc/quote/lookup`) | ✅ Stable | Any SC user can resolve a multi-leg reference (`SCMQ0042` or a customer string) to the full persisted summary so they can re-send the ops booking email or pull a quote for a customer service call. |
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
@@ -509,6 +512,34 @@ the optional, last-step add-on to the leg's billable weight.
 After running the multi-leg quote, the **results card** repeats the same three
 columns per leg plus a Grand-total row, so the breakdown is visible during
 form entry AND after pricing.
+
+### Multi-leg reference, booking email, and lookup
+
+Every SC multi-leg submission stores a unified **multi-leg reference** on its
+`SCQuoteSession.multi_reference` column so all subsequent actions — the
+aggregated booking email, the lookup page, even the per-leg `Quote` rows — can
+be tied together by one identifier.
+
+- **Customer-supplied**: a `multi_reference` input on `/sc/quote` accepts any
+  upper-cased alphanumeric value (plus `-`, `_`, `/`, space) up to 64 chars
+  and is rejected if already in use.
+- **Auto-assigned**: blank submissions get the next `SCMQNNNN` (Science Care
+  Multi-Quote ####), starting at `SCMQ0001`. The numeric tail grows past 9999
+  without re-padding (`SCMQ10000`).
+- **Per-leg stamp**: every underlying `Quote` row created by `create_quote()`
+  carries `client_reference=<multi_reference>-L<leg>-<AIR|HOT>` so a customer
+  can still look up a single leg by its suffixed string.
+
+**Email Ops for Booking** (`GET /sc/quote/<session_id>/email-ops`) renders a
+preview of the aggregated booking message and a `mailto:` link to
+`operations@freightservices.net`. The view intentionally adds **no** admin /
+booking fee — that $15 fee is specific to the single-quote `/quotes/<id>/email`
+workflow. Multi-leg jobs bill off the raw cheapest-of total.
+
+**Lookup** (`/sc/quote/lookup`) is SC-scoped across users: any SC user can
+resolve any `SCMQNNNN` (or customer-supplied reference) to the persisted
+multi-leg summary. This is intentional — customer service uses it to help
+customers find prior jobs by reference.
 
 ### Reference table CSV admin
 

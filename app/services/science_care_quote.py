@@ -16,11 +16,13 @@ from __future__ import annotations
 import json
 import logging
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Mapping
 
 from sqlalchemy import or_
+from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
 
@@ -659,6 +661,83 @@ def _lookup_established(
     return min(metro_rates) if metro_rates else None
 
 
+# --- multi-leg reference number ---------------------------------------------
+
+# Prefix and zero-padded width for the auto-assigned reference. Width
+# grows beyond 9999 (``SCMQ10000``); 4 is the floor, not a hard cap.
+SCMQ_PREFIX = "SCMQ"
+SCMQ_PAD = 4
+# Match auto-assigned references only. A customer-supplied value like
+# ``ACME-2026-Q4`` must be ignored when computing the next number.
+_SCMQ_AUTO_PATTERN = re.compile(rf"^{SCMQ_PREFIX}(\d+)$")
+# Cap the insert-retry loop so a wedged UNIQUE-constraint situation
+# surfaces as an error instead of looping forever.
+_SCMQ_MAX_ATTEMPTS = 8
+
+
+def _next_scmq_number() -> int:
+    """Return ``MAX(numeric suffix) + 1`` across existing SCMQ refs.
+
+    Scans :class:`SCQuoteSession.multi_reference` for rows matching the
+    auto-assigned ``SCMQ\\d+`` pattern, parses the numeric tail, and
+    returns the next integer. Customer-supplied references that don't
+    fit the pattern are ignored.
+
+    Returns ``1`` when no auto-assigned references exist yet.
+    """
+
+    rows = (
+        db.session.query(SCQuoteSession.multi_reference)
+        .filter(SCQuoteSession.multi_reference.like(f"{SCMQ_PREFIX}%"))
+        .all()
+    )
+    highest = 0
+    for (ref,) in rows:
+        m = _SCMQ_AUTO_PATTERN.match(ref or "")
+        if m:
+            try:
+                highest = max(highest, int(m.group(1)))
+            except ValueError:
+                continue
+    return highest + 1
+
+
+def _format_scmq(number: int) -> str:
+    """Format ``number`` as a zero-padded ``SCMQNNNN`` reference."""
+
+    return f"{SCMQ_PREFIX}{number:0{SCMQ_PAD}d}"
+
+
+def _normalize_multi_reference(raw: Any) -> tuple[str | None, str | None]:
+    """Trim + uppercase a customer-supplied multi reference.
+
+    Mirrors :func:`app.quotes.routes._normalize_client_reference` so a
+    user-provided value is normalised the same way whether it's typed
+    into the single-quote form or the SC multi-leg form. Returns
+    ``(normalized, error_message)``; ``normalized`` is ``None`` when the
+    field was left blank (caller should auto-assign).
+    """
+
+    if raw is None:
+        return None, None
+    if not isinstance(raw, str):
+        return None, "Reference must be a string."
+    normalized = " ".join(raw.strip().upper().split())
+    if not normalized:
+        return None, None
+    if len(normalized) > 64:
+        return None, "Reference must be 64 characters or fewer."
+    # Same character class as the single-quote form so a value typed
+    # here can later be looked up via /quotes lookup without surprise.
+    if not re.fullmatch(r"[A-Z0-9][A-Z0-9\-_/ ]*", normalized):
+        return (
+            None,
+            "Reference may contain letters, numbers, spaces, dashes, "
+            "underscores, or forward slashes.",
+        )
+    return normalized, None
+
+
 # --- public entry point ------------------------------------------------------
 
 
@@ -711,6 +790,34 @@ def compute_sc_multileg(
             rate_set=RATE_SET_SCIENCE_CARE, is_active=True
         ).all()
     }
+
+    # Resolve the unified reference up-front so each per-leg Quote row
+    # can stamp it. Customer-supplied wins; blank falls back to the
+    # next ``SCMQNNNN``. Validation errors get raised so the route can
+    # flash them - the form-level handler is on the route, not here.
+    customer_ref, ref_error = _normalize_multi_reference(
+        form.get("multi_reference")
+    )
+    if ref_error:
+        raise ValueError(ref_error)
+    # If the customer reused an existing reference (intentional, e.g.
+    # "this is leg 8 of an in-flight job"), we reject it before any
+    # ``create_quote`` side-effects fire. UNIQUE on the session would
+    # surface the same error later, but only after up to 14 Quote rows
+    # had already been committed.
+    if customer_ref is not None and (
+        db.session.query(SCQuoteSession.id)
+        .filter(SCQuoteSession.multi_reference == customer_ref)
+        .first()
+        is not None
+    ):
+        raise ValueError(
+            f"Reference {customer_ref!r} is already in use."
+        )
+    # Reserve a candidate auto-number now so each leg's Quote row can
+    # stamp it. The final commit re-checks UNIQUE and retries with the
+    # next number on collision (concurrent multi-leg submits).
+    multi_reference = customer_ref or _format_scmq(_next_scmq_number())
 
     legs: list[LegResult] = []
     grand_total = 0.0
@@ -846,8 +953,16 @@ def compute_sc_multileg(
         # holds the pre-cached SCTissueCode / SCBoxType / SCConsumable /
         # SCAccessorialMap / SCLab instances. Rolling back would expire
         # every one of them, forcing N+1 SELECTs on the next iteration.
+        # Stamp each underlying Quote row with the multi-reference plus
+        # a per-leg / per-mode suffix so the per-user UNIQUE constraint
+        # on (user_id, client_reference) doesn't collide across the
+        # leg's two Quote rows or across legs of the same session.
         try:
-            air_quote, _air_meta = create_quote(quote_type="Air", **common)
+            air_quote, _air_meta = create_quote(
+                quote_type="Air",
+                client_reference=f"{multi_reference}-L{n}-AIR",
+                **common,
+            )
             result.air_quote = air_quote
         except Exception as exc:  # noqa: BLE001 - per-leg isolation
             logger.exception("Air quote failed for SC leg %d", n)
@@ -855,7 +970,9 @@ def compute_sc_multileg(
 
         try:
             hot_quote, _hot_meta = create_quote(
-                quote_type="Hotshot", **common
+                quote_type="Hotshot",
+                client_reference=f"{multi_reference}-L{n}-HOT",
+                **common,
             )
             result.hotshot_quote = hot_quote
         except Exception as exc:  # noqa: BLE001
@@ -892,14 +1009,51 @@ def compute_sc_multileg(
 
     # Persist the multi-leg session + the seven leg rows so a future
     # "view past quote" page (out of scope here) can re-render the
-    # submission verbatim.
+    # submission verbatim. The auto-assigned ``multi_reference`` may
+    # collide with a concurrent multi-leg submit that grabbed the same
+    # number between our SELECT and INSERT; catch the IntegrityError,
+    # bump to the next free number, and retry. Customer-supplied refs
+    # don't retry - the customer picked the value, so a collision is a
+    # user error and bubbles up.
     session = SCQuoteSession(
         user_id=getattr(user, "id", None),
         grand_total=grand_total,
         payload_json=json.dumps(dict(form)),
+        multi_reference=multi_reference,
     )
     db.session.add(session)
-    db.session.flush()
+    for _ in range(_SCMQ_MAX_ATTEMPTS):
+        try:
+            db.session.flush()
+            break
+        except IntegrityError:
+            db.session.rollback()
+            if customer_ref is not None:
+                # The customer typed a value that survived our pre-check
+                # but lost a race with a concurrent submit. Surface as a
+                # ValueError so the route's existing error path flashes
+                # a message instead of 500ing.
+                raise ValueError(
+                    f"Reference {customer_ref!r} is already in use."
+                )
+            # Re-add the session. The Quote rows already committed in
+            # create_quote() via its own session keep the stale
+            # multi_reference suffix - we re-stamp the SCQuoteSession
+            # with a fresh number; the leg rows below will link the
+            # Quote IDs into the new session.
+            multi_reference = _format_scmq(_next_scmq_number())
+            session = SCQuoteSession(
+                user_id=getattr(user, "id", None),
+                grand_total=grand_total,
+                payload_json=json.dumps(dict(form)),
+                multi_reference=multi_reference,
+            )
+            db.session.add(session)
+    else:
+        raise RuntimeError(
+            f"Could not assign a unique multi_reference after "
+            f"{_SCMQ_MAX_ATTEMPTS} attempts."
+        )
     for result in legs:
         db.session.add(
             SCQuoteSessionLeg(

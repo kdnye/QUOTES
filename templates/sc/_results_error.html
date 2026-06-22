@@ -1,0 +1,12 @@
+{# Inline error swapped into #sc-results when compute_sc_multileg
+   raises ValueError (currently: invalid or duplicate multi-leg
+   reference). Keeps the user on the page with the form values
+   intact and a clear correction prompt. #}
+<div class="card border-danger mt-3">
+  <div class="card-header bg-danger-subtle">
+    <strong>Could not run quotes</strong>
+  </div>
+  <div class="card-body">
+    <p class="mb-0">{{ error_message }}</p>
+  </div>
+</div>
