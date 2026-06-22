@@ -4,12 +4,12 @@ The script reads a comma-separated value (CSV) file describing user
 accounts, validates the data, and inserts the rows into the application's
 database. It can operate as a standalone tool by constructing a Flask app via
 ``app.create_app`` or it can receive a pre-configured application instance
-from tests. The default CSV path points at ``users_seed_template.csv`` in the
-repository root which contains two example rows ready to customize.
+from tests. The default CSV path points at ``scripts/users_seed_template.csv``
+which contains two example rows ready to customize.
 
 Example::
 
-    $ python scripts/seed_users.py --file users_seed_template.csv
+    $ python scripts/seed_users.py --file scripts/users_seed_template.csv
 
 Use ``--update-existing`` to refresh existing accounts and ``--dry-run`` to
 preview the changes without committing them.
@@ -38,7 +38,7 @@ from app.services.auth_utils import is_valid_email, is_valid_password, is_valid_
 TRUE_VALUES = {"1", "true", "t", "yes", "y", "on"}
 FALSE_VALUES = {"0", "false", "f", "no", "n", "off"}
 ALLOWED_ROLES = {"customer", "employee", "super_admin"}
-DEFAULT_CSV = ROOT / "users_seed_template.csv"
+DEFAULT_CSV = Path(__file__).resolve().parent / "users_seed_template.csv"
 
 
 @dataclass

@@ -46,9 +46,9 @@ Operator note: Air quotes enforce per-piece limits using billable weight (the gr
 
 ## Documentation hub
 
-- [Architecture](ARCHITECTURE.md) – Component breakdown and reimplementation
+- [Architecture](docs/architecture.md) – Component breakdown and reimplementation
   notes for porting the app to another stack.
-- [Deployment](DEPLOYMENT.md) – Production roll-out, TLS, and maintenance
+- [Deployment](docs/deployment.md) – Production roll-out, TLS, and maintenance
   checklists.
 - [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) – External-integration quick start for authentication, endpoints, and examples.
 - In-app Help Center (`/help`) – Task-oriented user guides rendered from
@@ -200,12 +200,12 @@ the launcher:
 ```powershell
 pyinstaller --noconfirm --onefile --name windows_setup `
   --add-data ".env.example;." `
-  --add-data "Hotshot_Rates.csv;rates" `
-  --add-data "beyond_price.csv;rates" `
-  --add-data "accessorial_cost.csv;rates" `
-  --add-data "Zipcode_Zones.csv;rates" `
-  --add-data "cost_zone_table.csv;rates" `
-  --add-data "air_cost_zone.csv;rates" `
+  --add-data "rates/Hotshot_Rates.csv;rates" `
+  --add-data "rates/beyond_price.csv;rates" `
+  --add-data "rates/accessorial_cost.csv;rates" `
+  --add-data "rates/Zipcode_Zones.csv;rates" `
+  --add-data "rates/cost_zone_table.csv;rates" `
+  --add-data "rates/air_cost_zone.csv;rates" `
   windows_setup.py
 ```
 
@@ -241,7 +241,7 @@ Security guidance:
   create a new one.
 - Update credentials recorded in `.env` (for example, `ADMIN_PASSWORD`) through
   your password manager, then rerun the launcher to synchronize the file.
-- Review this README's setup sections and `DEPLOYMENT.md` for additional
+- Review this README's setup sections and `docs/deployment.md` for additional
   background on seeding, migrations, and operational checks.
 
 ### Testing
@@ -333,8 +333,8 @@ container workflow in [Docker (production-style container)](#docker-production-s
 ### Bulk seeding user accounts
 
 Use `scripts/seed_users.py` when you need to load several accounts at once.
-The repository root contains `users_seed_template.csv` with two example rows.
-Copy the file, replace the placeholder values, and run the script:
+The `scripts/` directory contains `users_seed_template.csv` with two example
+rows. Copy the file, replace the placeholder values, and run the script:
 
 ```bash
 python scripts/seed_users.py --file path/to/your_users.csv
@@ -591,4 +591,4 @@ the database.
 
 ## Architecture
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for an overview of the application's components and guidance on rebuilding the app in another stack.
+See [docs/architecture.md](docs/architecture.md) for an overview of the application's components and guidance on rebuilding the app in another stack.
