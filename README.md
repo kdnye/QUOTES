@@ -521,8 +521,9 @@ aggregated booking email, the lookup page, even the per-leg `Quote` rows — can
 be tied together by one identifier.
 
 - **Customer-supplied**: a `multi_reference` input on `/sc/quote` accepts any
-  upper-cased alphanumeric value (plus `-`, `_`, `/`, space) up to 64 chars
-  and is rejected if already in use.
+  upper-cased alphanumeric value (plus `-`, `_`, `/`, space) up to 57 chars
+  (the cap leaves room for the worst-case `-L7-HOT` suffix appended to each
+  leg's `Quote.client_reference` column) and is rejected if already in use.
 - **Auto-assigned**: blank submissions get the next `SCMQNNNN` (Science Care
   Multi-Quote ####), starting at `SCMQ0001`. The numeric tail grows past 9999
   without re-padding (`SCMQ10000`).

@@ -1143,9 +1143,25 @@ class TestMultiReferenceNormalization:
         assert ref == "ACME-2026-Q4"
 
     def test_rejects_oversize(self) -> None:
-        ref, err = svc._normalize_multi_reference("A" * 65)
+        # 64 chars would overflow Quote.client_reference (64) once the
+        # ``-L<n>-{AIR,HOT}`` per-leg suffix is appended. The cap is
+        # ``64 - len("-L7-HOT") = 57`` - one over must be rejected, exactly
+        # at the cap must pass.
+        ref, err = svc._normalize_multi_reference("A" * 58)
         assert ref is None
         assert err is not None
+        ref, err = svc._normalize_multi_reference("A" * 57)
+        assert err is None
+        assert ref == "A" * 57
+
+    def test_cap_leaves_room_for_per_leg_suffix(self) -> None:
+        """Max-length base + worst-case suffix must fit Quote.client_reference."""
+        from app.models import Quote
+
+        column_len = Quote.__table__.c.client_reference.type.length
+        base = "A" * svc.MAX_MULTI_REFERENCE_LENGTH
+        # Worst case: 7 legs (single digit) and 3-letter mode tag.
+        assert len(f"{base}-L7-HOT") <= column_len
 
     def test_rejects_bad_chars(self) -> None:
         ref, err = svc._normalize_multi_reference("WAT*!")
@@ -1252,3 +1268,67 @@ def test_invalid_multi_reference_raises(
             user,
             request_ip="127.0.0.1",
         )
+
+
+def test_retry_path_re_stamps_per_leg_quote_client_reference(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A concurrent collision must NOT leave stale per-leg client_refs.
+
+    Simulates the race where two SC users grab SCMQ0001 simultaneously
+    by pre-seeding a session with that reference. The orchestrator's
+    first flush fails on UNIQUE(multi_reference); the retry path picks
+    SCMQ0002 and must update each leg's already-committed Quote row so
+    a customer looking up the leg by ``SCMQ0002-L1-AIR`` finds it (and
+    a stale ``SCMQ0001-L1-AIR`` no longer points at this session).
+    """
+
+    from app.models import Quote
+
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    # Reserve SCMQ0001 with another user so our orchestrator's first
+    # flush hits IntegrityError and retries. Using a different user
+    # avoids tripping the Quote-level UNIQUE(user_id, client_reference)
+    # constraint inside create_quote() before the retry can fire.
+    other = User(
+        email="sc-other@example.com",
+        name="SC Other",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(other)
+    db.session.flush()
+    db.session.add(
+        SCQuoteSession(
+            user_id=other.id,
+            grand_total=0.0,
+            payload_json="{}",
+            multi_reference="SCMQ0001",
+        )
+    )
+    db.session.commit()
+
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    assert result["session"].multi_reference == "SCMQ0002"
+
+    # The per-leg Quote rows for the new session must carry the FINAL
+    # reference, not the stale SCMQ0001 one we initially stamped.
+    leg = result["legs"][0]
+    db.session.refresh(leg.air_quote)
+    db.session.refresh(leg.hotshot_quote)
+    assert leg.air_quote.client_reference == "SCMQ0002-L1-AIR"
+    assert leg.hotshot_quote.client_reference == "SCMQ0002-L1-HOT"
+    # And no orphan Quote row claims the now-conflicting SCMQ0001 ref
+    # for this user (would surface as a spurious match in the customer
+    # lookup).
+    stale = Quote.query.filter_by(
+        user_id=user.id, client_reference="SCMQ0001-L1-AIR"
+    ).first()
+    assert stale is None

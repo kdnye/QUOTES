@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import Any, Mapping
 
-from sqlalchemy import or_
+from sqlalchemy import Integer, cast, func, or_
 from sqlalchemy.exc import IntegrityError
 
 logger = logging.getLogger(__name__)
@@ -667,39 +667,58 @@ def _lookup_established(
 # grows beyond 9999 (``SCMQ10000``); 4 is the floor, not a hard cap.
 SCMQ_PREFIX = "SCMQ"
 SCMQ_PAD = 4
-# Match auto-assigned references only. A customer-supplied value like
-# ``ACME-2026-Q4`` must be ignored when computing the next number.
-_SCMQ_AUTO_PATTERN = re.compile(rf"^{SCMQ_PREFIX}(\d+)$")
 # Cap the insert-retry loop so a wedged UNIQUE-constraint situation
 # surfaces as an error instead of looping forever.
 _SCMQ_MAX_ATTEMPTS = 8
+
+# ``Quote.client_reference`` is ``String(64)`` (see app/models.py). The
+# multi-leg orchestrator stamps ``{multi_reference}-L{n}-{AIR|HOT}`` on
+# each leg, so the suffix grows with the leg count. Cap the base
+# reference so even a max-length value still fits the per-leg column
+# after the worst-case suffix is appended; otherwise the leg's
+# create_quote() would raise a DataError that the orchestrator's
+# per-leg ``except`` handler would treat as a quote failure and the
+# user would see legs silently disappear. Derived from SC_LEG_COUNT so
+# growing the leg count automatically narrows the multi-reference
+# cap without manual sync.
+_MAX_LEG_SUFFIX_LEN = len(f"-L{SC_LEG_COUNT}-HOT")
+MAX_MULTI_REFERENCE_LENGTH = 64 - _MAX_LEG_SUFFIX_LEN
 
 
 def _next_scmq_number() -> int:
     """Return ``MAX(numeric suffix) + 1`` across existing SCMQ refs.
 
-    Scans :class:`SCQuoteSession.multi_reference` for rows matching the
-    auto-assigned ``SCMQ\\d+`` pattern, parses the numeric tail, and
-    returns the next integer. Customer-supplied references that don't
-    fit the pattern are ignored.
+    Reads the highest auto-assigned ``SCMQ\\d+`` number directly via SQL
+    so the per-submit hot path doesn't have to transfer every prior
+    reference over the wire. The ``~`` regex filter is PostgreSQL-only,
+    matching the project's deployment target (Cloud SQL Postgres) and
+    its test DSN. Customer-supplied references that don't fit the
+    pattern are excluded by the regex filter.
 
     Returns ``1`` when no auto-assigned references exist yet.
     """
 
-    rows = (
-        db.session.query(SCQuoteSession.multi_reference)
-        .filter(SCQuoteSession.multi_reference.like(f"{SCMQ_PREFIX}%"))
-        .all()
+    # SUBSTRING is 1-indexed in Postgres; offset past the literal prefix
+    # to isolate the numeric tail, then CAST to integer so MAX picks the
+    # numeric maximum rather than a lexicographic one (``SCMQ9`` would
+    # otherwise sort after ``SCMQ10``).
+    numeric_part = cast(
+        func.substring(
+            SCQuoteSession.multi_reference, len(SCMQ_PREFIX) + 1
+        ),
+        Integer,
     )
-    highest = 0
-    for (ref,) in rows:
-        m = _SCMQ_AUTO_PATTERN.match(ref or "")
-        if m:
-            try:
-                highest = max(highest, int(m.group(1)))
-            except ValueError:
-                continue
-    return highest + 1
+    highest = (
+        db.session.query(func.max(numeric_part))
+        .filter(
+            SCQuoteSession.multi_reference.isnot(None),
+            SCQuoteSession.multi_reference.op("~")(
+                f"^{SCMQ_PREFIX}[0-9]+$"
+            ),
+        )
+        .scalar()
+    )
+    return int(highest or 0) + 1
 
 
 def _format_scmq(number: int) -> str:
@@ -725,8 +744,15 @@ def _normalize_multi_reference(raw: Any) -> tuple[str | None, str | None]:
     normalized = " ".join(raw.strip().upper().split())
     if not normalized:
         return None, None
-    if len(normalized) > 64:
-        return None, "Reference must be 64 characters or fewer."
+    # The cap is shorter than the 64-char ``Quote.client_reference``
+    # column because we suffix each leg with up to 7 characters
+    # (``-L7-HOT``). See MAX_MULTI_REFERENCE_LENGTH.
+    if len(normalized) > MAX_MULTI_REFERENCE_LENGTH:
+        return (
+            None,
+            f"Reference must be {MAX_MULTI_REFERENCE_LENGTH} characters "
+            "or fewer.",
+        )
     # Same character class as the single-quote form so a value typed
     # here can later be looked up via /quotes lookup without surprise.
     if not re.fullmatch(r"[A-Z0-9][A-Z0-9\-_/ ]*", normalized):
@@ -1036,12 +1062,27 @@ def compute_sc_multileg(
                 raise ValueError(
                     f"Reference {customer_ref!r} is already in use."
                 )
-            # Re-add the session. The Quote rows already committed in
-            # create_quote() via its own session keep the stale
-            # multi_reference suffix - we re-stamp the SCQuoteSession
-            # with a fresh number; the leg rows below will link the
-            # Quote IDs into the new session.
-            multi_reference = _format_scmq(_next_scmq_number())
+            # The Quote rows already committed in create_quote() carry
+            # the stale ``<old_ref>-L<n>-<MODE>`` client_reference. If we
+            # left them alone, a customer looking up the leg by the
+            # session's final reference would find nothing - and a
+            # lookup of the stale string would surface a Quote that no
+            # longer belongs to a session with that ref. Re-stamp them
+            # to the new reference via merge() so the per-leg lookup
+            # stays consistent with SCQuoteSession.multi_reference.
+            new_multi_reference = _format_scmq(_next_scmq_number())
+            for leg_result in legs:
+                if leg_result.air_quote is not None:
+                    leg_result.air_quote.client_reference = (
+                        f"{new_multi_reference}-L{leg_result.leg_index}-AIR"
+                    )
+                    db.session.merge(leg_result.air_quote)
+                if leg_result.hotshot_quote is not None:
+                    leg_result.hotshot_quote.client_reference = (
+                        f"{new_multi_reference}-L{leg_result.leg_index}-HOT"
+                    )
+                    db.session.merge(leg_result.hotshot_quote)
+            multi_reference = new_multi_reference
             session = SCQuoteSession(
                 user_id=getattr(user, "id", None),
                 grand_total=grand_total,
