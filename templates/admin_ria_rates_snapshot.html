@@ -8,36 +8,22 @@
   </div>
 
   <p class="text-muted">
-    Displays the most recent RIA pull time in Phoenix local time plus the current zone-level FSC percentages.
+    The timestamps below come from the <code>fuel_surcharges</code> rows the app is currently serving.
+    If a row's <em>Last Updated</em> matches the most recent sync, the app is using that pull.
   </p>
 
   <div class="card mb-3">
-    <div class="card-header">Most Recent RIA Pull Time</div>
-    <div class="card-body">
-      {% if observed_last_pull_phoenix %}
-      <div><strong>Phoenix (America/Phoenix):</strong> <code>{{ observed_last_pull_phoenix }}</code></div>
-      <div class="mt-1"><small class="text-muted">From <code>MAX(fuel_surcharges.last_updated)</code> — the time the most recent rate row was actually written.</small></div>
-      {% else %}
-      <span class="text-muted">No <code>fuel_surcharges</code> rows found — the sync job has not persisted any rates yet.</span>
-      {% endif %}
-      {% if observed_last_pull_raw %}
-      <div class="mt-2"><small class="text-muted">Raw row timestamp: <code>{{ observed_last_pull_raw }}</code></small></div>
-      {% endif %}
-    </div>
-  </div>
-
-  <div class="card mb-3">
-    <div class="card-header">Sync Sentinel (<code>vsc_last_update</code>)</div>
+    <div class="card-header">Most Recent RIA Pull (applied to live quotes)</div>
     <div class="card-body">
       {% if last_update_phoenix %}
       <div><strong>Phoenix (America/Phoenix):</strong> <code>{{ last_update_phoenix }}</code></div>
+      <div class="mt-1"><small class="text-muted">Derived from <code>MAX(fuel_surcharges.last_updated)</code>. Every successful region upsert bumps that column, so this is the time the app started serving the current rates.</small></div>
       {% else %}
-      <span class="text-muted">No valid timestamp found in <code>vsc_last_update</code>.</span>
+      <span class="text-muted">No <code>fuel_surcharges</code> rows found — the sync job has not persisted any rates yet.</span>
       {% endif %}
       {% if last_update_raw %}
-      <div class="mt-2"><small class="text-muted">Raw setting: <code>{{ last_update_raw }}</code></small></div>
+      <div class="mt-2"><small class="text-muted">Raw UTC: <code>{{ last_update_raw }}</code></small></div>
       {% endif %}
-      <div class="mt-2"><small class="text-muted">Written by the <code>sync-eia-rates</code> Cloud Run job after at least one region successfully syncs. If this lags the row timestamp above, the sentinel write may have failed; check the job logs.</small></div>
     </div>
   </div>
 
@@ -50,6 +36,8 @@
             <tr>
               <th>Zone</th>
               <th>Region</th>
+              <th>Diesel $/gal</th>
+              <th>Region Last Updated (Phoenix)</th>
               <th>FSC%</th>
             </tr>
           </thead>
@@ -58,6 +46,8 @@
             <tr>
               <td>{{ row.zone }}</td>
               <td>{{ row.region }}</td>
+              <td>{{ row.diesel_rate }}</td>
+              <td>{{ row.last_updated_phoenix }}</td>
               <td>{{ row.fsc_pct }}</td>
             </tr>
             {% endfor %}

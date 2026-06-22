@@ -293,13 +293,17 @@ python scripts/sync_eia_rates.py
 | `EIA_COMMIT_STRATEGY` | `all_or_nothing` commits all regions in one transaction; `per_region` commits each independently so partial updates succeed. | `all_or_nothing` |
 
 Every successful region sync explicitly bumps `FuelSurcharge.last_updated` to
-the current UTC time, even when EIA returns an unchanged rate value. The
-`/admin/ria-rates` snapshot reads `MAX(fuel_surcharges.last_updated)` directly
-from the database to display the **true** most recent pull time, bypassing the
-web service's in-memory settings cache (which would otherwise stay stale until
-the next container restart, since the Cloud Run job writes from a separate
-process). The `vsc_last_update` setting is still maintained as a secondary
-sentinel and shown alongside for diagnostics.
+the current UTC time, even when EIA returns an unchanged rate value. The three
+admin pages that surface VSC freshness (`/admin/ria-rates`,
+`/admin/settings/vsc-zones`, `/admin/settings/vsc-matrix`) all read
+`MAX(fuel_surcharges.last_updated)` directly from the database. This is the
+authoritative indicator of "the rates currently being served by the app" — and
+because it queries the underlying rows rather than a separate sentinel, there
+is exactly one timestamp to interpret. The `/admin/ria-rates` snapshot table
+also surfaces each region's diesel price and per-region `last_updated`, so
+admins can spot regions that may have failed to refresh in the most recent
+sync. The legacy `vsc_last_update` `AppSetting` sentinel is no longer written
+or read by the sync/snapshot flow.
 
 ### Rate CSV formats
 
