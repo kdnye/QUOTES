@@ -775,6 +775,37 @@ def test_sc_box_counts_partial_emits_weight_subtotals(app: Flask) -> None:
     assert "118.0" in html
 
 
+def test_tissue_lookup_default_qty_lands_in_oob_subtotals(app: Flask) -> None:
+    # Regression: when the user types a tissue code without a qty, the
+    # tissue-row partial defaults qty to 1 visually. The OOB subtotals
+    # MUST see qty=1 too - otherwise the Shipment-weight card + the
+    # three per-section pills stay at 0 lb until the user touches the
+    # qty input, even though the row's Total lbs cell already shows
+    # the line weight.
+    user = _make_user(
+        "default-qty@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_subtotal_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    # No qty_1_1 in the query string - mimics the very first lookup
+    # after the user types a code. temp_mode lights up the auto
+    # consumable fallback so the recap TOTAL covers all three buckets.
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&temp_mode_1=frozen"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="sc-weight-subtotals-1"' in html
+    # Tissue 79 lb (qty 1 × 79) + XLG tare 14 lb + auto dry ice 25 lb
+    # (1 box × 25 lb frozen/domestic) = 118 lb total.
+    assert "118.0" in html
+    # And the Tissue subsection pill carries 79.0 lb (the leg's tissue
+    # subtotal, derived from qty=1 default - the regression bait).
+    assert 'id="sc-tissue-subtotal-1"' in html
+    assert "79.0 lb" in html
+
+
 def test_sc_tissue_lookup_emits_subtotals_oob(app: Flask) -> None:
     # Tissue-code change must also refresh the subtotals card in the
     # same round-trip (alongside the OOB box-counts swap).
