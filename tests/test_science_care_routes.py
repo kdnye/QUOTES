@@ -224,6 +224,86 @@ def test_sc_tissue_lookup_accepts_dynamic_param_name(app: Flask) -> None:
     assert "Pelvis to Toe" in response.get_data(as_text=True)
 
 
+def test_sc_tissue_lookup_emits_box_count_oob(app: Flask) -> None:
+    # Tissue-code change must piggy-back an out-of-band box-count swap so
+    # the Boxes section catches up in the same round-trip - no need for
+    # the user to also nudge a qty input.
+    user = _make_user(
+        "tissue-oob@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03"
+        "&tissue_code_1_1=PELV03&qty_1_1=2"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Tissue row partial: input populated with the resolved code.
+    assert 'name="tissue_code_1_1"' in html
+    assert 'value="PELV03"' in html
+    # OOB box-counts wrapper carries the hx-swap-oob attribute.
+    assert 'id="box-counts-1"' in html
+    assert 'hx-swap-oob="outerHTML"' in html
+    # XLG auto-fills to 2 (PELV03 default + qty=2, pieces_per_box=1).
+    xlg_slice = html.split(f'name="box_count_1_{xlg.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="2"' in xlg_slice
+
+
+def test_sc_tissue_lookup_oob_preserves_typed_box_overrides(
+    app: Flask,
+) -> None:
+    # The OOB recompute must respect any non-blank typed box-count
+    # override - same "prefill empty inputs only" rule the qty trigger
+    # uses.
+    user = _make_user(
+        "tissue-oob-override@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03"
+        "&tissue_code_1_1=PELV03&qty_1_1=2"
+        f"&box_count_1_{med.id}=4"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    med_slice = html.split(f'name="box_count_1_{med.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="4"' in med_slice
+    xlg_slice = html.split(f'name="box_count_1_{xlg.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="2"' in xlg_slice
+
+
+def test_sc_tissue_lookup_oob_preserves_explicit_zero(app: Flask) -> None:
+    # Regression mirror of the qty-trigger test: an explicit "0" must
+    # survive the OOB recompute too.
+    user = _make_user(
+        "tissue-oob-zero@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _med, xlg, _ = _seed_box_count_endpoint_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03"
+        "&tissue_code_1_1=PELV03&qty_1_1=2"
+        f"&box_count_1_{xlg.id}=0"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    xlg_slice = html.split(f'name="box_count_1_{xlg.id}"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert 'value="0"' in xlg_slice
+
+
 def test_sc_lab_lookup_accepts_dynamic_param_name(app: Flask) -> None:
     user = _make_user("lab3@example.com", rate_set=RATE_SET_SCIENCE_CARE)
     db.session.add(

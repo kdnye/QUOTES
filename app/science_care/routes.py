@@ -302,13 +302,49 @@ def sc_tissue_lookup_partial() -> str:
             ).first()
         )
 
-    return render_template(
+    tissue_row_html = render_template(
         "sc/_tissue_row.html",
         leg=leg,
         i=row_index,
         prefill=prefill,
         code=code,
     )
+
+    # OOB recompute of the leg's box counts. Mirrors the qty trigger in
+    # /sc/quote/leg/<n>/box-counts but here it's piggy-backed on the
+    # tissue-code response so swapping a code (e.g. ARM01 -> PELV03)
+    # updates the Boxes section in the same round-trip. `request.args`
+    # carries the full leg body via the input's hx-include.
+    tissue_index = {
+        t.tissue_code: t
+        for t in SCTissueCode.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all()
+    }
+    # The freshly-typed code may not yet be reflected in request.args
+    # because the user is still editing the input. Splice it in so the
+    # OOB box allocation reflects what the visible tissue row will show
+    # after the swap completes.
+    args = request.args.copy()
+    if prefill:
+        args[f"tissue_code_{leg}_{row_index}"] = prefill.tissue_code
+    box_types = _box_type_choices()
+    box_index = {b.code: b for b in box_types}
+    tissue_rows = _collect_tissue_rows(args, leg)
+    _, _, auto_boxes_by_type, _, _ = allocate_boxes(
+        tissue_rows, tissue_index, box_index
+    )
+    box_values = _resolve_box_values(
+        args, leg, box_types, auto_boxes_by_type
+    )
+    box_counts_html = render_template(
+        "sc/_box_count_inputs.html",
+        leg=leg,
+        box_types=box_types,
+        box_values=box_values,
+        oob=True,
+    )
+    return tissue_row_html + box_counts_html
 
 
 @science_care_bp.get("/quote/lab-lookup")
@@ -345,6 +381,32 @@ def sc_lab_lookup_partial() -> str:
     )
 
 
+def _resolve_box_values(
+    form, leg: int, box_types, auto_boxes_by_type
+) -> dict:
+    """Combine typed box-count overrides with the auto allocation.
+
+    "Prefill empty inputs only": any non-blank typed value wins
+    (including a deliberate "0", which means "no boxes of this
+    type"). Only a truly blank input falls back to the auto count.
+
+    Shared by both /sc/quote/leg/<n>/box-counts (qty trigger) and
+    /sc/quote/tissue-lookup (tissue-code trigger via OOB swap) so
+    they can't drift.
+    """
+
+    box_values: dict[int, int] = {}
+    for box in box_types:
+        raw_val = form.get(f"box_count_{leg}_{box.id}")
+        if raw_val is not None and str(raw_val).strip() != "":
+            box_values[int(box.id)] = _safe_int(raw_val, 0)
+            continue
+        auto_count = int(auto_boxes_by_type.get(box.code, 0))
+        if auto_count > 0:
+            box_values[int(box.id)] = auto_count
+    return box_values
+
+
 @science_care_bp.post("/quote/leg/<int:leg>/box-counts")
 @login_required
 @sc_user_required
@@ -357,9 +419,9 @@ def sc_box_counts_partial(leg: int) -> str:
     * Parses tissue rows with :func:`_collect_tissue_rows`.
     * Calls :func:`allocate_boxes` (no overrides) to get the auto
       ``{box_code: count}`` allocation that's implied by those rows.
-    * For each ``SCBoxType``, surfaces the user's typed value when it's
-      non-empty AND non-zero ("prefill empty inputs only" semantics);
-      otherwise surfaces the auto count.
+    * Hands off to :func:`_resolve_box_values` to combine the auto
+      counts with the user's typed overrides ("prefill empty inputs
+      only", explicit "0" preserved).
     * Returns the partial wrapping ``<div id="box-counts-<leg>">`` so
       HTMX swaps the whole grid in place via ``hx-swap="outerHTML"``.
     """
@@ -380,20 +442,9 @@ def sc_box_counts_partial(leg: int) -> str:
         tissue_rows, tissue_index, box_index
     )
 
-    box_values: dict[int, int] = {}
-    for box in box_types:
-        # "Prefill empty inputs only" - if the user has typed ANYTHING
-        # (including a deliberate "0"), keep their value. Only a truly
-        # blank input falls back to the auto allocation. Distinguishes
-        # "user wants no boxes of this type" from "user hasn't said
-        # anything yet".
-        raw_val = request.form.get(f"box_count_{leg}_{box.id}")
-        if raw_val is not None and raw_val.strip() != "":
-            box_values[int(box.id)] = _safe_int(raw_val, 0)
-            continue
-        auto_count = int(auto_boxes_by_type.get(box.code, 0))
-        if auto_count > 0:
-            box_values[int(box.id)] = auto_count
+    box_values = _resolve_box_values(
+        request.form, leg, box_types, auto_boxes_by_type
+    )
 
     return render_template(
         "sc/_box_count_inputs.html",
