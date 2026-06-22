@@ -370,6 +370,22 @@ SC_TABLE_SPECS: Dict[str, TableSpec] = {
                 required=False,
                 formatter=_format_date,
             ),
+            # When both Dest City + Dest State are set, the lane matches
+            # any leg whose dest_zip resolves to that city/state via
+            # Zipcode_Zones.csv - mirrors the workbook's lab + "City,ST"
+            # VLOOKUP. Leave blank to keep ZIP-only matching.
+            ColumnSpec(
+                header="Dest City",
+                attr="dest_city",
+                parser=_parse_optional_string,
+                required=False,
+            ),
+            ColumnSpec(
+                header="Dest State",
+                attr="dest_state",
+                parser=_parse_optional_string,
+                required=False,
+            ),
         ),
     ),
     "sc_accessorial_map": TableSpec(
