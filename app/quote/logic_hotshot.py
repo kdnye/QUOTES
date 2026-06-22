@@ -97,44 +97,6 @@ def get_vsc_zone_for_zip(
     ]
 
 
-def _resolve_destination_zone(
-    destination: str,
-    *,
-    rate_set: str,
-    zip_lookup: Callable[[str, str], Optional[Any]],
-    vsc_zone_lookup: Callable[[str, str], Optional[int]],
-) -> tuple[str, list[Dict[str, str]]]:
-    """Resolve destination ZIP to a VSC destination zone string.
-
-    Args:
-        destination: Destination ZIP code string.
-        rate_set: Named rate set context for ZIP lookup.
-        zip_lookup: Function that calls ``app.quote.logic_air.get_zip_zone`` style
-            lookups to return a ZIP-zone row object with ``dest_zone``.
-        vsc_zone_lookup: Function that calls
-            ``app.quote.logic_air.get_vsc_zone_for_zip`` style lookups to
-            return a dedicated VSC zone when available.
-
-    Returns:
-        A tuple of ``(vsc_dest_zone, warning_metadata)``. ``vsc_dest_zone`` is
-        from ZIP-zone data used by VSC/PADD mapping, or ``"NATIONAL"`` fallback.
-
-    External dependencies:
-        Calls ``app.quote.logic_air.get_zip_zone`` (via ``zip_lookup``) to
-        read persisted ZIP-to-zone data.
-    """
-
-    return get_vsc_zone_for_zip(
-        destination,
-        rate_set=rate_set,
-        zip_lookup=zip_lookup,
-        vsc_zone_lookup=vsc_zone_lookup,
-        quote_type="hotshot",
-        lookup_source="zip_zone_table",
-        raise_on_missing=False,
-    )
-
-
 def get_dynamic_vsc_pct(
     *, base: float, miles: float, zone: str, dest_zone: str, rate_set: str
 ) -> float:
@@ -224,11 +186,14 @@ def calculate_hotshot_quote(
         min_charge = float(rate.min_charge)
         base = max(min_charge, weight * per_lb)
 
-    vsc_dest_zone, warning_metadata = _resolve_destination_zone(
-        destination,
+    vsc_dest_zone, warning_metadata = get_vsc_zone_for_zip(
+        destination_zipcode=destination,
         rate_set=rate_set,
         zip_lookup=zip_lookup,
         vsc_zone_lookup=vsc_zone_lookup,
+        quote_type="hotshot",
+        lookup_source="zip_zone_table",
+        raise_on_missing=False,
     )
 
     dynamic_vsc_pct = get_dynamic_vsc_pct(
