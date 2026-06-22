@@ -146,7 +146,7 @@
   {% for leg in legs %}
   <span hx-swap-oob="innerHTML:#sc-leg-summary-winner-{{ leg.leg_index }}">
     {%- if leg.winner_mode -%}
-    {{ (leg.winner_total or 0) | currency }} {{ leg.winner_mode }}
+    {{ (leg.winner_total or 0) | currency }} ({{ leg.winner_mode }})
     {%- elif leg.skip_reason -%}
     Skipped
     {%- else -%}

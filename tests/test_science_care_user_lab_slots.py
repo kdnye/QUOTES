@@ -508,12 +508,12 @@ def test_results_partial_emits_oob_winner_spans(
     )
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    # Leg 1 has a winner -> "$80.00 Hotshot".
+    # Leg 1 has a winner -> "$80.00 (Hotshot)".
     assert (
         'hx-swap-oob="innerHTML:#sc-leg-summary-winner-1"'
         in html
     )
-    assert "$80.00 Hotshot" in html
+    assert "$80.00 (Hotshot)" in html
     # Skipped legs (legs 2-7) emit the "Skipped" marker because they
     # have no lab_code in the form payload.
     assert (
