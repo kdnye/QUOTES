@@ -710,6 +710,68 @@ def test_sc_box_counts_partial_preserves_consumable_zero(app: Flask) -> None:
     assert "0.0 lb" in cons_pill
 
 
+def test_sc_box_counts_partial_skips_cons_oob_when_user_types_in_cons_input(
+    app: Flask,
+) -> None:
+    # When the user is actively typing in a consumable input, HTMX sets
+    # HX-Trigger to that input's id. OOB-replacing the same container
+    # would steal focus mid-keystroke and make multi-digit overrides
+    # unusable, so the partial must drop the consumables swap in that
+    # case (subtotals + box-counts still ride the response).
+    user = _make_user(
+        "cons-focus@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_box_count_endpoint_fixtures()
+    dry_ice, _ = _seed_box_counts_consumable_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            "temp_mode_1": "frozen",
+            f"cons_qty_1_{dry_ice.id}": "1",
+        },
+        headers={"HX-Trigger": f"cons_qty_1_{dry_ice.id}"},
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The consumables grid wrapper is NOT in the response - HTMX would
+    # otherwise blow away the input the user is actively typing in.
+    assert 'id="cons-qty-inputs-1"' not in html
+    # The subtotals card + per-section pills still ride the response.
+    assert 'id="sc-weight-subtotals-1"' in html
+    assert 'id="sc-consumable-subtotal-1"' in html
+
+
+def test_sc_box_counts_partial_keeps_cons_oob_for_other_triggers(
+    app: Flask,
+) -> None:
+    # Sanity check: when the trigger is a tissue / qty / box input (or
+    # the header is missing entirely), the OOB swap still rides the
+    # response so the auto-default surfaces as boxes change.
+    user = _make_user(
+        "cons-keep@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_box_count_endpoint_fixtures()
+    _seed_box_counts_consumable_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            "temp_mode_1": "frozen",
+        },
+        headers={"HX-Trigger": "qty_1_1"},
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="cons-qty-inputs-1"' in html
+
+
 def test_sc_box_counts_partial_blocks_non_sc_user(app: Flask) -> None:
     user = _make_user("non-sc-box@example.com", rate_set="default")
     client = app.test_client()

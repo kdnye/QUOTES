@@ -650,6 +650,9 @@ def _render_box_counts_and_subtotals(
     # row visibly reflects the new box count - the subtotal already
     # includes its weight via compute_leg_subtotals, so leaving the
     # input blank made the page lie about what was being charged.
+    # Suppress the swap when the trigger is the user typing in a
+    # consumable input itself, otherwise the OOB replace would steal
+    # focus mid-keystroke and make multi-digit overrides unusable.
     total_boxes = int(sum(final_boxes_by_type.values()))
     temp_mode = (form.get(f"temp_mode_{leg}") or "").strip()
     consumable_values = _resolve_consumable_values(
@@ -659,13 +662,17 @@ def _render_box_counts_and_subtotals(
         total_boxes=total_boxes,
         temp_mode=temp_mode,
     )
-    cons_inputs_html = render_template(
-        "sc/_consumable_qty_inputs.html",
-        leg=leg,
-        consumables=consumable_index,
-        consumable_values=consumable_values,
-        oob=True,
-    )
+    trigger_id = request.headers.get("HX-Trigger") or ""
+    if trigger_id.startswith(f"cons_qty_{leg}_"):
+        cons_inputs_html = ""
+    else:
+        cons_inputs_html = render_template(
+            "sc/_consumable_qty_inputs.html",
+            leg=leg,
+            consumables=consumable_index,
+            consumable_values=consumable_values,
+            oob=True,
+        )
     # Per-section subtotal pills (Consumables / Tissue items / Boxes)
     # each live under their respective fieldset and are swapped
     # individually via OOB so the user sees the same numbers without
