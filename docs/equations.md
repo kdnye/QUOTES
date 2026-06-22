@@ -120,15 +120,19 @@ For `qty = 7`, both yield 1 box (tie); the smaller interior wins:
 
 ---
 
-## EQ-003: Science Care Leg Total Weight
+## EQ-003: Science Care Leg Total Weight (with three-component breakdown)
 
-**Purpose:** Compute the billable weight contribution of one shipment leg.
+**Purpose:** Compute the billable weight contribution of one shipment leg,
+plus the three-component breakdown the results card surfaces (so the user can
+see what is driving the leg's billable weight).
 
 **Formula:**
 
-    leg_weight_lb = Σ_tissue ( qty × unit_weight ) +
-                    Σ_box ( count_box × tare_weight ) +
-                    consumable_weight
+    tissue_weight_lb     = Σ_tissue ( qty × unit_weight )
+    box_tare_weight_lb   = Σ_box ( count_box × tare_weight )
+    consumable_weight_lb = picked-or-auto weight (see below)
+
+    leg_weight_lb = tissue_weight_lb + box_tare_weight_lb + consumable_weight_lb
 
     consumable_weight = (Σ_picked_row weight_per_box × user_qty)  if user picked any
                       = Σ_matching_consumable weight_per_box × total_boxes  otherwise
@@ -155,15 +159,21 @@ For `qty = 7`, both yield 1 box (tie); the smaller interior wins:
   the tare + dim totals.
 
 **Code location:** `app/services/science_care_quote.py`,
-`_finalize_box_totals()` (~line 175) and `compute_sc_multileg()` (~line 600).
+`_finalize_box_totals()` (~line 175) and the breakdown derivation in
+`compute_sc_multileg()` (~line 770).
 
 **Worked example:** Leg with one `PELV03` (79 lb) shipping in 1 X-Large box
 (tare 14 lb) at `frozen` / `domestic`, no user-picked consumables:
 
-    tissue_weight     = 1 × 79 = 79 lb
-    box_tare_weight   = 1 × 14 = 14 lb
-    auto_consumables  = 1 box × 25 lb (dry ice frozen / domestic) = 25 lb
-    leg_weight_lb     = 79 + 14 + 25 = 118 lb
+    tissue_weight_lb     = 1 × 79 = 79 lb
+    box_tare_weight_lb   = 1 × 14 = 14 lb
+    consumable_weight_lb = 1 box × 25 lb (dry ice frozen / domestic) = 25 lb
+    leg_weight_lb        = 79 + 14 + 25 = 118 lb
+
+Each component lands on `LegResult.{tissue_weight_lb, consumable_weight_lb,
+box_tare_weight_lb}` so the results card can render them as separate columns
+and the three values always sum to `total_weight_lb` (asserted in
+`test_leg_result_carries_weight_breakdown`).
 
 **Last verified:** 2026-06-22
 

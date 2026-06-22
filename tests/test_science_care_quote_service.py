@@ -850,3 +850,90 @@ def test_per_row_box_choice_override_from_form(
     assert leg.box_counts == {"XL": 1}
     # 79 lb tissue + 14 lb XL tare + 25 lb dry ice = 118 lb.
     assert leg.total_weight_lb == pytest.approx(118.0)
+
+
+# --- Weight breakdown (tissue / consumables / box tare) ----------------------
+
+
+def test_leg_result_carries_weight_breakdown(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Every successful leg surfaces tissue / consumables / box tare
+    # separately so the results card can show the breakdown. The three
+    # numbers must sum to total_weight_lb.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    result = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )
+    leg = result["legs"][0]
+    # PELV03 qty 1 -> 79 lb tissue, 1 XL box (14 lb tare), 25 lb auto
+    # dry ice (frozen domestic), 118 lb total.
+    assert leg.tissue_weight_lb == pytest.approx(79.0)
+    assert leg.box_tare_weight_lb == pytest.approx(14.0)
+    assert leg.consumable_weight_lb == pytest.approx(25.0)
+    assert leg.total_weight_lb == pytest.approx(
+        leg.tissue_weight_lb
+        + leg.box_tare_weight_lb
+        + leg.consumable_weight_lb
+    )
+
+
+def test_weight_breakdown_zero_for_skipped_leg(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A leg without tissue rows is skipped - the breakdown fields stay
+    # at zero so the results card can't accidentally double-count them
+    # into the grand-total row.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(monkeypatch, {})
+    form = ImmutableMultiDict(
+        {
+            "lab_code_1": "SCCA",
+            "dest_zip_1": "98101",
+            "routing_type_1": "Outbound",
+            "temp_mode_1": "frozen",
+            # No tissue_code_1_1 / qty_1_1 - leg is skipped.
+        }.items()
+    )
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    assert leg.skip_reason == "no tissue rows"
+    assert leg.tissue_weight_lb == 0.0
+    assert leg.consumable_weight_lb == 0.0
+    assert leg.box_tare_weight_lb == 0.0
+    assert leg.total_weight_lb == 0.0
+
+
+def test_weight_breakdown_with_box_override(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A leg-level box-count override (Boxes section) replaces the
+    # auto allocation. The breakdown's tare-weight column must reflect
+    # the override, not the auto picks - otherwise the three columns
+    # wouldn't sum to total_weight_lb.
+    _seed_reference(app)
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    from app.models import RATE_SET_SCIENCE_CARE, SCBoxType
+
+    med_box = SCBoxType.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, code="MED"
+    ).one()
+
+    form = _form(**{f"box_count_1_{med_box.id}": "3"})
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+    leg = result["legs"][0]
+    # Override 3 MED boxes (3 × 4 lb tare = 12 lb); tissue 79 lb;
+    # auto dry ice 3 × 25 = 75 lb. 79 + 12 + 75 = 166 lb.
+    assert leg.tissue_weight_lb == pytest.approx(79.0)
+    assert leg.box_tare_weight_lb == pytest.approx(12.0)
+    assert leg.consumable_weight_lb == pytest.approx(75.0)
+    assert leg.total_weight_lb == pytest.approx(166.0)

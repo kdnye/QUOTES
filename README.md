@@ -467,6 +467,20 @@ Box dimensions and tare weights live in `sc_box_types`. The migration seeds a
 placeholder `SMALL_AIRTRAY` row with zero dimensions – an SC admin must populate
 real dimensions before the allocator will pick that box.
 
+### Weight breakdown on results
+
+Every leg in the results card surfaces its total billable weight broken into
+three components so the user can see what is driving freight cost:
+
+- **Tissue (lb)** – `Σ qty × unit_weight` across the leg's tissue rows.
+- **Consumables (lb)** – per-pick weight when the user filled the per-consumable
+  Qty inputs, otherwise the auto fallback (`temp_mode × scope → weight/box ×
+  total_boxes`).
+- **Box tare (lb)** – `Σ tare_weight × count` for every box on the leg.
+
+The three columns sum to **Total weight (lb)** on every row, and a footer row
+shows the grand totals across all legs.
+
 ### Reference table CSV admin
 
 SC admins can download / upload each reference table individually from
