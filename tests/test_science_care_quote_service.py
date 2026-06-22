@@ -687,6 +687,97 @@ def test_explicit_qty_overrides_default(
     assert leg.consumable_weight_lb == pytest.approx(75.0)  # 3 × 25
 
 
+def test_default_matches_space_separated_reference_data(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Tenants who uploaded "Dry Ice"/"Frozen"/"Domestic" must still match.
+
+    Reproduces the bug seen in production where the live form rendered
+    a "Dry Ice · Frozen · Domestic" consumable row but the temp_mode
+    default left consumables_lb at 0. The CSV importer stores the cell
+    verbatim, so a tenant who used spaces + title-case in their upload
+    needs the matcher to canonicalise tokens before comparing.
+    """
+
+    _seed_reference(app)
+    # Wipe the seed's underscore-style rows and re-insert the same data
+    # in the space-separated / title-cased form the production CSV
+    # uploads. Same business semantics, different casing/spacing.
+    SCConsumable.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE).delete()
+    db.session.add_all(
+        [
+            SCConsumable(
+                consumable_type="Dry Ice",
+                temp_mode="Frozen",
+                scope="Domestic",
+                weight_lb_per_box=25.0,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCConsumable(
+                consumable_type="Gel Pack",
+                temp_mode="Rtu",
+                scope="Domestic",
+                weight_lb_per_box=20.0,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+
+    frozen = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )["legs"][0]
+    # 1 XL box × 25 lb dry ice = 25 lb auto-applied even though the row
+    # was uploaded as "Dry Ice"/"Frozen"/"Domestic".
+    assert frozen.consumable_weight_lb == pytest.approx(25.0)
+
+    rtu = svc.compute_sc_multileg(
+        _form(temp_mode_1="rtu"), user, request_ip="127.0.0.1"
+    )["legs"][0]
+    assert rtu.consumable_weight_lb == pytest.approx(20.0)
+
+
+def test_default_scoped_to_matching_temp_mode_row(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Frozen default must pick the frozen dry_ice row, not any dry_ice/domestic.
+
+    Without filtering on temp_mode, a tenant who has both a `dry_ice/
+    frozen/domestic` row and (hypothetically) a `dry_ice/rtu/domestic`
+    row could see the matcher pick the wrong row depending on insert
+    order. The filter now requires temp_mode to match the leg too.
+    """
+
+    _seed_reference(app)
+    # Hypothetical wrong-temp dry_ice row that must NOT be picked for
+    # a frozen leg even though it shares consumable_type + scope with
+    # the correct row.
+    db.session.add(
+        SCConsumable(
+            consumable_type="dry_ice",
+            temp_mode="rtu",
+            scope="domestic",
+            weight_lb_per_box=999.0,
+            rate_set=RATE_SET_SCIENCE_CARE,
+        )
+    )
+    db.session.commit()
+    user = _make_user()
+    _stub_create_quote(
+        monkeypatch, {("Air", "98101"): 300.0, ("Hotshot", "98101"): 250.0}
+    )
+    leg = svc.compute_sc_multileg(
+        _form(), user, request_ip="127.0.0.1"
+    )["legs"][0]
+    # The frozen leg must pick the frozen row (25 lb), not the rtu
+    # one (999 lb).
+    assert leg.consumable_weight_lb == pytest.approx(25.0)
+
+
 def test_default_silently_skips_when_matching_consumable_missing(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

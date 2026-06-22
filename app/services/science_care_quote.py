@@ -430,6 +430,29 @@ def allocate_boxes(
     return total_weight, total_boxes, boxes_by_type, dim_weight, unknown_codes
 
 
+def _canon_consumable_token(value: object) -> str:
+    """Canonicalise an SC reference token for tolerant matching.
+
+    Trims, lowercases, and collapses any run of whitespace / underscores
+    into a single underscore so values like ``"Dry Ice"``, ``"dry_ice"``,
+    ``"DRY ICE"``, and ``"  dry  ice  "`` all canon to ``"dry_ice"``.
+    The SC CSV importer stores the raw cell value verbatim
+    (``_parse_required_string`` only ``.strip()``s), so tenants who
+    uploaded space-separated names should still hit the temp_mode
+    default without re-uploading the table.
+
+    Explicit ``is None`` check (rather than ``value or ""``) so a
+    numeric ``0`` or ``False`` survives ``str()`` as its literal
+    representation instead of being coerced to an empty string -
+    defensive against a future schema change that might allow a
+    non-string token through.
+    """
+
+    if value is None:
+        return ""
+    return re.sub(r"[\s_]+", "_", str(value).strip().lower())
+
+
 def _default_consumable_for_mode(
     temp_mode: str,
     consumable_index: list[SCConsumable],
@@ -439,9 +462,11 @@ def _default_consumable_for_mode(
     Business rule: a leg with no user-entered consumable quantity still
     needs the standard temperature packaging budget. ``frozen`` legs
     default to one **domestic dry ice** unit per box; ``rtu`` (ready to
-    use) legs default to one **domestic gel pack** per box. The match
-    is case-insensitive on ``consumable_type`` and ``scope`` so a CSV
-    upload that titlecases ``Dry_Ice`` doesn't bypass the default.
+    use) legs default to one **domestic gel pack** per box. Match keys
+    (``consumable_type``, ``temp_mode``, ``scope``) are canonicalised
+    by :func:`_canon_consumable_token` so a tenant who uploaded
+    ``"Dry Ice"`` / ``"Frozen"`` / ``"Domestic"`` matches the same row
+    as one who uploaded ``"dry_ice"`` / ``"frozen"`` / ``"domestic"``.
 
     Returns ``None`` when no matching ``SCConsumable`` row is
     configured for the tenant - the orchestrator silently skips the
@@ -449,17 +474,20 @@ def _default_consumable_for_mode(
     waiting on reference data.
     """
 
-    tm = (temp_mode or "").strip().lower()
+    tm = _canon_consumable_token(temp_mode)
     if tm == "frozen":
         target_type = "dry_ice"
-    elif tm in {"rtu", "ready_to_use", "ready to use"}:
+        target_modes = {"frozen"}
+    elif tm in {"rtu", "ready_to_use"}:
         target_type = "gel_pack"
+        target_modes = {"rtu", "ready_to_use"}
     else:
         return None
     for cons in consumable_index:
         if (
-            (cons.consumable_type or "").strip().lower() == target_type
-            and (cons.scope or "").strip().lower() == "domestic"
+            _canon_consumable_token(cons.consumable_type) == target_type
+            and _canon_consumable_token(cons.temp_mode) in target_modes
+            and _canon_consumable_token(cons.scope) == "domestic"
         ):
             return cons
     return None
