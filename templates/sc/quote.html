@@ -163,50 +163,15 @@
             </div>
           </fieldset>
 
-          {# Hoisted from after the tissue table so the Consumables
-             subtotal pill below can see its initial weight. Tissue +
-             Boxes subtotals reuse the same `subtotals_initial` dict. #}
+          {# Tissue + Boxes + Consumables subtotals all read from the
+             same `subtotals_initial` dict so the Shipment-weight card
+             below can paint a consistent breakdown on first render. #}
           {% set leg_result = (
               results.legs[leg - 1]
               if results and results.legs|length >= leg
               else none
           ) %}
           {% set subtotals_initial = sc_initial_subtotals_for_leg(leg_result) %}
-
-          <fieldset class="mb-3">
-            <legend class="h6">Consumables</legend>
-            <p class="small text-body-secondary mb-2">
-              Enter the number of consumable units for this leg. Leave
-              everything blank to fall back to the automatic estimate
-              based on the leg's mode and box count.
-            </p>
-            <div class="row g-2">
-              {% for cons in consumables %}
-              <div class="col-12 col-md-6 col-lg-4">
-                <label class="form-label small" for="cons_qty_{{ leg }}_{{ cons.id }}">
-                  {{ cons.consumable_type|replace("_", " ")|title }}
-                  <span class="text-body-secondary">
-                    · {{ cons.temp_mode|title }} · {{ cons.scope|title }}
-                    ({{ cons.weight_lb_per_box }} lb/box)
-                  </span>
-                </label>
-                <input class="form-control form-control-sm"
-                       type="number"
-                       min="0"
-                       step="1"
-                       id="cons_qty_{{ leg }}_{{ cons.id }}"
-                       name="cons_qty_{{ leg }}_{{ cons.id }}"
-                       value="{{ request.form.get('cons_qty_' ~ leg ~ '_' ~ cons.id, '') }}"
-                       placeholder="0" />
-              </div>
-              {% endfor %}
-            </div>
-            {% with section = "consumable",
-                    label = "Consumables",
-                    weight_lb = subtotals_initial.consumable_lb %}
-              {% include "sc/_section_subtotal.html" %}
-            {% endwith %}
-          </fieldset>
 
           <div class="mb-2 d-flex justify-content-between align-items-center">
             <h3 class="h6 mb-0">Tissue items</h3>
@@ -268,6 +233,42 @@
             {% with section = "box",
                     label = "Box tare",
                     weight_lb = subtotals_initial.box_tare_lb %}
+              {% include "sc/_section_subtotal.html" %}
+            {% endwith %}
+          </fieldset>
+
+          <fieldset class="mb-3">
+            <legend class="h6">Consumables</legend>
+            <p class="small text-body-secondary mb-2">
+              Optional — enter the number of consumable units for this
+              leg only if you want them factored into the shipment
+              weight. Leaving every field blank contributes 0 lb of
+              consumables.
+            </p>
+            <div class="row g-2">
+              {% for cons in consumables %}
+              <div class="col-12 col-md-6 col-lg-4">
+                <label class="form-label small" for="cons_qty_{{ leg }}_{{ cons.id }}">
+                  {{ cons.consumable_type|replace("_", " ")|title }}
+                  <span class="text-body-secondary">
+                    · {{ cons.temp_mode|title }} · {{ cons.scope|title }}
+                    ({{ cons.weight_lb_per_box }} lb/box)
+                  </span>
+                </label>
+                <input class="form-control form-control-sm"
+                       type="number"
+                       min="0"
+                       step="1"
+                       id="cons_qty_{{ leg }}_{{ cons.id }}"
+                       name="cons_qty_{{ leg }}_{{ cons.id }}"
+                       value="{{ request.form.get('cons_qty_' ~ leg ~ '_' ~ cons.id, '') }}"
+                       placeholder="0" />
+              </div>
+              {% endfor %}
+            </div>
+            {% with section = "consumable",
+                    label = "Consumables",
+                    weight_lb = subtotals_initial.consumable_lb %}
               {% include "sc/_section_subtotal.html" %}
             {% endwith %}
           </fieldset>
@@ -373,39 +374,21 @@
     }
   });
 
-  // Wire the consumable Qty inputs and the leg-level temp_mode /
-  // intl_country selects to the same box-counts HTMX endpoint so the
-  // weight subtotals card refreshes when those change. The endpoint
-  // already responds to qty + box overrides; piggy-backing keeps the
-  // four subtotal values in sync no matter which control the user
-  // touches.
+  // Wire the consumable Qty inputs to the box-counts HTMX endpoint so
+  // the Shipment-weight card refreshes as the user types. Consumables
+  // only contribute when explicitly entered, so this is the one control
+  // surface that needs to retune the subtotals.
   //
   // `cons_qty` field names look like `cons_qty_<leg>_<consumable_id>`
   // so we anchor the regex on the known prefix and capture the FIRST
   // digit group - the trailing `_<id>` would otherwise win a generic
   // `_(\d+)$` match and route the HTMX request to the wrong leg.
-  document.querySelectorAll(
-    'input[name^="cons_qty_"], select[name^="temp_mode_"], input[name^="intl_country_"]'
-  ).forEach((control) => {
-    const match = control.name.match(
-      /^(?:cons_qty|temp_mode|intl_country)_(\d+)/
-    );
+  document.querySelectorAll('input[name^="cons_qty_"]').forEach((control) => {
+    const match = control.name.match(/^cons_qty_(\d+)/);
     if (!match) return;
     const leg = match[1];
-    control.setAttribute(
-      "hx-post",
-      `/sc/quote/leg/${leg}/box-counts`
-    );
-    // Free-form inputs (number Qty + text intl_country) use
-    // input+debounce so each keystroke retunes the subtotals; selects
-    // (temp_mode) fire on change since their value space is discrete.
-    // Gating on tagName covers both <input type="number"> and
-    // <input type="text"> with one branch.
-    const isFreeFormInput = control.tagName === "INPUT";
-    control.setAttribute(
-      "hx-trigger",
-      isFreeFormInput ? "input delay:300ms" : "change"
-    );
+    control.setAttribute("hx-post", `/sc/quote/leg/${leg}/box-counts`);
+    control.setAttribute("hx-trigger", "input delay:300ms");
     control.setAttribute("hx-include", `#sc-leg-${leg}`);
     control.setAttribute("hx-target", `#box-counts-${leg}`);
     control.setAttribute("hx-swap", "outerHTML");

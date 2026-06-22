@@ -768,11 +768,11 @@ def test_sc_box_counts_partial_emits_weight_subtotals(app: Flask) -> None:
     # OOB swap wrapper for the subtotals card.
     assert 'id="sc-weight-subtotals-1"' in html
     assert "Shipment weight" in html
-    # 79 lb tissue + 14 lb XLG tare + 25 lb auto dry ice = 118 lb total.
+    # 79 lb tissue + 14 lb XLG tare = 93 lb total. No consumables
+    # entered -> consumable subtotal is 0 lb.
     assert "79.0" in html
     assert "14.0" in html
-    assert "25.0" in html
-    assert "118.0" in html
+    assert "93.0" in html
 
 
 def test_tissue_lookup_default_qty_lands_in_oob_subtotals(app: Flask) -> None:
@@ -789,17 +789,16 @@ def test_tissue_lookup_default_qty_lands_in_oob_subtotals(app: Flask) -> None:
     client = app.test_client()
     _login(client, user.id)
     # No qty_1_1 in the query string - mimics the very first lookup
-    # after the user types a code. temp_mode lights up the auto
-    # consumable fallback so the recap TOTAL covers all three buckets.
+    # after the user types a code. Consumables are opt-in, so the recap
+    # TOTAL = tissue + box-tare only.
     response = client.get(
         "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&temp_mode_1=frozen"
     )
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'id="sc-weight-subtotals-1"' in html
-    # Tissue 79 lb (qty 1 × 79) + XLG tare 14 lb + auto dry ice 25 lb
-    # (1 box × 25 lb frozen/domestic) = 118 lb total.
-    assert "118.0" in html
+    # Tissue 79 lb (qty 1 × 79) + XLG tare 14 lb = 93 lb total.
+    assert "93.0" in html
     # And the Tissue subsection pill carries 79.0 lb (the leg's tissue
     # subtotal, derived from qty=1 default - the regression bait).
     assert 'id="sc-tissue-subtotal-1"' in html
@@ -821,7 +820,7 @@ def test_sc_tissue_lookup_emits_subtotals_oob(app: Flask) -> None:
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'id="sc-weight-subtotals-1"' in html
-    assert "118.0" in html  # total weight
+    assert "93.0" in html  # total weight (tissue 79 + tare 14, no consumables)
 
 
 def test_sc_tissue_row_renders_total_lbs_and_kg_columns(app: Flask) -> None:
@@ -870,8 +869,8 @@ def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
     # Regression: the JS that wires consumable Qty inputs to the
     # box-counts endpoint used to use /_(\d+)$/, which captured the
     # consumable_id from cons_qty_<leg>_<id> instead of the leg number.
-    # The anchored regex /^(?:cons_qty|temp_mode|intl_country)_(\d+)/
-    # is the fix and must stay in the rendered page.
+    # The anchored regex /^cons_qty_(\d+)/ is the fix and must stay in
+    # the rendered page.
     user = _make_user(
         "js-regex@example.com", rate_set=RATE_SET_SCIENCE_CARE
     )
@@ -880,7 +879,7 @@ def test_quote_form_js_anchors_leg_regex_on_known_prefix(app: Flask) -> None:
     response = client.get("/sc/quote")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    assert "/^(?:cons_qty|temp_mode|intl_country)_(\\d+)/" in html
+    assert "/^cons_qty_(\\d+)/" in html
     # And the regression bait should NOT come back: a bare /_(\d+)$/
     # against the same name set would re-introduce the bug.
     assert "match(/_(\\d+)$/)" not in html
@@ -911,9 +910,9 @@ def test_box_counts_endpoint_emits_per_section_subtotals(app: Flask) -> None:
     assert 'id="sc-tissue-subtotal-1"' in html
     assert 'id="sc-box-subtotal-1"' in html
     # Subtotal pills carry the recap card's three numbers.
-    # tissue 79 lb, dry ice auto 25 lb, XLG tare 14 lb.
+    # tissue 79 lb, no consumables entered (0 lb), XLG tare 14 lb.
     assert "79.0 lb" in html
-    assert "25.0 lb" in html
+    assert "0.0 lb" in html
     assert "14.0 lb" in html
 
 

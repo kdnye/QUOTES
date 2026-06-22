@@ -480,17 +480,18 @@ numbers stay responsive even between server round-trips.
 subtotals for the leg:
 
 - **Tissue** – `Σ qty × unit_weight` across the leg's tissue rows.
-- **Consumables** – per-pick weight when the user filled the per-consumable
-  Qty inputs, otherwise the auto fallback (`temp_mode × scope → weight/box ×
-  total_boxes`).
+- **Consumables** – opt-in. Only consumable rows where the user typed a
+  non-zero `cons_qty_<leg>_<id>` contribute (`Σ weight_per_box × user_qty`).
+  Leaving every Qty blank yields 0 lb of consumables.
 - **Box tare** – `Σ tare_weight × count` for every box on the leg.
 - **TOTAL** – the three summed; matches the client workbook's
   "TOTAL SHIPMENT WEIGHT" cell.
 
 The card updates whenever any of the leg's inputs change (tissue code, qty,
-box override, consumable Qty, temp_mode, intl_country) — all of them route
-through the same `/sc/quote/leg/<n>/box-counts` HTMX endpoint which emits the
-subtotals card as an OOB swap.
+box override, consumable Qty) — all of them route through the same
+`/sc/quote/leg/<n>/box-counts` HTMX endpoint which emits the subtotals card
+as an OOB swap. The Consumables section now renders below Boxes since it's
+the optional, last-step add-on to the leg's billable weight.
 
 After running the multi-leg quote, the **results card** repeats the same three
 columns per leg plus a Grand-total row, so the breakdown is visible during
