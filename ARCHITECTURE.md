@@ -56,7 +56,7 @@ Key tables:
 - `Quote` – stored quotes including origin, destination, weight, pricing metadata, and generated UUID.
 - `EmailQuoteRequest` – supplemental shipping details collected when emailing a quote.
 - `Accessorial`, `HotshotRate`, `BeyondRate`, `AirCostZone`, `ZipZone`, `CostZone` – rate tables that drive pricing.
-- `AppSetting` – key/value store for database-persisted runtime configuration. The VSC feature uses three keys: `vsc_matrix` (JSON tier table mapping diesel $/gal ranges to surcharge percentages), `vsc_zones` (JSON object mapping destination zone numbers 1–10 to PADD region labels), and `vsc_last_update` (ISO timestamp of the last VSC config seed).
+- `AppSetting` – key/value store for database-persisted runtime configuration. The VSC feature uses two active keys: `vsc_matrix` (JSON tier table mapping diesel $/gal ranges to surcharge percentages) and `vsc_zones` (JSON object mapping destination zone numbers 1–10 to PADD region labels). A legacy `vsc_last_update` key may still exist from earlier deploys; it is no longer written or read by the sync/snapshot flow (admin pages derive freshness from `MAX(fuel_surcharges.last_updated)`).
 - `FuelSurcharge` – one row per EIA PADD region storing the current diesel price (`current_rate`, $/gal) and `last_updated` timestamp. Populated by `scripts/sync_eia_rates.py`; queried by `app/services/fuel_surcharge.py` to resolve per-zone surcharge percentages at quote time.
 
 ### Authentication (`app/auth.py`)
@@ -83,12 +83,12 @@ Key tables:
 
 All quotes (Hotshot and Air) apply a dynamic VSC percentage sourced from weekly EIA diesel prices. The four-step pipeline is:
 
-1. **Sync** – `scripts/sync_eia_rates.py` fetches the latest weekly diesel price for each PADD region from the EIA v2 API and upserts one `FuelSurcharge` row per region (11 regions including NATIONAL as fallback). Run weekly; EIA publishes on Mondays. Every successful region upsert explicitly bumps `FuelSurcharge.last_updated` even when EIA returns an unchanged rate, so the snapshot view always reflects real sync activity. The script also writes a `vsc_last_update` AppSetting as a secondary sentinel.
+1. **Sync** – `scripts/sync_eia_rates.py` fetches the latest weekly diesel price for each PADD region from the EIA v2 API and upserts one `FuelSurcharge` row per region (11 regions including NATIONAL as fallback). Run weekly; EIA publishes on Mondays. Every successful region upsert explicitly bumps `FuelSurcharge.last_updated` even when EIA returns an unchanged rate, so any downstream freshness indicator reflects real sync activity. The script no longer writes the legacy `vsc_last_update` `AppSetting` sentinel.
 2. **Zone lookup** – `logic_hotshot.py` / `logic_air.py` call `get_vsc_pct_for_zone(dest_zone)` with the numeric destination zone from the `ZipZone` table.
 3. **Region resolution** – `fuel_surcharge.py::resolve_padd_region` maps the zone number to a PADD region label using the `vsc_zones` AppSetting (falls back to `NATIONAL` if the zone is absent).
 4. **Matrix lookup** – `fuel_surcharge.py::lookup_matrix_pct` scans the `vsc_matrix` AppSetting tiers to find the tier where `min ≤ diesel_price < max` and returns that tier's `pct` (decimal fraction). Returns `0.0` on any failure so quotes are never blocked.
 
-The `/admin/ria-rates` snapshot view (`admin.py::view_ria_rates_snapshot`) is intentionally cache-bypassing: when run as a Cloud Run job, `sync_eia_rates.py` writes to the database from a separate process and cannot invalidate the web service's in-memory `_SETTINGS_CACHE`. The view therefore queries `AppSetting` directly for `vsc_last_update` and computes `MAX(fuel_surcharges.last_updated)` for the authoritative "true" pull time displayed to admins.
+The three admin pages that show VSC freshness (`view_ria_rates_snapshot`, `view_vsc_zones`, `view_vsc_matrix`) all derive their "Most Recent RIA Pull" timestamp from `MAX(fuel_surcharges.last_updated)` via the shared `_get_observed_last_pull_phoenix()` helper. Querying the rate rows directly bypasses the in-process `_SETTINGS_CACHE` (which the Cloud Run sync job cannot invalidate) and gives admins one unambiguous answer to "are the rates the app is serving current?" The `/admin/ria-rates` snapshot also exposes each region's diesel price and per-region `last_updated` so individual regional failures are visible.
 
 Zone-to-PADD-region reference:
 

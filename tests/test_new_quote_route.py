@@ -7,7 +7,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import AppSetting, FuelSurcharge, Quote, User, ZipZone, db
+from app.models import FuelSurcharge, Quote, User, ZipZone, db
 from app.services.settings import (
     refresh_settings_cache,
     set_setting,
@@ -269,20 +269,33 @@ def test_admin_settings_links_include_vsc_pages(app: Flask) -> None:
 
 
 def test_admin_vsc_settings_pages_render_payloads(app: Flask) -> None:
-    """Render configured VSC zones, matrix, and last-update values."""
+    """Render configured VSC zones, matrix, and row-derived pull timestamp."""
+
+    from datetime import datetime
 
     admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
     admin.set_password("password123")
     db.session.add(admin)
     set_setting("vsc_zones", '{"NATIONAL":[1,2],"WEST":[3,4]}')
     set_setting("vsc_matrix", '{"A":{"NATIONAL":0.11,"WEST":0.09}}')
-    set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
     set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
     set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
     db.session.add_all([
-        FuelSurcharge(padd_region="NATIONAL", current_rate=3.6),
-        FuelSurcharge(padd_region="PADD1", current_rate=3.6),
-        FuelSurcharge(padd_region="PADD5", current_rate=4.1),
+        FuelSurcharge(
+            padd_region="NATIONAL",
+            current_rate=3.6,
+            last_updated=datetime(2026, 6, 16, 18, 0, 0),
+        ),
+        FuelSurcharge(
+            padd_region="PADD1",
+            current_rate=3.6,
+            last_updated=datetime(2026, 6, 16, 18, 0, 0),
+        ),
+        FuelSurcharge(
+            padd_region="PADD5",
+            current_rate=4.1,
+            last_updated=datetime(2026, 6, 16, 18, 0, 0),
+        ),
     ])
     db.session.commit()
 
@@ -294,8 +307,8 @@ def test_admin_vsc_settings_pages_render_payloads(app: Flask) -> None:
     assert matrix_response.status_code == 200
     zones_html = zones_response.get_data(as_text=True)
     matrix_html = matrix_response.get_data(as_text=True)
-    assert "2026-04-30T12:00:00Z" in zones_html
-    assert "2026-04-30T12:00:00Z" in matrix_html
+    assert "2026-06-16 11:00:00 AM MST" in zones_html
+    assert "2026-06-16 11:00:00 AM MST" in matrix_html
     assert "NATIONAL" in zones_html
     assert "WEST" in zones_html
     assert "A" in matrix_html
@@ -330,75 +343,22 @@ def test_admin_dashboard_links_include_ria_rates_snapshot(app: Flask) -> None:
 
 
 def test_admin_ria_rates_snapshot_renders_phoenix_time_and_zone_fsc(app: Flask) -> None:
-    """Render RIA last-update time in Phoenix format plus computed FSC rows.
+    """Render the row-derived pull timestamp plus per-region freshness rows.
 
     Inputs:
         app: Flask application fixture configured for route testing.
 
     Outputs:
-        None. Confirms the page includes converted Phoenix-time text and the
-        zone/FSC table rows.
-
-    External dependencies:
-        * Calls :func:`app.services.settings.set_setting` to persist
-          ``vsc_last_update`` used by the view.
-        * Calls :meth:`flask.testing.FlaskClient.get` for
-          ``/admin/ria-rates``.
+        None. Confirms the page includes the Phoenix-formatted
+        ``MAX(fuel_surcharges.last_updated)`` text, per-region diesel prices,
+        per-region last-updated timestamps, and computed FSC percentages.
     """
+
+    from datetime import datetime
 
     admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
     admin.set_password("password123")
     db.session.add(admin)
-    set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
-    set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
-    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
-    db.session.add_all([
-        FuelSurcharge(padd_region="NATIONAL", current_rate=3.6),
-        FuelSurcharge(padd_region="PADD1", current_rate=3.6),
-        FuelSurcharge(padd_region="PADD5", current_rate=4.1),
-    ])
-    db.session.commit()
-
-    client = app.test_client()
-    _login_client(client, admin.id)
-    response = client.get("/admin/ria-rates")
-    assert response.status_code == 200
-    html = response.get_data(as_text=True)
-    assert "2026-04-30 05:00:00 AM MST" in html
-    assert "<td>1</td>" in html
-    assert "<td>PADD1</td>" in html
-    assert "<td>18.5%</td>" in html
-    assert "<td>8</td>" in html
-    assert "<td>PADD5</td>" in html
-    assert "<td>21.0%</td>" in html
-
-
-def test_admin_ria_rates_snapshot_reflects_out_of_process_setting_write(
-    app: Flask,
-) -> None:
-    """Show the latest sentinel even when the in-process cache is stale.
-
-    The ``sync-eia-rates`` Cloud Run job writes ``vsc_last_update`` directly
-    to the database in a separate process, so the web service's module-level
-    settings cache never sees the new value. The snapshot view must bypass
-    that cache to reflect the true most recent pull time.
-
-    Inputs:
-        app: Flask application fixture configured for route testing.
-
-    Outputs:
-        None. Confirms the page displays the fresh DB-only timestamp even
-        though the cache still holds an older value.
-    """
-
-    from datetime import datetime, timezone
-
-    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
-    admin.set_password("password123")
-    db.session.add(admin)
-    # Prime the cache with an old value, then mutate the DB directly the way
-    # the Cloud Run sync job would (no cache invalidation).
-    set_setting("vsc_last_update", "2026-04-30T12:00:00Z")
     set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
     set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
     db.session.add_all([
@@ -412,42 +372,48 @@ def test_admin_ria_rates_snapshot_reflects_out_of_process_setting_write(
             current_rate=3.6,
             last_updated=datetime(2026, 6, 16, 18, 0, 0),
         ),
+        FuelSurcharge(
+            padd_region="PADD5",
+            current_rate=4.1,
+            last_updated=datetime(2026, 6, 16, 18, 0, 0),
+        ),
     ])
     db.session.commit()
-
-    row = AppSetting.query.filter_by(key="vsc_last_update").one()
-    row.value = "2026-06-16T18:00:00+00:00"
-    row.updated_at = datetime.now(timezone.utc)
-    db.session.commit()
-    # Intentionally do NOT call refresh_settings_cache; the cache stays stale
-    # exactly as it would in the web container after an out-of-process write.
 
     client = app.test_client()
     _login_client(client, admin.id)
     response = client.get("/admin/ria-rates")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    # Both the sentinel and the row-level pull time should reflect the June
-    # write, not the cached April value.
-    assert "2026-04-30" not in html
     assert "2026-06-16 11:00:00 AM MST" in html
+    assert "<td>1</td>" in html
+    assert "<td>PADD1</td>" in html
+    assert "<td>18.5%</td>" in html
+    assert "<td>$3.600</td>" in html
+    assert "<td>8</td>" in html
+    assert "<td>PADD5</td>" in html
+    assert "<td>$4.100</td>" in html
+    assert "<td>21.0%</td>" in html
+    # No sentinel card on the page anymore.
+    assert "Sync Sentinel" not in html
 
 
-def test_admin_ria_rates_snapshot_shows_row_pull_time_when_sentinel_missing(
+def test_admin_ria_rates_snapshot_ignores_stale_settings_cache(
     app: Flask,
 ) -> None:
-    """Fall back to ``MAX(fuel_surcharges.last_updated)`` without a sentinel.
+    """The view must reflect rate-row writes made by an out-of-process job.
 
-    The row-level timestamp is the authoritative source of truth because it
-    is bumped on every successful upsert. The view must surface it even when
-    ``vsc_last_update`` has never been written.
+    The ``sync-eia-rates`` Cloud Run job upserts ``fuel_surcharges`` rows in a
+    separate process. The web service's module-level settings cache cannot
+    see those writes, but the snapshot must — because it queries the
+    ``fuel_surcharges`` table directly.
 
     Inputs:
         app: Flask application fixture configured for route testing.
 
     Outputs:
-        None. Confirms the page displays the row-level pull time and notes
-        that the sentinel is missing.
+        None. Confirms the page shows the fresh row-derived timestamp even
+        though the in-process settings cache was primed with older values.
     """
 
     from datetime import datetime
@@ -455,8 +421,9 @@ def test_admin_ria_rates_snapshot_shows_row_pull_time_when_sentinel_missing(
     admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
     admin.set_password("password123")
     db.session.add(admin)
-    set_setting("vsc_zones", "{\"1\":\"PADD1\",\"8\":\"PADD5\"}")
-    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185},{\"min\":4.0,\"max\":4.5,\"pct\":0.21}]")
+    # Prime the cache with stale settings.
+    set_setting("vsc_zones", "{\"1\":\"PADD1\"}")
+    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185}]")
     db.session.add(
         FuelSurcharge(
             padd_region="PADD1",
@@ -465,7 +432,6 @@ def test_admin_ria_rates_snapshot_shows_row_pull_time_when_sentinel_missing(
         )
     )
     db.session.commit()
-    refresh_settings_cache()
 
     client = app.test_client()
     _login_client(client, admin.id)
@@ -473,4 +439,32 @@ def test_admin_ria_rates_snapshot_shows_row_pull_time_when_sentinel_missing(
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "2026-06-16 11:00:00 AM MST" in html
-    assert "No valid timestamp found" in html
+
+
+def test_admin_ria_rates_snapshot_handles_empty_fuel_surcharges(
+    app: Flask,
+) -> None:
+    """Surface a clear message when no rate rows exist yet.
+
+    Inputs:
+        app: Flask application fixture configured for route testing.
+
+    Outputs:
+        None. Confirms the page renders without a timestamp and includes the
+        empty-state guidance.
+    """
+
+    admin = User(email=f"admin-{uuid.uuid4()}@example.com", role="super_admin")
+    admin.set_password("password123")
+    db.session.add(admin)
+    set_setting("vsc_zones", "{\"1\":\"PADD1\"}")
+    set_setting("vsc_matrix", "[{\"min\":3.5,\"max\":4.0,\"pct\":0.185}]")
+    db.session.commit()
+    refresh_settings_cache()
+
+    client = app.test_client()
+    _login_client(client, admin.id)
+    response = client.get("/admin/ria-rates")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "sync job has not persisted any rates yet" in html

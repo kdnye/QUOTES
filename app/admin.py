@@ -779,7 +779,8 @@ def _format_ria_last_update_phoenix(last_update_raw: str | None) -> str | None:
     """Convert a raw UTC timestamp string into Phoenix local time text.
 
     Args:
-        last_update_raw: Raw ``vsc_last_update`` value from ``AppSetting``.
+        last_update_raw: ISO-formatted UTC timestamp string, typically derived
+            from a ``fuel_surcharges.last_updated`` row value.
 
     Returns:
         A formatted timestamp in the ``America/Phoenix`` timezone when parsing
@@ -809,6 +810,29 @@ def _format_ria_last_update_phoenix(last_update_raw: str | None) -> str | None:
     return phoenix_time.strftime("%Y-%m-%d %I:%M:%S %p MST")
 
 
+def _get_observed_last_pull_phoenix() -> tuple[str | None, str | None]:
+    """Return the authoritative most-recent rate-row pull time.
+
+    The timestamp is derived from ``MAX(fuel_surcharges.last_updated)`` so it
+    reflects the actual data that the app is serving — not a separate
+    sentinel that might lag the rate writes. Reading the column directly
+    also bypasses the in-process settings cache, which the Cloud Run sync
+    job cannot invalidate.
+
+    Returns:
+        Tuple of ``(phoenix_text, iso_utc_text)``. Both are ``None`` when no
+        ``fuel_surcharges`` rows exist yet.
+    """
+
+    observed_last_pull = db.session.query(
+        db.func.max(FuelSurcharge.last_updated)
+    ).scalar()
+    if observed_last_pull is None:
+        return None, None
+    iso_utc = observed_last_pull.replace(tzinfo=timezone.utc).isoformat()
+    return _format_ria_last_update_phoenix(iso_utc), iso_utc
+
+
 def _get_zone_fsc_rows(zones_config: Any, matrix_config: Any) -> list[dict[str, str]]:
     """Return zone-by-zone FSC percentages resolved from current VSC settings.
 
@@ -818,8 +842,11 @@ def _get_zone_fsc_rows(zones_config: Any, matrix_config: Any) -> list[dict[str, 
             FSC percentage decimals.
 
     Returns:
-        list[dict[str, str]]: Ordered rows with ``zone``, ``region``, and
-        ``fsc_pct`` text values for zones 1 through 10.
+        list[dict[str, str]]: Ordered rows with ``zone``, ``region``,
+        ``diesel_rate``, ``last_updated_phoenix``, and ``fsc_pct`` text values
+        for zones 1 through 10. Each ``last_updated_phoenix`` reflects the
+        ``fuel_surcharges`` row that backs that zone's region, so admins can
+        verify per-region data freshness directly.
 
     External dependencies:
         * Calls :func:`app.services.fuel_surcharge.resolve_padd_region` to map
@@ -827,24 +854,41 @@ def _get_zone_fsc_rows(zones_config: Any, matrix_config: Any) -> list[dict[str, 
         * Calls :func:`app.services.fuel_surcharge.lookup_matrix_pct` to resolve
           FSC percentages from the configured matrix.
         * Queries :class:`app.models.FuelSurcharge` for current regional diesel
-          prices.
+          prices and per-region ``last_updated`` timestamps.
     """
 
-    fuel_rows = {
-        row.padd_region: row.current_rate for row in FuelSurcharge.query.all()
-    }
-    national_rate = fuel_rows.get("NATIONAL")
+    fuel_rows = {row.padd_region: row for row in FuelSurcharge.query.all()}
+    national_row = fuel_rows.get("NATIONAL")
+    national_rate = national_row.current_rate if national_row is not None else None
     rows: list[dict[str, str]] = []
     for zone_num in range(1, 11):
         zone = str(zone_num)
         region = resolve_padd_region(zone, zones_config)
-        diesel_rate = fuel_rows.get(region, national_rate)
+        region_row = fuel_rows.get(region) or national_row
+        diesel_rate = region_row.current_rate if region_row is not None else None
+        if diesel_rate is None:
+            diesel_rate = national_rate
         pct_label = "N/A"
         if diesel_rate is not None:
             pct = lookup_matrix_pct(diesel_rate, matrix_config)
             if pct is not None:
                 pct_label = f"{pct * 100:.1f}%"
-        rows.append({"zone": zone, "region": region, "fsc_pct": pct_label})
+        if region_row is not None and region_row.last_updated is not None:
+            last_iso = region_row.last_updated.replace(tzinfo=timezone.utc).isoformat()
+            last_phoenix = _format_ria_last_update_phoenix(last_iso) or "—"
+        else:
+            last_phoenix = "—"
+        rows.append(
+            {
+                "zone": zone,
+                "region": region,
+                "diesel_rate": (
+                    f"${diesel_rate:.3f}" if diesel_rate is not None else "—"
+                ),
+                "last_updated_phoenix": last_phoenix,
+                "fsc_pct": pct_label,
+            }
+        )
     return rows
 
 
@@ -856,7 +900,7 @@ def view_vsc_zones() -> str:
     cache = get_settings_cache()
     zones_setting = cache.get("vsc_zones")
     matrix_setting = cache.get("vsc_matrix")
-    last_update_setting = cache.get("vsc_last_update")
+    last_update_phoenix, last_update_raw = _get_observed_last_pull_phoenix()
     zones = _parse_vsc_json_setting(
         zones_setting.raw_value if zones_setting else None
     )
@@ -867,7 +911,8 @@ def view_vsc_zones() -> str:
         "admin_settings_vsc_zones.html",
         zones=zones,
         matrix=matrix,
-        last_update=(last_update_setting.raw_value if last_update_setting else None),
+        last_update_phoenix=last_update_phoenix,
+        last_update_raw=last_update_raw,
     )
 
 
@@ -879,7 +924,7 @@ def view_vsc_matrix() -> str:
     cache = get_settings_cache()
     zones_setting = cache.get("vsc_zones")
     matrix_setting = cache.get("vsc_matrix")
-    last_update_setting = cache.get("vsc_last_update")
+    last_update_phoenix, last_update_raw = _get_observed_last_pull_phoenix()
     zones = _parse_vsc_json_setting(
         zones_setting.raw_value if zones_setting else None
     )
@@ -890,7 +935,8 @@ def view_vsc_matrix() -> str:
         "admin_settings_vsc_matrix.html",
         zones=zones,
         matrix=matrix,
-        last_update=(last_update_setting.raw_value if last_update_setting else None),
+        last_update_phoenix=last_update_phoenix,
+        last_update_raw=last_update_raw,
     )
 
 
@@ -903,48 +949,25 @@ def view_ria_rates_snapshot() -> str:
         str: Rendered HTML for ``admin_ria_rates_snapshot.html``.
 
     External dependencies:
-        * Queries :class:`app.models.AppSetting` directly for the
-          ``vsc_last_update`` sentinel so the timestamp reflects writes made
-          by the ``sync-eia-rates`` Cloud Run job (which runs in a separate
-          process and cannot invalidate the web service's in-memory cache).
         * Queries :class:`app.models.FuelSurcharge` for the maximum
-          ``last_updated`` column value, which is the authoritative pull time
-          based on actual rate-row persistence.
+          ``last_updated`` column value and each region's per-row timestamp;
+          this is the authoritative indicator of the rates currently being
+          served by the app.
     """
 
     cache = get_settings_cache()
     zones_setting = cache.get("vsc_zones")
     matrix_setting = cache.get("vsc_matrix")
 
-    # Bypass the in-process settings cache: the Cloud Run sync job writes to
-    # the database in another process and never invalidates this cache.
-    last_update_row = AppSetting.query.filter_by(key="vsc_last_update").first()
-    raw_last_update = (
-        last_update_row.value.strip()
-        if last_update_row and last_update_row.value
-        else None
-    )
-
-    observed_last_pull = db.session.query(
-        db.func.max(FuelSurcharge.last_updated)
-    ).scalar()
-    observed_last_pull_raw = (
-        observed_last_pull.replace(tzinfo=timezone.utc).isoformat()
-        if observed_last_pull is not None
-        else None
-    )
+    last_update_phoenix, last_update_raw = _get_observed_last_pull_phoenix()
 
     zones = _parse_vsc_json_setting(zones_setting.raw_value if zones_setting else None)
     matrix = _parse_vsc_json_setting(matrix_setting.raw_value if matrix_setting else None)
 
     return render_template(
         "admin_ria_rates_snapshot.html",
-        last_update_raw=raw_last_update,
-        last_update_phoenix=_format_ria_last_update_phoenix(raw_last_update),
-        observed_last_pull_raw=observed_last_pull_raw,
-        observed_last_pull_phoenix=_format_ria_last_update_phoenix(
-            observed_last_pull_raw
-        ),
+        last_update_phoenix=last_update_phoenix,
+        last_update_raw=last_update_raw,
         zone_fsc_rows=_get_zone_fsc_rows(zones, matrix),
     )
 

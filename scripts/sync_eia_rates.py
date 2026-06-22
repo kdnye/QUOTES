@@ -29,7 +29,7 @@ import logging
 import os
 import sys
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Mapping, Tuple
 
@@ -41,7 +41,6 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app import create_app
 from app.models import FuelSurcharge, db
-from app.services.settings import set_setting
 
 LOGGER = logging.getLogger(__name__)
 EIA_BASE_URL = "https://api.eia.gov/v2/seriesid"
@@ -291,16 +290,6 @@ def sync_eia_rates(commit_strategy: str) -> int:
                 "database commit failed for all_or_nothing strategy: %s", exc
             )
             return 1
-
-    if successes > 0:
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            set_setting("vsc_last_update", now)
-            db.session.commit()
-            LOGGER.info("vsc_last_update set to %s", now)
-        except SQLAlchemyError as exc:
-            db.session.rollback()
-            LOGGER.warning("failed to update vsc_last_update: %s", exc)
 
     LOGGER.info("sync summary: successes=%s failures=%s", successes, failures)
 
