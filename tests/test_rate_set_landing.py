@@ -17,6 +17,7 @@ from app.models import User, db
 from app.policies import sc_user_required
 from app.services.rate_sets import (
     DEFAULT_LANDING_ENDPOINT,
+    RATE_SET_LANDING_ENDPOINTS,
     landing_endpoint_for_user,
 )
 
@@ -111,3 +112,14 @@ def test_sc_user_required_allows_scicr_rate_set(app: Flask) -> None:
     response = client.get("/probe/sc-user")
     assert response.status_code == 200
     assert response.data == b"ok"
+
+
+def test_all_mapped_endpoints_are_registered(app: Flask) -> None:
+    """Every endpoint name configured in the landing map must resolve
+    to a registered Flask view function. A typo here would surface as
+    a ``werkzeug.routing.BuildError`` at login time, locking users out.
+    """
+
+    expected = set(RATE_SET_LANDING_ENDPOINTS.values()) | {DEFAULT_LANDING_ENDPOINT}
+    missing = [endpoint for endpoint in expected if endpoint not in app.view_functions]
+    assert not missing, f"Unregistered landing endpoint(s): {missing}"
