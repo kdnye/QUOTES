@@ -50,6 +50,7 @@ from app.models import (
 )
 from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import (
+    TissueRow,
     _collect_tissue_rows,
     allocate_boxes,
     compute_sc_multileg,
@@ -315,12 +316,7 @@ def sc_tissue_lookup_partial() -> str:
     # tissue-code response so swapping a code (e.g. ARM01 -> PELV03)
     # updates the Boxes section in the same round-trip. `request.args`
     # carries the full leg body via the input's hx-include.
-    tissue_index = {
-        t.tissue_code: t
-        for t in SCTissueCode.query.filter_by(
-            rate_set=RATE_SET_SCIENCE_CARE
-        ).all()
-    }
+    #
     # The freshly-typed code may not yet be reflected in request.args
     # because the user is still editing the input. Splice it in so the
     # OOB box allocation reflects what the visible tissue row will show
@@ -331,6 +327,7 @@ def sc_tissue_lookup_partial() -> str:
     box_types = _box_type_choices()
     box_index = {b.code: b for b in box_types}
     tissue_rows = _collect_tissue_rows(args, leg)
+    tissue_index = _tissue_index_for_rows(tissue_rows)
     _, _, auto_boxes_by_type, _, _ = allocate_boxes(
         tissue_rows, tissue_index, box_index
     )
@@ -381,6 +378,34 @@ def sc_lab_lookup_partial() -> str:
     )
 
 
+def _tissue_index_for_rows(
+    tissue_rows: list[TissueRow],
+) -> dict[str, SCTissueCode]:
+    """Fetch only the SCTissueCode rows present in ``tissue_rows``.
+
+    The live-recompute endpoints fire on every keystroke, so loading
+    the full ``SCTissueCode`` table each time scales badly as the
+    reference data grows. Scope the query to the codes actually used
+    in the current leg's tissue rows.
+
+    The codes are sorted before being passed to ``.in_()`` so the SQL
+    parameter binding is deterministic across requests — matches the
+    pattern used by ``SCUserLabSlot`` queries elsewhere in this module
+    and helps the database reuse prepared-statement plans.
+    """
+
+    codes = {r.tissue_code for r in tissue_rows if r.tissue_code}
+    if not codes:
+        return {}
+    return {
+        t.tissue_code: t
+        for t in SCTissueCode.query.filter(
+            SCTissueCode.rate_set == RATE_SET_SCIENCE_CARE,
+            SCTissueCode.tissue_code.in_(sorted(codes)),
+        ).all()
+    }
+
+
 def _resolve_box_values(
     form, leg: int, box_types, auto_boxes_by_type
 ) -> dict:
@@ -428,16 +453,11 @@ def sc_box_counts_partial(leg: int) -> str:
 
     leg = max(1, min(SC_LEG_COUNT, _safe_int(leg, 1)))
 
-    tissue_index = {
-        t.tissue_code: t
-        for t in SCTissueCode.query.filter_by(
-            rate_set=RATE_SET_SCIENCE_CARE
-        ).all()
-    }
     box_types = _box_type_choices()
     box_index = {b.code: b for b in box_types}
 
     tissue_rows = _collect_tissue_rows(request.form, leg)
+    tissue_index = _tissue_index_for_rows(tissue_rows)
     _, _, auto_boxes_by_type, _, _ = allocate_boxes(
         tissue_rows, tissue_index, box_index
     )
