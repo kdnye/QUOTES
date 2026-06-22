@@ -62,16 +62,11 @@ def _reset_postgres_schema():
 
     import psycopg2  # local import keeps the no-PG path free of the dep
 
-    parsed = urlparse(
-        raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
-    )
-    conn = psycopg2.connect(
-        host=parsed.hostname,
-        port=parsed.port or 5432,
-        user=parsed.username,
-        password=parsed.password,
-        dbname=parsed.path.lstrip("/"),
-    )
+    # Hand the DSN to psycopg2 verbatim (after dropping the SQLAlchemy
+    # driver prefix) so URL-encoded credentials like %40 / %23 get
+    # decoded by libpq instead of breaking auth on the way through.
+    dsn = raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    conn = psycopg2.connect(dsn)
     try:
         conn.autocommit = True
         with conn.cursor() as cur:
