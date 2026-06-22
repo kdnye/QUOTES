@@ -384,6 +384,27 @@ def _register_template_helpers(app: Flask) -> None:
             if box.code in counts and counts[box.code]
         }
 
+    def sc_consumable_values_for_leg(leg_result) -> dict:
+        """Convert ``LegResult.consumable_picks`` to the ``{cons.id: str(qty)}``
+        map the ``_consumable_qty_inputs.html`` partial expects.
+
+        Used by the initial GET render and the post-orchestration
+        re-render so that the consumable Qty inputs visibly reflect the
+        same counts the orchestrator used (including the temp_mode
+        auto-default). The live HTMX path
+        (``science_care.sc_box_counts_partial``) computes the same map
+        from the form via ``_resolve_consumable_values`` and OOB-swaps
+        this partial back into the page.
+        """
+
+        if not leg_result or not getattr(leg_result, "consumable_picks", None):
+            return {}
+        return {
+            int(cons_id): str(int(qty))
+            for cons_id, qty in leg_result.consumable_picks.items()
+            if qty
+        }
+
     def sc_initial_subtotals_for_leg(leg_result) -> dict:
         """Return the per-leg weight subtotals dict for the initial
         page render (and the post-orchestration re-render).
@@ -415,6 +436,9 @@ def _register_template_helpers(app: Flask) -> None:
 
     app.jinja_env.globals["csrf_input"] = csrf_input
     app.jinja_env.globals["sc_box_values_for_leg"] = sc_box_values_for_leg
+    app.jinja_env.globals["sc_consumable_values_for_leg"] = (
+        sc_consumable_values_for_leg
+    )
     app.jinja_env.globals["sc_initial_subtotals_for_leg"] = (
         sc_initial_subtotals_for_leg
     )
