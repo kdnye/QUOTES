@@ -1,0 +1,49 @@
+{# Per-leg consumable Qty inputs grid.
+
+   Rendered in two contexts:
+
+   * Inline from `templates/sc/quote.html`'s Consumables fieldset on
+     initial GET and on the non-HTMX POST re-render.
+   * As the HTMX OOB swap response appended by
+     `science_care.sc_box_counts_partial`, which targets this same
+     element (`#cons-qty-inputs-<leg>`) with `hx-swap-oob="outerHTML"`.
+
+   Expected context: leg (int), consumables (list[SCConsumable]),
+   consumable_values (dict[int, str] keyed by SCConsumable.id, value is
+   the string to render in the input). Missing keys render as empty so
+   the placeholder "0" surfaces - matching the "Non-matching consumables
+   stay at 0 unless you enter a Qty" copy in the page.
+#}
+<div class="row g-2"
+     id="cons-qty-inputs-{{ leg }}"
+     {% if oob %}hx-swap-oob="outerHTML"{% endif %}>
+  {% for cons in consumables %}
+  <div class="col-12 col-md-6 col-lg-4">
+    <label class="form-label small" for="cons_qty_{{ leg }}_{{ cons.id }}">
+      {{ cons.consumable_type|replace("_", " ")|title }}
+      <span class="text-body-secondary">
+        · {{ cons.temp_mode|title }} · {{ cons.scope|title }}
+        ({{ cons.weight_lb_per_box }} lb/box)
+      </span>
+    </label>
+    {# hx-post mirrors the box-count inputs: each consumable Qty change
+       re-fires the box-counts partial so the live subtotals stay in
+       sync, and the same response OOB-swaps this grid so the auto-
+       default for the temp_mode-matching row visibly reflects the
+       current box count. #}
+    <input class="form-control form-control-sm"
+           type="number"
+           min="0"
+           step="1"
+           id="cons_qty_{{ leg }}_{{ cons.id }}"
+           name="cons_qty_{{ leg }}_{{ cons.id }}"
+           value="{{ consumable_values.get(cons.id, '') }}"
+           placeholder="0"
+           hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
+           hx-trigger="input delay:300ms"
+           hx-include="#sc-leg-{{ leg }}"
+           hx-target="#box-counts-{{ leg }}"
+           hx-swap="outerHTML" />
+  </div>
+  {% endfor %}
+</div>

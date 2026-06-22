@@ -615,6 +615,101 @@ def test_sc_box_counts_partial_preserves_explicit_zero(app: Flask) -> None:
     assert 'value="0"' in xlg_slice
 
 
+def _seed_box_counts_consumable_fixtures():
+    """Add the SCConsumable rows the partial needs to compute defaults."""
+
+    from app.models import SCConsumable
+
+    dry_ice = SCConsumable(
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    gel_pack = SCConsumable(
+        consumable_type="gel_pack",
+        temp_mode="rtu",
+        scope="domestic",
+        weight_lb_per_box=20.0,
+    )
+    db.session.add_all([dry_ice, gel_pack])
+    db.session.commit()
+    return dry_ice, gel_pack
+
+
+def test_sc_box_counts_partial_surfaces_consumable_auto_default(
+    app: Flask,
+) -> None:
+    # Regression: the live recompute used to add the temp_mode default
+    # consumable (1 per box) to the subtotal without re-rendering its
+    # Qty input, so the page showed a non-zero Consumables subtotal
+    # while every input still read "0".
+    user = _make_user(
+        "cons-auto@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_box_count_endpoint_fixtures()
+    dry_ice, gel_pack = _seed_box_counts_consumable_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            "temp_mode_1": "frozen",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # OOB wrapper for the consumables grid rides along on the response.
+    assert 'id="cons-qty-inputs-1"' in html
+    # The Frozen-domestic dry ice input now reflects the 2-box default.
+    dry_ice_slice = html.split(
+        f'name="cons_qty_1_{dry_ice.id}"', 1
+    )[1].split("</div>", 1)[0]
+    assert 'value="2"' in dry_ice_slice
+    # Non-matching consumable (gel pack) stays blank so the placeholder
+    # "0" shows - it would otherwise add noise to every row.
+    gel_pack_slice = html.split(
+        f'name="cons_qty_1_{gel_pack.id}"', 1
+    )[1].split("</div>", 1)[0]
+    assert 'value=""' in gel_pack_slice
+
+
+def test_sc_box_counts_partial_preserves_consumable_zero(app: Flask) -> None:
+    # Typing "0" into the temp_mode default consumable means "suppress
+    # the auto-applied default". The recompute must keep the 0 visible
+    # AND zero out the Consumables subtotal pill.
+    user = _make_user(
+        "cons-zero@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    _seed_box_count_endpoint_fixtures()
+    dry_ice, _ = _seed_box_counts_consumable_fixtures()
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/sc/quote/leg/1/box-counts",
+        data={
+            "tissue_code_1_1": "PELV03",
+            "qty_1_1": "2",
+            "temp_mode_1": "frozen",
+            f"cons_qty_1_{dry_ice.id}": "0",
+        },
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    dry_ice_slice = html.split(
+        f'name="cons_qty_1_{dry_ice.id}"', 1
+    )[1].split("</div>", 1)[0]
+    assert 'value="0"' in dry_ice_slice
+    # Section pill rides on the same response; with the default
+    # suppressed the Consumables subtotal collapses to 0 lb.
+    cons_pill = html.split('id="sc-consumable-subtotal-1"', 1)[1].split(
+        "</div>", 1
+    )[0]
+    assert "0.0 lb" in cons_pill
+
+
 def test_sc_box_counts_partial_blocks_non_sc_user(app: Flask) -> None:
     user = _make_user("non-sc-box@example.com", rate_set="default")
     client = app.test_client()
@@ -768,11 +863,12 @@ def test_sc_box_counts_partial_emits_weight_subtotals(app: Flask) -> None:
     # OOB swap wrapper for the subtotals card.
     assert 'id="sc-weight-subtotals-1"' in html
     assert "Shipment weight" in html
-    # 79 lb tissue + 14 lb XLG tare = 93 lb total. No consumables
-    # entered -> consumable subtotal is 0 lb.
+    # 79 lb tissue + 14 lb XLG tare + 25 lb dry ice auto-default
+    # (frozen leg, 1 box -> 1 domestic dry ice) = 118 lb total.
     assert "79.0" in html
     assert "14.0" in html
-    assert "93.0" in html
+    assert "25.0" in html
+    assert "118.0" in html
 
 
 def test_tissue_lookup_default_qty_lands_in_oob_subtotals(app: Flask) -> None:
@@ -789,16 +885,18 @@ def test_tissue_lookup_default_qty_lands_in_oob_subtotals(app: Flask) -> None:
     client = app.test_client()
     _login(client, user.id)
     # No qty_1_1 in the query string - mimics the very first lookup
-    # after the user types a code. Consumables are opt-in, so the recap
-    # TOTAL = tissue + box-tare only.
+    # after the user types a code. Frozen leg + 1 XLG box also triggers
+    # the dry-ice auto-default, so the recap TOTAL = tissue + box-tare
+    # + 1 box × 25 lb dry ice.
     response = client.get(
         "/sc/quote/tissue-lookup?leg=1&i=1&code=PELV03&temp_mode_1=frozen"
     )
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert 'id="sc-weight-subtotals-1"' in html
-    # Tissue 79 lb (qty 1 × 79) + XLG tare 14 lb = 93 lb total.
-    assert "93.0" in html
+    # Tissue 79 lb (qty 1 × 79) + XLG tare 14 lb + dry ice 25 lb
+    # = 118 lb total.
+    assert "118.0" in html
     # And the Tissue subsection pill carries 79.0 lb (the leg's tissue
     # subtotal, derived from qty=1 default - the regression bait).
     assert 'id="sc-tissue-subtotal-1"' in html

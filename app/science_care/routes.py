@@ -56,6 +56,7 @@ from app.policies import sc_admin_required, sc_user_required
 from app.services.science_care_quote import (
     TissueRow,
     _collect_tissue_rows,
+    _default_consumable_for_mode,
     _normalize_multi_reference,
     _tissue_box_capacity_index,
     allocate_boxes,
@@ -501,6 +502,46 @@ def _resolve_box_values(
     return box_values
 
 
+def _resolve_consumable_values(
+    form: Mapping[str, str],
+    leg: int,
+    consumable_index: list[SCConsumable],
+    *,
+    total_boxes: int,
+    temp_mode: str,
+) -> dict[int, str]:
+    """Return the per-input display map for the consumables Qty grid.
+
+    Mirrors :func:`_resolve_box_values` for the consumables row so the
+    HTMX partial can re-render the grid alongside the box-count + weight
+    OOB swaps. Semantics match
+    :func:`app.services.science_care_quote._consumable_picks_from_form`:
+
+    * A non-blank typed value wins (including an explicit ``"0"``) and
+      is preserved verbatim so the user's suppression / override
+      survives the swap.
+    * A blank input for the consumable that
+      :func:`_default_consumable_for_mode` returns for ``temp_mode``
+      falls back to ``str(total_boxes)`` so the field visibly shows the
+      auto-applied count rather than reading ``0`` while the subtotal
+      includes its weight.
+    * Non-matching consumables stay out of the dict so the template
+      renders them blank - the placeholder ``0`` keeps the page tidy.
+    """
+
+    default = _default_consumable_for_mode(temp_mode, consumable_index)
+    default_id = default.id if default is not None else None
+    out: dict[int, str] = {}
+    for cons in consumable_index:
+        raw = form.get(f"cons_qty_{leg}_{cons.id}")
+        if raw is not None and str(raw).strip() != "":
+            out[int(cons.id)] = str(raw).strip()
+            continue
+        if cons.id == default_id and total_boxes > 0:
+            out[int(cons.id)] = str(total_boxes)
+    return out
+
+
 @science_care_bp.post("/quote/leg/<int:leg>/box-counts")
 @login_required
 @sc_user_required
@@ -605,6 +646,26 @@ def _render_box_counts_and_subtotals(
         subtotals=subtotals,
         oob=True,
     )
+    # OOB-swap the consumable Qty grid so the matching temp_mode default
+    # row visibly reflects the new box count - the subtotal already
+    # includes its weight via compute_leg_subtotals, so leaving the
+    # input blank made the page lie about what was being charged.
+    total_boxes = int(sum(final_boxes_by_type.values()))
+    temp_mode = (form.get(f"temp_mode_{leg}") or "").strip()
+    consumable_values = _resolve_consumable_values(
+        form,
+        leg,
+        consumable_index,
+        total_boxes=total_boxes,
+        temp_mode=temp_mode,
+    )
+    cons_inputs_html = render_template(
+        "sc/_consumable_qty_inputs.html",
+        leg=leg,
+        consumables=consumable_index,
+        consumable_values=consumable_values,
+        oob=True,
+    )
     # Per-section subtotal pills (Consumables / Tissue items / Boxes)
     # each live under their respective fieldset and are swapped
     # individually via OOB so the user sees the same numbers without
@@ -624,7 +685,7 @@ def _render_box_counts_and_subtotals(
             ("box", "Box tare", "box_tare_lb"),
         )
     )
-    return box_counts_html, subtotals_html + section_html
+    return box_counts_html, subtotals_html + section_html + cons_inputs_html
 
 
 @science_care_bp.get("/quote/defaults")

@@ -276,32 +276,9 @@
               to suppress the default for a specific row. Non-matching
               consumables stay at 0 unless you enter a Qty.
             </p>
-            <div class="row g-2">
-              {% for cons in consumables %}
-              <div class="col-12 col-md-6 col-lg-4">
-                <label class="form-label small" for="cons_qty_{{ leg }}_{{ cons.id }}">
-                  {{ cons.consumable_type|replace("_", " ")|title }}
-                  <span class="text-body-secondary">
-                    · {{ cons.temp_mode|title }} · {{ cons.scope|title }}
-                    ({{ cons.weight_lb_per_box }} lb/box)
-                  </span>
-                </label>
-                <input class="form-control form-control-sm"
-                       type="number"
-                       min="0"
-                       step="1"
-                       id="cons_qty_{{ leg }}_{{ cons.id }}"
-                       name="cons_qty_{{ leg }}_{{ cons.id }}"
-                       value="{{ request.form.get('cons_qty_' ~ leg ~ '_' ~ cons.id, '') }}"
-                       placeholder="0"
-                       hx-post="{{ url_for('science_care.sc_box_counts_partial', leg=leg) }}"
-                       hx-trigger="input delay:300ms"
-                       hx-include="#sc-leg-{{ leg }}"
-                       hx-target="#box-counts-{{ leg }}"
-                       hx-swap="outerHTML" />
-              </div>
-              {% endfor %}
-            </div>
+            {% with consumable_values = sc_consumable_values_for_leg(leg_result) %}
+              {% include "sc/_consumable_qty_inputs.html" %}
+            {% endwith %}
             {% with section = "consumable",
                     label = "Consumables",
                     weight_lb = subtotals_initial.consumable_lb %}
