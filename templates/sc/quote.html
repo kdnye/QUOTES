@@ -364,14 +364,15 @@
       "hx-post",
       `/sc/quote/leg/${leg}/box-counts`
     );
-    // Numeric Qty inputs use input+debounce so each keystroke retunes
-    // the subtotals; selects fire on change since their value space is
-    // discrete.
-    const isNumberInput = control.tagName === "INPUT"
-      && control.type === "number";
+    // Free-form inputs (number Qty + text intl_country) use
+    // input+debounce so each keystroke retunes the subtotals; selects
+    // (temp_mode) fire on change since their value space is discrete.
+    // Gating on tagName covers both <input type="number"> and
+    // <input type="text"> with one branch.
+    const isFreeFormInput = control.tagName === "INPUT";
     control.setAttribute(
       "hx-trigger",
-      isNumberInput ? "input delay:300ms" : "change"
+      isFreeFormInput ? "input delay:300ms" : "change"
     );
     control.setAttribute("hx-include", `#sc-leg-${leg}`);
     control.setAttribute("hx-target", `#box-counts-${leg}`);
