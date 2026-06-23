@@ -1538,6 +1538,13 @@ def test_sc_email_ops_includes_per_leg_booking_details(app: Flask) -> None:
     assert "Arm tissue" in html
     assert "MED" in html
     assert "dry_ice" in html
+    # Weight summary: subtotals per segment plus the shipment total.
+    # Tissue: 4 x 2.5 = 10.00 lb. Boxes: 2 x 2.0 = 4.00 lb.
+    # Consumables: 2 x 5.0 = 10.00 lb. Shipment total = 24.00 lb.
+    assert "Tissue weight subtotal: 10.00 lb" in html
+    assert "Boxes weight subtotal: 4.00 lb" in html
+    assert "Consumable weight subtotal: 10.00 lb" in html
+    assert "Shipment weight summary: 24.00 lb" in html
 
 
 def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
