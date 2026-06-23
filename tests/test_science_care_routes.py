@@ -1749,6 +1749,11 @@ def test_sc_email_ops_text_body_separates_consecutive_legs(
     # only between consecutive legs.
     pre_leg1 = html.split("Leg 1:", 1)[0]
     assert separator not in pre_leg1
+    # The separator carries blank lines on BOTH sides for readability -
+    # a regression that dropped the leading blank line would still pass
+    # the count assertion, so check the surrounding whitespace
+    # explicitly.
+    assert f"\n\n{separator}\n\n" in html
 
 
 def test_sc_email_ops_send_dispatches_via_postmark_and_records_receipt(
