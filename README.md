@@ -460,6 +460,13 @@ ships defaulted to `— select —` so the operator has to explicitly pick
 **Frozen** or **Ready to Use**; a blank Mode short-circuits the temp_mode
 consumable auto-default but otherwise quotes the leg normally.
 
+Each leg also exposes a **This is a return** checkbox. When checked, the
+orchestrator swaps the leg's origin and destination so the quote (and the
+Established Lane lookup) prices from the typed customer ZIP **back to the
+lab** instead of from the lab outbound. All other inputs — tissue rows,
+boxes, consumables, accessorials, and the cheapest-of-three rollup — are
+unchanged.
+
 ### Per-tissue box capacities
 
 Each tissue ships in a specific box size; some tissues fit multiple sizes with

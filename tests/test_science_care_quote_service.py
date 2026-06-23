@@ -230,6 +230,38 @@ def test_international_leg_skipped(
     assert calls == []
 
 
+def test_return_swaps_origin_and_destination(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When ``is_return_<n>`` is checked, the leg prices from the
+    destination ZIP back to the lab — the customer ZIP becomes the
+    quote's origin and the lab's origin ZIP becomes its destination."""
+
+    _seed_reference(app)
+    user = _make_user()
+    # Stub prices keyed by the *post-swap* destination (the lab ZIP).
+    calls = _stub_create_quote(
+        monkeypatch,
+        {
+            ("Air", "85705"): 410.0,
+            ("Hotshot", "85705"): 365.0,
+        },
+    )
+    form = _form(is_return_1="Y")
+    result = svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
+
+    leg = result["legs"][0]
+    assert leg.is_return is True
+    # Customer ZIP is now the origin, lab ZIP the destination.
+    assert leg.origin_zip == "98101"
+    assert leg.dest_zip == "85705"
+    assert leg.winner_mode == "Hotshot"
+    assert leg.winner_total == 365.0
+    # create_quote() was invoked with the swapped pair on both modes.
+    assert all(call["origin"] == "98101" for call in calls)
+    assert all(call["destination"] == "85705" for call in calls)
+
+
 def test_full_orchestration_persists_session_and_picks_winner(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

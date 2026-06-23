@@ -117,6 +117,7 @@ class LegResult:
     routing_type: str = ""
     temp_mode: str = ""
     intl_country: str = ""
+    is_return: bool = False
     total_weight_lb: float = 0.0
     # Breakdown of total_weight_lb so the results card can show which
     # component (tissue payload vs. consumables vs. box tare) is driving
@@ -957,6 +958,9 @@ def compute_sc_multileg(
         result.intl_country = (
             form.get(f"intl_country_{n}") or ""
         ).strip()
+        result.is_return = str(
+            form.get(f"is_return_{n}") or ""
+        ).strip().upper() in {"Y", "ON", "TRUE", "1"}
 
         # International guard - record and continue without touching the
         # quote service. The leg contributes $0 to the grand total.
@@ -980,6 +984,15 @@ def compute_sc_multileg(
             result.skip_reason = "destination ZIP empty or invalid"
             legs.append(result)
             continue
+
+        # Return shipments price from the customer ZIP back to the lab.
+        # Swap the resolved origin/destination so create_quote() and the
+        # established-lane lookup both see the actual flow.
+        if result.is_return:
+            result.origin_zip, result.dest_zip = (
+                result.dest_zip,
+                result.origin_zip,
+            )
 
         tissue_rows = _collect_tissue_rows(form, n)
         if not tissue_rows:
