@@ -60,4 +60,9 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Run pytest
-        run: pytest -q
+        # -n auto runs one worker per CPU; --dist=loadfile keeps tests
+        # from the same file on the same worker so each file's app
+        # fixture only migrates the schema once. conftest provisions
+        # per-worker databases on demand so workers don't collide on
+        # the autouse schema-reset fixture.
+        run: pytest -q -n auto --dist=loadfile
