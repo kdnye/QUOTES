@@ -1547,6 +1547,92 @@ def test_sc_email_ops_includes_per_leg_booking_details(app: Flask) -> None:
     assert "Shipment weight summary: 24.00 lb" in html
 
 
+def test_sc_email_ops_omits_tare_breakdown_for_unknown_box(
+    app: Flask,
+) -> None:
+    """If a leg's ``boxes_json`` references a code missing from the SC
+    reference table, the booking email must still list the box (so ops
+    can chase down the unknown code) but omit the ``lb/ea = lb`` weight
+    breakdown - we have no tare to report. A valid 0-lb tare in the
+    reference table, by contrast, should render normally.
+    """
+
+    from app.models import (
+        Quote,
+        SCBoxType,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+    )
+
+    user = _make_user(
+        "sc-unknown-box@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    db.session.add(
+        SCBoxType(
+            code="ZERO",
+            label="Zero-tare box",
+            length_in=10.0,
+            width_in=10.0,
+            height_in=10.0,
+            tare_weight_lb=0.0,
+            rate_set=RATE_SET_SCIENCE_CARE,
+        )
+    )
+    db.session.commit()
+
+    import json
+
+    session = SCQuoteSession(
+        user_id=user.id,
+        grand_total=100.0,
+        payload_json=json.dumps({"multi_reference": "SCMQ0100"}),
+        multi_reference="SCMQ0100",
+    )
+    db.session.add(session)
+    db.session.flush()
+    hot = Quote(
+        user_id=user.id,
+        user_email="sc-buyer@example.com",
+        quote_type="Hotshot",
+        origin="85705",
+        destination="98101",
+        weight=5.0,
+        pieces=1,
+        zone="X",
+        total=100.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(hot)
+    db.session.flush()
+    db.session.add(
+        SCQuoteSessionLeg(
+            session_id=session.id,
+            leg_index=1,
+            hotshot_quote_id=hot.id,
+            winner_mode="Hotshot",
+            winner_total=100.0,
+            boxes_json=json.dumps({"GHOST": 3, "ZERO": 2}),
+        )
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(f"/sc/quote/{session.id}/email-ops").get_data(
+        as_text=True
+    )
+    # Unknown box GHOST is still listed (so ops can investigate) but
+    # without the "( lb/ea = lb )" breakdown - we have no tare to print.
+    assert "- GHOST x 3" in html
+    assert "GHOST x 3 (" not in html
+    # Valid 0-lb tare on ZERO must still render the breakdown - the
+    # truthiness bug would have hidden this.
+    assert "- ZERO (Zero-tare box) x 2 (0.00 lb/ea = 0.00 lb)" in html
+    # Subtotal is 0 + 0 = 0 lb, not omitted.
+    assert "Boxes weight subtotal: 0.00 lb" in html
+
+
 def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
     sc_user = _make_user(
         "sc-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE

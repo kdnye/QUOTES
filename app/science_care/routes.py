@@ -1440,12 +1440,24 @@ def _hydrate_legs_for_display(
                 if qty <= 0:
                     continue
                 box = box_index_by_code.get(str(code).upper())
+                # ``None`` whenever we don't have a usable tare - either
+                # the box code is unknown to the SC reference table or
+                # the matched row has a NULL ``tare_weight_lb``. The
+                # column is ``nullable=False`` in the schema but a
+                # future migration or a directly-constructed test row
+                # could leave it ``None``; the template guards on
+                # ``is not none`` so both paths cleanly omit the
+                # per-row weight breakdown instead of rendering "0.00
+                # lb/ea". The subtotal still adds 0 for the
+                # unknown/unspecified case so ``boxes_weight_lb`` stays
+                # consistent with the rendered breakdown.
                 tare_weight_lb = (
-                    float(box.tare_weight_lb or 0.0)
+                    float(box.tare_weight_lb)
                     if box is not None
-                    else 0.0
+                    and box.tare_weight_lb is not None
+                    else None
                 )
-                line_weight_lb = tare_weight_lb * qty
+                line_weight_lb = (tare_weight_lb or 0.0) * qty
                 row["boxes"].append(
                     {
                         "code": str(code),

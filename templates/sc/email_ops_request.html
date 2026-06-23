@@ -147,7 +147,7 @@ Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} -> {{ leg.destination or '—
 {% endif %}    Tissue weight subtotal: {{ '%.2f'|format(leg.tissue_weight_lb) }} lb
   Boxes used:
 {% if leg.boxes -%}
-{% for box in leg.boxes %}    - {{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} x {{ box.count }}{% if box.tare_weight_lb %} ({{ '%.2f'|format(box.tare_weight_lb) }} lb/ea = {{ '%.2f'|format(box.line_weight_lb) }} lb){% endif %}
+{% for box in leg.boxes %}    - {{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} x {{ box.count }}{% if box.tare_weight_lb is not none %} ({{ '%.2f'|format(box.tare_weight_lb) }} lb/ea = {{ '%.2f'|format(box.line_weight_lb) }} lb){% endif %}
 {% endfor -%}
 {% else %}    (none)
 {% endif %}    Boxes weight subtotal: {{ '%.2f'|format(leg.boxes_weight_lb) }} lb
