@@ -49,6 +49,10 @@
          href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=session.id) }}">
         Email Ops for Booking
       </a>
+      <a class="btn btn-outline-primary btn-sm"
+         href="{{ url_for('science_care.sc_quote_form', from_session=session.id) }}">
+        Edit as new quote
+      </a>
     </div>
   </div>
   <div class="card-body small text-body-secondary">

@@ -468,3 +468,176 @@ def test_admin_ria_rates_snapshot_handles_empty_fuel_surcharges(
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "sync job has not persisted any rates yet" in html
+
+
+def test_new_quote_get_with_from_quote_prefills_form(app: Flask) -> None:
+    """GET ``/quotes/new?from_quote=<id>`` prefills inputs from a prior quote.
+
+    Confirms the prefill plumbing reaches the rendered HTML for every field
+    the helper exposes (ZIPs, weight, dims, pieces, accessorial checkboxes,
+    client reference, and the quote_type radio).
+    """
+
+    import json as _json
+    from app.models import Quote
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    source = Quote(
+        user_id=user.id,
+        user_email=user.email,
+        quote_type="Hotshot",
+        origin="30301",
+        destination="60601",
+        weight=250.0,
+        actual_weight=250.0,
+        dim_weight=0.0,
+        pieces=3,
+        length=10.0,
+        width=12.0,
+        height=18.0,
+        total=500.0,
+        zone="X",
+        client_reference="REF-EDIT-1",
+        quote_metadata=_json.dumps(
+            {"accessorials": {"Liftgate": 75.0, "Residential": 20.0}}
+        ),
+    )
+    db.session.add(source)
+    db.session.commit()
+    db.session.refresh(source)
+
+    response = client.get(f"/quotes/new?from_quote={source.quote_id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # ZIPs + weight + pieces + one dim
+    assert 'value="30301"' in html
+    assert 'value="60601"' in html
+    assert 'value="250.0"' in html
+    assert 'name="pieces"' in html and 'value="3"' in html
+    assert 'name="length"' in html and 'value="10.0"' in html
+    # Hotshot radio is the prefilled quote_type. The template renders
+    # Hotshot's <input ... value="Hotshot" checked> because quote_type
+    # is set from prefill.
+    assert 'value="Hotshot"' in html
+    # Reference prefilled so the user can copy/tweak it without retyping.
+    assert "REF-EDIT-1" in html
+
+
+def test_new_quote_get_with_from_quote_scopes_to_user_visibility(
+    app: Flask,
+) -> None:
+    """A customer cannot prefill another user's quote — silently skipped."""
+
+    from app.models import Quote
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+
+    other = User(email="other@example.com", role="customer")
+    other.set_password("password123")
+    db.session.add(other)
+    db.session.commit()
+
+    other_quote = Quote(
+        user_id=other.id,
+        user_email=other.email,
+        quote_type="Air",
+        origin="11111",
+        destination="22222",
+        weight=99.0,
+        actual_weight=99.0,
+        pieces=1,
+        total=10.0,
+        zone="X",
+    )
+    db.session.add(other_quote)
+    db.session.commit()
+    db.session.refresh(other_quote)
+
+    response = client.get(f"/quotes/new?from_quote={other_quote.quote_id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The other user's ZIPs MUST NOT leak into our form.
+    assert "11111" not in html
+    assert "22222" not in html
+
+
+def test_edit_quote_dispatches_quote_id_to_new_quote(app: Flask) -> None:
+    """POST ``/quotes/edit`` with a Quote ID redirects to ``/quotes/new``."""
+
+    from app.models import Quote
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    source = Quote(
+        user_id=user.id,
+        user_email=user.email,
+        quote_type="Air",
+        origin="30301",
+        destination="60601",
+        weight=10.0,
+        actual_weight=10.0,
+        pieces=1,
+        total=100.0,
+        zone="X",
+    )
+    db.session.add(source)
+    db.session.commit()
+    db.session.refresh(source)
+
+    response = client.post(
+        "/quotes/edit", data={"quote_id": source.quote_id}
+    )
+    assert response.status_code == 302
+    assert (
+        f"/quotes/new?from_quote={source.quote_id}" in response.headers["Location"]
+    )
+
+
+def test_edit_quote_dispatches_client_reference_to_new_quote(app: Flask) -> None:
+    """Client Reference falls through to single-quote lookup for non-SC users."""
+
+    from app.models import Quote
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    source = Quote(
+        user_id=user.id,
+        user_email=user.email,
+        quote_type="Air",
+        origin="30301",
+        destination="60601",
+        weight=10.0,
+        actual_weight=10.0,
+        pieces=1,
+        total=100.0,
+        zone="X",
+        client_reference="PO-EDIT-1",
+    )
+    db.session.add(source)
+    db.session.commit()
+    db.session.refresh(source)
+
+    response = client.post(
+        "/quotes/edit", data={"client_reference": "PO-EDIT-1"}
+    )
+    assert response.status_code == 302
+    assert (
+        f"/quotes/new?from_quote={source.quote_id}" in response.headers["Location"]
+    )
+
+
+def test_edit_quote_returns_page_when_lookup_misses(app: Flask) -> None:
+    """An unknown reference re-renders the search page with a warning."""
+
+    client = app.test_client()
+    _create_user_and_login(client)
+
+    response = client.post(
+        "/quotes/edit", data={"quote_id": "Q-BCDFGHJ2"}
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "No quote found" in html

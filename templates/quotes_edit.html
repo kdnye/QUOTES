@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="row justify-content-center">
+  <div class="col-12 col-md-8 col-lg-6">
+    <div class="card shadow-sm">
+      <div class="card-body p-4">
+        <h1 class="h4 mb-1">Edit a quote</h1>
+        <p class="text-muted">
+          Find a previous quote, open a prefilled form, then change what you
+          need and submit. Your original quote stays untouched — submitting
+          here creates a brand-new quote.
+        </p>
+
+        <form method="post" class="row g-3 mt-2">
+          {{ csrf_input() }}
+
+          <div class="col-12">
+            <label for="edit-quote-id" class="form-label">Quote ID</label>
+            <input
+              type="text"
+              id="edit-quote-id"
+              name="quote_id"
+              class="form-control"
+              placeholder="e.g. Q-BCDFGHJ2"
+              autocomplete="off"
+            />
+            <div class="form-text">
+              Opens <code>/quotes/new</code> with the single-leg quote's fields
+              prefilled.
+            </div>
+          </div>
+
+          <div class="col-12">
+            <label for="edit-client-reference" class="form-label">
+              Client Reference
+            </label>
+            <input
+              type="text"
+              id="edit-client-reference"
+              name="client_reference"
+              class="form-control"
+              placeholder="e.g. SCMQ0042 or PO-12345"
+              autocomplete="off"
+            />
+            <div class="form-text">
+              Multi-leg references (<code>SCMQNNNN</code>) open
+              <code>/sc/quote</code>; customer references on single-leg quotes
+              open <code>/quotes/new</code>.
+            </div>
+          </div>
+
+          <div class="col-12">
+            <button type="submit" class="btn btn-primary w-100">
+              Find quote &amp; open prefilled form
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

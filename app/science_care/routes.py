@@ -25,6 +25,7 @@ import csv
 import io
 import json
 import os
+from dataclasses import dataclass, field
 from typing import Any, Mapping, Union
 
 import pandas as pd
@@ -33,6 +34,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    g,
     redirect,
     render_template,
     request,
@@ -240,7 +242,39 @@ def _default_lab_slots(user_id: int) -> dict[int, str]:
 @login_required
 @sc_user_required
 def sc_quote_form() -> str:
-    """Render the empty seven-leg multi-lab quote form."""
+    """Render the empty seven-leg multi-lab quote form.
+
+    When called with ``?from_session=<id>`` or ``?from_ref=<multi_ref>``
+    the form is prefilled from a previously-submitted multi-leg quote so
+    the SC user can edit fields and submit a brand-new run. The original
+    session is never modified; only ``payload_json`` is re-projected
+    into the inputs.
+    """
+
+    prefill_payload = _resolve_sc_edit_prefill(request.args)
+    g.sc_prefill = prefill_payload or {}
+
+    box_types = _box_type_choices()
+    consumables = _consumable_choices()
+    prefill_results = None
+    prefill_tissue_rows_by_leg: dict[int, list[dict]] = {}
+    if prefill_payload:
+        tissue_index, _, capacity_index = _sc_reference_indexes_for_prefill()
+        box_index_by_code = {b.code: b for b in box_types}
+        box_index_by_id = {int(b.id): b for b in box_types}
+        prefill_results = _build_prefill_results(
+            prefill_payload, box_index_by_id, consumables
+        )
+        for n in range(1, SC_LEG_COUNT + 1):
+            rows = _build_prefill_tissue_rows(
+                prefill_payload,
+                n,
+                tissue_index,
+                box_index_by_code,
+                capacity_index,
+            )
+            if rows:
+                prefill_tissue_rows_by_leg[n] = rows
 
     return render_template(
         "sc/quote.html",
@@ -248,12 +282,192 @@ def sc_quote_form() -> str:
         legs=list(range(1, SC_LEG_COUNT + 1)),
         accessorials=_accessorial_labels(),
         labs=_lab_choices(),
-        box_types=_box_type_choices(),
+        box_types=box_types,
         tissue_codes=_tissue_code_choices(),
-        consumables=_consumable_choices(),
+        consumables=consumables,
         default_labs_by_leg=_default_lab_slots(current_user.id),
         maps_api_key=_resolve_maps_api_key(),
+        prefill_results=prefill_results,
+        prefill_tissue_rows_by_leg=prefill_tissue_rows_by_leg,
     )
+
+
+# Minimal LegResult-shaped object the existing jinja helpers
+# (sc_box_values_for_leg / sc_consumable_values_for_leg /
+# sc_initial_subtotals_for_leg) consume. Only the prefill-relevant
+# columns are populated — weights stay at 0 because the live HTMX
+# endpoints recompute them on the next form interaction.
+@dataclass
+class _SyntheticPrefillLeg:
+    box_counts: dict[str, int] = field(default_factory=dict)
+    consumable_picks: dict[int, int] = field(default_factory=dict)
+    tissue_weight_lb: float = 0.0
+    consumable_weight_lb: float = 0.0
+    box_tare_weight_lb: float = 0.0
+    total_weight_lb: float = 0.0
+
+
+@dataclass
+class _SyntheticPrefillResults:
+    legs: list[_SyntheticPrefillLeg]
+
+
+def _resolve_sc_edit_prefill(args) -> dict[str, str] | None:
+    """Resolve ``?from_session`` / ``?from_ref`` into a saved form payload.
+
+    Returns ``None`` when neither arg is present, the lookup fails, or
+    the persisted JSON is unparseable. ``multi_reference`` is stripped
+    so the new submission either auto-assigns the next SCMQ or the user
+    types a fresh value — leaving the old one in place would just trip
+    the UNIQUE constraint on submit.
+    """
+
+    raw_id = (args.get("from_session") or "").strip()
+    raw_ref = (args.get("from_ref") or "").strip()
+    if not raw_id and not raw_ref:
+        return None
+
+    session = None
+    if raw_id:
+        try:
+            session_id = int(raw_id)
+        except ValueError:
+            flash("Invalid session ID for prefill.", "warning")
+            return None
+        session = SCQuoteSession.query.filter_by(id=session_id).first()
+    if session is None and raw_ref:
+        ref, _err = _normalize_multi_reference(raw_ref)
+        if ref:
+            session = SCQuoteSession.query.filter_by(
+                multi_reference=ref
+            ).first()
+    if session is None:
+        flash("Could not find the multi-leg quote to prefill.", "warning")
+        return None
+
+    payload = _safe_json_load(session.payload_json)
+    if not isinstance(payload, dict):
+        flash(
+            "Multi-leg quote has no replayable form payload.", "warning"
+        )
+        return None
+
+    flash(
+        f"Loaded multi-leg {session.multi_reference}. Edit any field "
+        "and submit to run a new quote.",
+        "info",
+    )
+    return {
+        str(k): str(v)
+        for k, v in payload.items()
+        if k != "multi_reference"
+    }
+
+
+def _sc_reference_indexes_for_prefill():
+    """Pre-cache the tissue / box-code / capacity indexes used by prefill."""
+
+    tissue_index = {
+        t.tissue_code: t
+        for t in SCTissueCode.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all()
+    }
+    box_index_by_code = {
+        b.code: b
+        for b in SCBoxType.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all()
+    }
+    capacity_index = _tissue_box_capacity_index()
+    return tissue_index, box_index_by_code, capacity_index
+
+
+def _build_prefill_results(
+    payload: Mapping[str, str],
+    box_index_by_id: dict[int, SCBoxType],
+    consumable_index: list[SCConsumable],
+) -> _SyntheticPrefillResults:
+    """Project the saved form payload into synthetic per-leg LegResults.
+
+    Reads ``box_count_<leg>_<box_id>`` and ``cons_qty_<leg>_<cons_id>``
+    keys for every leg and stores them keyed the way
+    :func:`sc_box_values_for_leg` /
+    :func:`sc_consumable_values_for_leg` expect (box code → count and
+    consumable id → qty). Empty / zero values are skipped so the
+    template's existing "only render non-zero" rules apply unchanged.
+    """
+
+    legs: list[_SyntheticPrefillLeg] = []
+    for n in range(1, SC_LEG_COUNT + 1):
+        box_counts: dict[str, int] = {}
+        for box_id, box in box_index_by_id.items():
+            raw = payload.get(f"box_count_{n}_{box_id}")
+            try:
+                count = int(str(raw).strip()) if raw not in (None, "") else 0
+            except (TypeError, ValueError):
+                count = 0
+            if count > 0:
+                box_counts[box.code] = count
+
+        cons_picks: dict[int, int] = {}
+        for cons in consumable_index:
+            raw = payload.get(f"cons_qty_{n}_{cons.id}")
+            try:
+                qty = int(str(raw).strip()) if raw not in (None, "") else 0
+            except (TypeError, ValueError):
+                qty = 0
+            if qty > 0:
+                cons_picks[int(cons.id)] = qty
+
+        legs.append(
+            _SyntheticPrefillLeg(
+                box_counts=box_counts, consumable_picks=cons_picks
+            )
+        )
+    return _SyntheticPrefillResults(legs=legs)
+
+
+def _build_prefill_tissue_rows(
+    payload: Mapping[str, str],
+    leg: int,
+    tissue_index: dict[str, SCTissueCode],
+    box_index_by_code: dict[str, SCBoxType],
+    capacity_index: dict[str, dict[str, int]],
+) -> list[dict]:
+    """Translate persisted tissue rows into the partial's context dicts.
+
+    Walks ``tissue_code_<leg>_<i>`` / ``qty_<leg>_<i>`` keys via the same
+    :func:`_collect_tissue_rows` helper the orchestrator uses, then
+    builds one context dict per row in the shape ``_tissue_row.html``
+    expects (``prefill`` SCTissueCode object, ``code`` typed string,
+    ``qty``, ``capacities``, ``recommended_box_code``,
+    ``recommended_pieces_per_box``, ``user_box_pick``). Empty list when
+    the leg had no tissue rows in the saved payload — the template
+    falls back to rendering one blank row.
+    """
+
+    rows = _collect_tissue_rows(payload, leg)
+    out: list[dict] = []
+    for tr in rows:
+        capacities = capacity_index.get(tr.tissue_code, {})
+        recommended_box, recommended_per_box = recommended_box_for_qty(
+            tr.qty if tr.qty > 0 else 1,
+            capacities,
+            box_index_by_code,
+        )
+        out.append(
+            {
+                "tissue_obj": tissue_index.get(tr.tissue_code),
+                "tissue_code": tr.tissue_code,
+                "qty": tr.qty,
+                "capacities": capacities,
+                "recommended_box_code": recommended_box,
+                "recommended_pieces_per_box": recommended_per_box,
+                "user_box_pick": tr.user_box_code,
+            }
+        )
+    return out
 
 
 @science_care_bp.post("/quote/calculate")

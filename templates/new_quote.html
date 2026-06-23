@@ -55,7 +55,7 @@
           title="5-digit ZIP code where the driver will pick up the freight."
         ></i>
       </label>
-      <input type="text" id="origin_zip" name="origin_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+      <input type="text" id="origin_zip" name="origin_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" value="{{ prefill.origin_zip if prefill else '' }}" required />
       <div id="origin_zip_feedback" class="invalid-feedback"></div>
     </div>
     <div class="col-md-6">
@@ -67,7 +67,7 @@
           title="5-digit ZIP code where the shipment will be delivered."
         ></i>
       </label>
-      <input type="text" id="dest_zip" name="dest_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" required />
+      <input type="text" id="dest_zip" name="dest_zip" class="form-control" pattern="[0-9]{5}" inputmode="numeric" maxlength="5" value="{{ prefill.destination_zip if prefill else '' }}" required />
       <div id="dest_zip_feedback" class="invalid-feedback"></div>
     </div>
     </div>
@@ -82,7 +82,7 @@
         title="Enter the shipment's measured scale weight in pounds. Quotes use the greater of actual vs dimensional weight."
       ></i>
     </label>
-    <input type="number" step="0.01" min="0" id="weight_actual" name="weight_actual" class="form-control" required />
+    <input type="number" step="0.01" min="0" id="weight_actual" name="weight_actual" class="form-control" value="{{ prefill.weight_actual if prefill and prefill.weight_actual != '' else '' }}" required />
   </div>
 
   <div class="fsi-form-section fsi-form-section--boxed">
@@ -104,7 +104,7 @@
             title="Total number of handling units shipping together."
           ></i>
         </label>
-        <input type="number" min="1" id="pieces" name="pieces" value="1" class="form-control" />
+        <input type="number" min="1" id="pieces" name="pieces" value="{{ prefill.pieces if prefill else 1 }}" class="form-control" />
       </div>
       <div class="col-md-3">
         <label for="length" class="form-label">
@@ -115,7 +115,7 @@
             title="Longest side measurement of the freight in inches."
           ></i>
         </label>
-        <input type="number" step="0.01" min="0" id="length" name="length" class="form-control" />
+        <input type="number" step="0.01" min="0" id="length" name="length" class="form-control" value="{{ prefill.length if prefill and prefill.length != '' else '' }}" />
       </div>
       <div class="col-md-3">
         <label for="width" class="form-label">
@@ -126,7 +126,7 @@
             title="Side-to-side measurement of the freight in inches."
           ></i>
         </label>
-        <input type="number" step="0.01" min="0" id="width" name="width" class="form-control" />
+        <input type="number" step="0.01" min="0" id="width" name="width" class="form-control" value="{{ prefill.width if prefill and prefill.width != '' else '' }}" />
       </div>
       <div class="col-md-3">
         <label for="height" class="form-label">
@@ -137,7 +137,7 @@
             title="Stacked height of the freight in inches."
           ></i>
         </label>
-        <input type="number" step="0.01" min="0" id="height" name="height" class="form-control" />
+        <input type="number" step="0.01" min="0" id="height" name="height" class="form-control" value="{{ prefill.height if prefill and prefill.height != '' else '' }}" />
       </div>
     </div>
   </div>
@@ -154,7 +154,7 @@
     </h2>
     {% for acc in accessorial_options %}
     <div class="form-check">
-      <input class="form-check-input" type="checkbox" id="acc_{{ loop.index }}" name="accessorials" value="{{ acc }}" />
+      <input class="form-check-input" type="checkbox" id="acc_{{ loop.index }}" name="accessorials" value="{{ acc }}" {% if prefill and acc in prefill.accessorials %}checked{% endif %} />
       <label class="form-check-label" for="acc_{{ loop.index }}">{{ acc }}</label>
     </div>
     {% endfor %}

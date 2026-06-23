@@ -92,16 +92,18 @@
           {# Lab value resolution: if the form was POSTed (key present in
              request.form), trust its value as-is - including the empty
              string, since clearing a slot is an intentional override.
-             Only fall back to the saved default when the field was NEVER
-             submitted (initial GET / first page load). #}
+             Edit-mode (GET ``?from_session=``) writes the saved payload
+             onto ``g.sc_prefill`` so ``prefill_get`` returns it when the
+             POST form is empty. Falls back to the saved default lab slot
+             only on a fresh visit. #}
           {% set lab_key = 'lab_code_' ~ leg %}
           {% set dest_key = 'dest_zip_' ~ leg %}
           {% if lab_key in request.form %}
             {% set leg_lab_value = request.form.get(lab_key) %}
           {% else %}
-            {% set leg_lab_value = default_labs_by_leg.get(leg, '') %}
+            {% set leg_lab_value = prefill_get(lab_key, default_labs_by_leg.get(leg, '')) %}
           {% endif %}
-          {% set leg_dest_value = request.form.get(dest_key, '') %}
+          {% set leg_dest_value = prefill_get(dest_key, '') %}
           <span id="sc-leg-summary-{{ leg }}" class="small text-body-secondary">
             <span id="sc-leg-summary-lab-{{ leg }}"
                   data-placeholder="Lab">{{ leg_lab_value or 'Lab' }}</span>
@@ -153,23 +155,25 @@
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label" for="routing_type_{{ leg }}">Shipment type</label>
+              {% set routing_value = prefill_get('routing_type_' ~ leg, '') %}
               <select class="form-select"
                       id="routing_type_{{ leg }}"
                       name="routing_type_{{ leg }}">
-                <option value="">— select —</option>
-                <option>Outbound</option>
-                <option>SC to SC</option>
-                <option>Inbound</option>
+                <option value="" {% if not routing_value %}selected{% endif %}>— select —</option>
+                <option {% if routing_value == 'Outbound' %}selected{% endif %}>Outbound</option>
+                <option {% if routing_value == 'SC to SC' %}selected{% endif %}>SC to SC</option>
+                <option {% if routing_value == 'Inbound' %}selected{% endif %}>Inbound</option>
               </select>
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label" for="temp_mode_{{ leg }}">Mode</label>
+              {% set temp_value = prefill_get('temp_mode_' ~ leg, '') %}
               <select class="form-select"
                       id="temp_mode_{{ leg }}"
                       name="temp_mode_{{ leg }}">
-                <option value="" selected>— select —</option>
-                <option value="frozen">Frozen</option>
-                <option value="rtu">Ready to Use</option>
+                <option value="" {% if not temp_value %}selected{% endif %}>— select —</option>
+                <option value="frozen" {% if temp_value == 'frozen' %}selected{% endif %}>Frozen</option>
+                <option value="rtu" {% if temp_value == 'rtu' %}selected{% endif %}>Ready to Use</option>
               </select>
             </div>
             <div class="col-12 col-md-6">
@@ -177,12 +181,13 @@
               <input class="form-control"
                      id="intl_country_{{ leg }}"
                      name="intl_country_{{ leg }}"
+                     value="{{ prefill_get('intl_country_' ~ leg, '') }}"
                      placeholder="e.g. France" />
             </div>
             <div class="col-12">
               <div class="form-check">
                 {% set is_return_key = 'is_return_' ~ leg %}
-                {% set leg_is_return = request.form.get(is_return_key) in ('Y', 'on', 'true', '1') %}
+                {% set leg_is_return = prefill_get(is_return_key, '') in ('Y', 'on', 'true', '1') %}
                 <input class="form-check-input"
                        type="checkbox"
                        value="Y"
@@ -203,12 +208,14 @@
             <legend class="h6">Accessorials</legend>
             <div class="d-flex flex-wrap gap-3">
               {% for field, label in accessorials %}
+              {% set acc_value = prefill_get('acc_' ~ field ~ '_' ~ leg, '') %}
               <div class="form-check">
                 <input class="form-check-input"
                        type="checkbox"
                        value="Y"
                        id="acc_{{ field }}_{{ leg }}"
-                       name="acc_{{ field }}_{{ leg }}" />
+                       name="acc_{{ field }}_{{ leg }}"
+                       {% if acc_value in ('Y', 'on', 'true', '1') %}checked{% endif %} />
                 <label class="form-check-label" for="acc_{{ field }}_{{ leg }}">{{ label }}</label>
               </div>
               {% endfor %}
@@ -221,7 +228,11 @@
           {% set leg_result = (
               results.legs[leg - 1]
               if results and results.legs|length >= leg
-              else none
+              else (
+                  prefill_results.legs[leg - 1]
+                  if prefill_results and prefill_results.legs|length >= leg
+                  else none
+              )
           ) %}
           {% set subtotals_initial = sc_initial_subtotals_for_leg(leg_result) %}
 
@@ -252,16 +263,32 @@
                 </tr>
               </thead>
               <tbody>
-                {% with i = 1,
-                        prefill = None,
-                        code = "",
-                        qty_for_row = 0,
-                        capacities = {},
-                        recommended_box_code = None,
-                        recommended_pieces_per_box = 0,
-                        user_box_pick = "" %}
-                  {% include "sc/_tissue_row.html" %}
-                {% endwith %}
+                {% set _prefill_tissue_rows = prefill_tissue_rows_by_leg.get(leg) if prefill_tissue_rows_by_leg else None %}
+                {% if _prefill_tissue_rows %}
+                  {% for tr in _prefill_tissue_rows %}
+                    {% with i = loop.index,
+                            prefill = tr.tissue_obj,
+                            code = tr.tissue_code,
+                            qty_for_row = tr.qty,
+                            capacities = tr.capacities,
+                            recommended_box_code = tr.recommended_box_code,
+                            recommended_pieces_per_box = tr.recommended_pieces_per_box,
+                            user_box_pick = tr.user_box_pick %}
+                      {% include "sc/_tissue_row.html" %}
+                    {% endwith %}
+                  {% endfor %}
+                {% else %}
+                  {% with i = 1,
+                          prefill = None,
+                          code = "",
+                          qty_for_row = 0,
+                          capacities = {},
+                          recommended_box_code = None,
+                          recommended_pieces_per_box = 0,
+                          user_box_pick = "" %}
+                    {% include "sc/_tissue_row.html" %}
+                  {% endwith %}
+                {% endif %}
               </tbody>
             </table>
           </div>

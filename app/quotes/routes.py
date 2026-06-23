@@ -20,6 +20,8 @@ from flask_login import login_required, current_user
 from sqlalchemy import inspect
 from sqlalchemy.exc import IntegrityError, OperationalError
 
+from flask import redirect
+
 from . import quotes_bp
 from ..models import (
     db,
@@ -28,6 +30,7 @@ from ..models import (
     ZipZone,
     CostZone,
     AirCostZone,
+    SCQuoteSession,
 )
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
@@ -37,7 +40,12 @@ from app.services.constants import DIM_DIVISOR
 from app.services.mail import send_email, user_has_mail_privileges
 from app.services.quote import get_zip_notes
 from app.services.settings import is_quote_email_smtp_enabled
-from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
+from app.services.rate_sets import (
+    DEFAULT_RATE_SET,
+    SCIENCE_CARE_RATE_SETS,
+    normalize_rate_set,
+)
+from app.services.science_care_quote import _normalize_multi_reference
 
 logger = logging.getLogger(__name__)
 
@@ -599,12 +607,188 @@ def new_quote():
             "quote_result.html", **_quote_template_context(q, metadata)
         )
 
+    prefill = _resolve_new_quote_prefill(request.args)
     return render_template(
         "new_quote.html",
         accessorial_options=accessorial_options,
-        quote_type="Air",
+        quote_type=(prefill.get("quote_type") if prefill else "Air"),
         maps_api_key=maps_api_key,
+        prefill=prefill,
+        client_reference=(prefill.get("client_reference") if prefill else ""),
     )
+
+
+def _resolve_new_quote_prefill(args) -> dict | None:
+    """Build a prefill dict for ``new_quote.html`` from ``?from_quote=<id>``.
+
+    Returns ``None`` when no ``from_quote`` arg is present, the quote ID is
+    malformed, or no matching quote is visible to the caller (per the
+    standard visibility policy enforced by
+    :func:`_quote_lookup_query_for_user`). Missing-quote cases flash an
+    informational message so the user sees why the form is blank.
+    """
+
+    raw = (args.get("from_quote") or "").strip()
+    if not raw:
+        return None
+    normalized = _normalize_and_validate_quote_id(raw)
+    if normalized is None:
+        flash("Quote ID for prefill must look like 'Q-XXXXXXXX'.", "warning")
+        return None
+    quote = (
+        _quote_lookup_query_for_user(current_user)
+        .filter_by(quote_id=normalized)
+        .first()
+    )
+    if quote is None:
+        flash(
+            f"Could not find a quote matching {normalized} to prefill.",
+            "warning",
+        )
+        return None
+    prefill = _build_new_quote_prefill(quote)
+    flash(
+        f"Loaded data from quote {quote.quote_id}. Edit any field, then "
+        "submit to run a new quote.",
+        "info",
+    )
+    return prefill
+
+
+def _build_new_quote_prefill(quote: Quote) -> dict:
+    """Translate a persisted :class:`Quote` into form-input defaults.
+
+    Reconstructs the inputs ``new_quote.html`` exposes: ``quote_type``,
+    origin/destination ZIPs, weight, dimensions, pieces, and the set of
+    previously selected accessorial names. The ``client_reference`` is
+    surfaced so the template can prefill the field, but the new
+    submission must use a unique reference per user — the UNIQUE
+    constraint flashes a friendly conflict error if the user leaves it
+    untouched.
+    """
+
+    try:
+        metadata = json.loads(quote.quote_metadata or "{}")
+    except (json.JSONDecodeError, TypeError):
+        metadata = {}
+    if not isinstance(metadata, dict):
+        metadata = {}
+
+    raw_accessorials = metadata.get("accessorials")
+    if isinstance(raw_accessorials, dict):
+        selected = set(raw_accessorials.keys())
+    elif isinstance(raw_accessorials, (list, tuple)):
+        selected = set(raw_accessorials)
+    else:
+        selected = set()
+
+    return {
+        "quote_type": (quote.quote_type or "Air"),
+        "origin_zip": quote.origin or "",
+        "destination_zip": quote.destination or "",
+        "weight_actual": (
+            quote.actual_weight
+            if quote.actual_weight is not None
+            else (quote.weight if quote.weight is not None else "")
+        ),
+        "pieces": quote.pieces if quote.pieces else 1,
+        "length": quote.length if quote.length else "",
+        "width": quote.width if quote.width else "",
+        "height": quote.height if quote.height else "",
+        "accessorials": selected,
+        "client_reference": quote.client_reference or "",
+    }
+
+
+@quotes_bp.route("/edit", methods=["GET", "POST"])
+@login_required
+def edit_quote():
+    """Edit-mode lookup: open a prefilled new-quote form from an old quote.
+
+    This endpoint never mutates an existing quote. POSTing a Quote ID
+    redirects to ``/quotes/new?from_quote=<id>``; POSTing a Client
+    Reference resolves it to either an SC multi-leg session (→
+    ``/sc/quote?from_session=<id>``) or a single-quote
+    ``Quote.client_reference`` (→ ``/quotes/new?from_quote=<id>``),
+    favouring the SC path for SC-capable users so a typed
+    ``SCMQ0042`` lands in the multi-leg form. The new submission is a
+    fresh quote — the original row is untouched.
+    """
+
+    if request.method == "GET":
+        return render_template("quotes_edit.html")
+
+    quote_id_raw = (request.form.get("quote_id") or "").strip()
+    client_ref_raw = (request.form.get("client_reference") or "").strip()
+
+    if not quote_id_raw and not client_ref_raw:
+        flash(
+            "Enter a Quote ID or Client Reference to look up.", "warning"
+        )
+        return render_template("quotes_edit.html")
+
+    if client_ref_raw:
+        # SC multi-leg refs (SCMQNNNN) win for SC users; non-SC users
+        # fall straight through to single-quote client_reference so they
+        # don't trip the SC route's @sc_user_required gate post-redirect.
+        if _user_is_sc_capable(current_user):
+            sc_ref, _ref_error = _normalize_multi_reference(client_ref_raw)
+            if sc_ref:
+                session = SCQuoteSession.query.filter_by(
+                    multi_reference=sc_ref
+                ).first()
+                if session is not None:
+                    return redirect(
+                        url_for(
+                            "science_care.sc_quote_form",
+                            from_session=session.id,
+                        )
+                    )
+        # Single-quote fallback (visibility-scoped per role policy).
+        single_ref = _normalize_and_validate_client_reference(client_ref_raw)
+        if single_ref:
+            quote = (
+                _quote_lookup_query_for_user(current_user)
+                .filter(Quote.client_reference == single_ref)
+                .order_by(Quote.created_at.desc(), Quote.id.desc())
+                .first()
+            )
+            if quote is not None:
+                return redirect(
+                    url_for("quotes.new_quote", from_quote=quote.quote_id)
+                )
+        flash(
+            f"No quote found for client reference '{client_ref_raw}'.",
+            "warning",
+        )
+        return render_template("quotes_edit.html")
+
+    normalized_quote_id = _normalize_and_validate_quote_id(quote_id_raw)
+    if normalized_quote_id is None:
+        flash("Quote ID must look like 'Q-XXXXXXXX'.", "warning")
+        return render_template("quotes_edit.html")
+
+    quote = (
+        _quote_lookup_query_for_user(current_user)
+        .filter_by(quote_id=normalized_quote_id)
+        .first()
+    )
+    if quote is None:
+        flash(f"No quote found for ID '{quote_id_raw}'.", "warning")
+        return render_template("quotes_edit.html")
+
+    return redirect(
+        url_for("quotes.new_quote", from_quote=quote.quote_id)
+    )
+
+
+def _user_is_sc_capable(user) -> bool:
+    """True for FSI super-admins and users whose rate-set is Science Care."""
+
+    if getattr(user, "is_admin", False):
+        return True
+    rate_set = normalize_rate_set(getattr(user, "rate_set", None))
+    return rate_set in SCIENCE_CARE_RATE_SETS
 
 
 @quotes_bp.route("/my-quotes", methods=["GET"])

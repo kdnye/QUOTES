@@ -434,6 +434,28 @@ def _register_template_helpers(app: Flask) -> None:
             "total_lb": float(getattr(leg_result, "total_weight_lb", 0.0) or 0.0),
         }
 
+    def prefill_get(key: str, default: str = "") -> str:
+        """Fall through ``request.form`` to ``g.sc_prefill`` for SC edit mode.
+
+        ``templates/sc/quote.html`` populates inputs by reading
+        ``request.form`` so a failed POST re-renders the user's submission.
+        The SC edit-mode GET path stashes the saved payload on
+        ``flask.g.sc_prefill`` instead — this helper lets the template treat
+        both sources uniformly without having to thread an extra mapping
+        through every input.
+        """
+
+        from flask import g, request
+
+        try:
+            form = request.form
+        except RuntimeError:
+            form = {}
+        if key in form:
+            return form.get(key, default)
+        prefill = getattr(g, "sc_prefill", None) or {}
+        return prefill.get(key, default)
+
     app.jinja_env.globals["csrf_input"] = csrf_input
     app.jinja_env.globals["sc_box_values_for_leg"] = sc_box_values_for_leg
     app.jinja_env.globals["sc_consumable_values_for_leg"] = (
@@ -442,6 +464,7 @@ def _register_template_helpers(app: Flask) -> None:
     app.jinja_env.globals["sc_initial_subtotals_for_leg"] = (
         sc_initial_subtotals_for_leg
     )
+    app.jinja_env.globals["prefill_get"] = prefill_get
     app.jinja_env.filters["currency"] = currency
 
 

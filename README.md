@@ -467,6 +467,25 @@ lab** instead of from the lab outbound. All other inputs — tissue rows,
 boxes, consumables, accessorials, and the cheapest-of-three rollup — are
 unchanged.
 
+### Edit-mode prefill
+
+The new **Edit a Quote** page (`/quotes/edit`) lets users look up a prior
+quote by **Quote ID** (`Q-XXXXXXXX`) or **Client Reference** and open the
+matching form prefilled, ready to tweak and resubmit as a brand-new
+quote — the original row is never modified. Quote IDs land in
+`/quotes/new` with origin / destination / weight / dimensions /
+accessorials prefilled. Multi-leg references (`SCMQNNNN`) land in
+`/sc/quote` with every per-leg input restored from
+`SCQuoteSession.payload_json`, including tissue rows, box-count
+overrides, consumable Qty overrides, the **Mode**, **Shipment type**,
+**This is a return** checkbox, and accessorials. The `multi_reference`
+and `client_reference` fields are intentionally left blank so the new
+submission either auto-assigns a fresh `SCMQNNNN` or the user picks a
+new value to avoid colliding with the original via the per-user UNIQUE
+constraint. The same "Edit as new quote" entry point is surfaced as a
+button on the existing single-quote (`/quotes/lookup`) and SC multi-leg
+(`/sc/quote/lookup`) result pages.
+
 ### Per-tissue box capacities
 
 Each tissue ships in a specific box size; some tissues fit multiple sizes with

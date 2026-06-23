@@ -230,4 +230,5 @@
   {% endif %}
 </div>
 <a href="{{ url_for('quotes.new_quote') }}" class="btn fsi-button-primary mt-3 fsi-body">Create Another Quote</a>
+<a href="{{ url_for('quotes.new_quote', from_quote=quote.quote_id) }}" class="btn fsi-button-secondary mt-3 ms-2 fsi-body">Edit as new quote</a>
 {% endblock %}
