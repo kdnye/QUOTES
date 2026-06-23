@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Utility helpers for outbound email policies and rate limiting."""
 
+import os
 import random
 import re
 import smtplib
@@ -13,7 +14,58 @@ from typing import Mapping, Optional, Tuple, Type
 
 from flask import current_app
 
-from app.models import EmailDispatchLog, User, db
+from app.models import (
+    BOOKING_EMAIL_STATUS_FAILED,
+    BookingEmailReceipt,
+    EmailDispatchLog,
+    User,
+    db,
+)
+
+
+def record_booking_email_failure(
+    receipt: BookingEmailReceipt, error_text: str
+) -> BookingEmailReceipt:
+    """Update a ``pending`` :class:`BookingEmailReceipt` to ``failed``.
+
+    Wraps the rollback / re-attach / commit dance that the SC and
+    single-quote send routes need when ``send_email`` raises. The
+    SQLAlchemy session may already be poisoned (e.g. when
+    ``log_email_dispatch`` half-committed before the network error
+    surfaced), so a fresh transaction has to start with a
+    :meth:`sqlalchemy.orm.Session.rollback`. The pre-send commit had
+    already assigned ``receipt.id`` so the row exists in the DB and
+    can be merged back into the new transaction without re-INSERTing.
+
+    Returns the merged, persisted receipt so callers can read
+    ``receipt.id`` for the JSON response.
+    """
+
+    db.session.rollback()
+    receipt = db.session.merge(receipt)
+    receipt.status = BOOKING_EMAIL_STATUS_FAILED
+    receipt.error_text = error_text
+    db.session.commit()
+    return receipt
+
+
+def booking_email_ops_to() -> str:
+    """Return the ops recipient address for booking emails.
+
+    Configurable via ``BOOKING_EMAIL_OPS_TO`` (Flask config or env), so a
+    QA/staging deploy can route booking emails to a shared inbox without
+    code edits. Used by both the SC multi-leg composer
+    (``/sc/quote/<id>/email-ops/send``) and the single-quote composer
+    (``/quotes/<id>/email/send``); defining it on the mail service
+    keeps the contract in one place instead of duplicating the lookup
+    across blueprints.
+    """
+
+    return (
+        current_app.config.get("BOOKING_EMAIL_OPS_TO")
+        or os.getenv("BOOKING_EMAIL_OPS_TO")
+        or "operations@freightservices.net"
+    )
 
 
 class MailRateLimitError(RuntimeError):
@@ -253,6 +305,8 @@ def log_email_dispatch(feature: str, user: Optional[User], recipient: str) -> No
 
 __all__ = [
     "MailRateLimitError",
+    "booking_email_ops_to",
+    "record_booking_email_failure",
     "enforce_mail_rate_limit",
     "log_email_dispatch",
     "send_email",

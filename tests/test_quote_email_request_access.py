@@ -559,3 +559,76 @@ def test_email_request_send_400s_on_missing_body_or_subject(
         json={"subject": "", "body": ""},
     )
     assert response.status_code == 400
+
+
+def test_email_request_send_400s_on_non_dict_json_payload(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A JSON list / scalar payload must surface as a 400, not a 500.
+
+    ``request.get_json()`` happily parses ``[]`` or ``"hi"`` to a
+    Python ``list`` / ``str`` - the prior code then called
+    ``.get("subject")`` on it and raised ``AttributeError`` at request
+    time. Reject non-object payloads explicitly so the composer's JS
+    can surface the failure inline.
+    """
+
+    staff = _make_staff("staff-nondict@example.com")
+    quote = _create_quote_for_user(staff)
+
+    def _explode(*args, **kwargs) -> None:
+        raise AssertionError("send_email should not be called for a non-dict payload")
+
+    monkeypatch.setattr("app.quotes.routes.send_email", _explode)
+
+    client = app.test_client()
+    _login_client(client, staff.id)
+
+    response = client.post(
+        f"/quotes/{quote.quote_id}/email/send",
+        json=["not", "an", "object"],
+    )
+    assert response.status_code == 400
+    assert response.get_json()["status"] == "failed"
+
+
+def test_email_request_form_threads_user_company_name(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The composer JS reads ``user_company`` from the JSON context
+    block; that block must reflect the User's ``company_name`` column
+    so booking emails actually carry the requesting user's company.
+
+    Regression: an earlier revision used ``getattr(..., "company")``,
+    which silently resolved to ``""`` because the column is named
+    ``company_name``. Mocks ``get_zip_notes`` so the test bypasses the
+    pre-existing ``zip_zones.notes`` schema drift tracked in the
+    conftest known-failure list - the contract under test is the
+    user-company plumbing, not the ZIP-notes column.
+    """
+
+    monkeypatch.setattr(
+        "app.quotes.routes.get_zip_notes", lambda *a, **k: ""
+    )
+
+    staff = User(
+        email="staff-co@example.com",
+        role="employee",
+        can_send_mail=True,
+        employee_approved=True,
+        company_name="Acme Tissue Logistics",
+        name="Jane Staff",
+    )
+    staff.set_password("password123")
+    db.session.add(staff)
+    db.session.commit()
+    quote = _create_quote_for_user(staff)
+
+    client = app.test_client()
+    _login_client(client, staff.id)
+    response = client.get(f"/quotes/{quote.quote_id}/email")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # The JS context block surfaces the user_company string via tojson.
+    assert "Acme Tissue Logistics" in html
