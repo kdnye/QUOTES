@@ -44,6 +44,9 @@
         {% for column in columns %}
         <th>{{ column.header }}</th>
         {% endfor %}
+        {% if extra_capacities_by_row_id %}
+        <th>Other Boxes</th>
+        {% endif %}
         <th>Edit</th>
         <th>Delete</th>
       </tr>
@@ -63,6 +66,18 @@
           {% endif %}
         </td>
         {% endfor %}
+        {% if extra_capacities_by_row_id %}
+        <td>
+          {% set extras = extra_capacities_by_row_id.get(row.id) %}
+          {% if extras %}
+            {% for box_code, qty in extras.items() %}
+              <span class="badge bg-secondary me-1">{{ box_code }}: {{ qty }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="text-body-secondary">—</span>
+          {% endif %}
+        </td>
+        {% endif %}
         <td>
           <a class="btn btn-sm btn-info"
              href="{{ url_for('science_care.sc_reference_edit', table=table, row_id=row.id) }}">
@@ -80,7 +95,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="{{ columns|length + 2 }}"
+        <td colspan="{{ columns|length + 2 + (1 if extra_capacities_by_row_id else 0) }}"
             class="text-body-secondary">
           No rows yet. Use <strong>Add Row</strong> or <strong>Upload CSV</strong> to populate this table.
         </td>

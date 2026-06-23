@@ -1238,13 +1238,20 @@ def sc_reference_list(table: str) -> str:
         for col in spec.columns
     ]
 
+    extra_capacities_by_row_id: dict[int, dict[str, int]] = {}
     if table == "sc_tissue_codes":
         # The TableSpec's per-box columns (Medium / Large / X-Large /
         # Small Airtray / Airtray) use virtual `_pieces_*` attrs that
         # only exist for CSV header bookkeeping - they aren't mapped on
         # SCTissueCode, so the list template would render the dedicated
         # columns blank. Hydrate them from SCTissueBoxCapacity so each
-        # capacity lands in its own column.
+        # capacity lands in its own column. Capacities tied to box codes
+        # outside the five CSV-template columns (e.g. a tenant-specific
+        # SCBoxType saved via the per-row edit form) are collected into
+        # extra_capacities_by_row_id so the template can surface them in
+        # a trailing fallback column - otherwise they'd silently
+        # disappear from the page now that the badge column is gone.
+        canonical_codes = set(_TISSUE_BOX_COLUMN_TO_CODE.values())
         capacities_by_tissue: dict[str, dict[str, int]] = {}
         for cap in SCTissueBoxCapacity.query.filter_by(
             rate_set=RATE_SET_SCIENCE_CARE
@@ -1256,6 +1263,13 @@ def sc_reference_list(table: str) -> str:
             caps = capacities_by_tissue.get(row.tissue_code, {})
             for attr, box_code in _TISSUE_BOX_COLUMN_TO_CODE.items():
                 setattr(row, attr, caps.get(box_code))
+            extras = {
+                code: qty
+                for code, qty in caps.items()
+                if code not in canonical_codes
+            }
+            if extras:
+                extra_capacities_by_row_id[row.id] = extras
 
     return render_template(
         "sc/reference_list.html",
@@ -1263,6 +1277,7 @@ def sc_reference_list(table: str) -> str:
         table_label=spec.label,
         columns=columns,
         rows=rows,
+        extra_capacities_by_row_id=extra_capacities_by_row_id,
     )
 
 
