@@ -57,6 +57,7 @@ from app.admin import (
 from app.models import (
     BOOKING_EMAIL_KIND_SC_MULTI,
     BOOKING_EMAIL_STATUS_FAILED,
+    BOOKING_EMAIL_STATUS_PENDING,
     BOOKING_EMAIL_STATUS_SENT,
     RATE_SET_SCIENCE_CARE,
     Accessorial,
@@ -75,7 +76,11 @@ from app.models import (
     db,
 )
 from app.policies import sc_admin_required, sc_user_required
-from app.services.mail import MailRateLimitError, send_email
+from app.services.mail import (
+    MailRateLimitError,
+    booking_email_ops_to,
+    send_email,
+)
 from app.services.science_care_quote import (
     TissueRow,
     _collect_tissue_rows,
@@ -1544,22 +1549,7 @@ def sc_email_ops_for_booking(session_id: int):
         grand_total=float(session.grand_total or 0.0),
         user_name=getattr(current_user, "name", "") or "",
         user_email=getattr(current_user, "email", "") or "",
-        user_company=getattr(current_user, "company", "") or "",
-    )
-
-
-def _booking_email_ops_to() -> str:
-    """Return the ops recipient address for SC booking emails.
-
-    Configurable via ``BOOKING_EMAIL_OPS_TO`` (Flask config or env), so a
-    QA/staging deploy can route booking emails to a shared inbox without
-    code edits.
-    """
-
-    return (
-        current_app.config.get("BOOKING_EMAIL_OPS_TO")
-        or os.getenv("BOOKING_EMAIL_OPS_TO")
-        or "operations@freightservices.net"
+        user_company=getattr(current_user, "company_name", "") or "",
     )
 
 
@@ -1588,12 +1578,12 @@ def sc_email_ops_send(session_id: int):
 
     ref_display = session.multi_reference or f"Session {session.id}"
     subject = f"SC Multi-leg Booking Request — {ref_display}"
-    to_addr = _booking_email_ops_to()
+    to_addr = booking_email_ops_to()
     cc_addr = (getattr(current_user, "email", "") or "").strip() or None
 
     user_name = getattr(current_user, "name", "") or ""
     user_email = getattr(current_user, "email", "") or ""
-    user_company = getattr(current_user, "company", "") or ""
+    user_company = getattr(current_user, "company_name", "") or ""
 
     text_body = render_template(
         "sc/emails/booking_request.txt",
@@ -1625,6 +1615,12 @@ def sc_email_ops_send(session_id: int):
         # second recipient.
         cc_addr = None
 
+    # Persist a ``pending`` receipt BEFORE the external send_email call
+    # so a server crash, timeout, or worker kill mid-send still leaves
+    # an audit row. The final state (``sent`` / ``failed``) is written
+    # in a second commit after send_email returns or raises. A stuck
+    # ``pending`` row therefore unambiguously means "send_email never
+    # returned" - useful when reconciling against the ops inbox.
     receipt = BookingEmailReceipt(
         kind=BOOKING_EMAIL_KIND_SC_MULTI,
         reference=ref_display,
@@ -1632,8 +1628,10 @@ def sc_email_ops_send(session_id: int):
         to_addr=to_addr,
         cc_addr=cc_addr,
         subject=subject,
-        status=BOOKING_EMAIL_STATUS_FAILED,
+        status=BOOKING_EMAIL_STATUS_PENDING,
     )
+    db.session.add(receipt)
+    db.session.commit()
 
     try:
         send_email(
@@ -1646,8 +1644,8 @@ def sc_email_ops_send(session_id: int):
             html_body=html_body,
         )
     except MailRateLimitError as exc:
+        receipt.status = BOOKING_EMAIL_STATUS_FAILED
         receipt.error_text = str(exc)
-        db.session.add(receipt)
         db.session.commit()
         return (
             {
@@ -1663,8 +1661,8 @@ def sc_email_ops_send(session_id: int):
             session.id,
             exc,
         )
+        receipt.status = BOOKING_EMAIL_STATUS_FAILED
         receipt.error_text = f"{exc.__class__.__name__}: {exc}"
-        db.session.add(receipt)
         db.session.commit()
         return (
             {
@@ -1676,7 +1674,6 @@ def sc_email_ops_send(session_id: int):
         )
 
     receipt.status = BOOKING_EMAIL_STATUS_SENT
-    db.session.add(receipt)
     db.session.commit()
     return {
         "status": "sent",

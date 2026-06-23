@@ -2,6 +2,7 @@ from __future__ import annotations
 
 """Utility helpers for outbound email policies and rate limiting."""
 
+import os
 import random
 import re
 import smtplib
@@ -14,6 +15,25 @@ from typing import Mapping, Optional, Tuple, Type
 from flask import current_app
 
 from app.models import EmailDispatchLog, User, db
+
+
+def booking_email_ops_to() -> str:
+    """Return the ops recipient address for booking emails.
+
+    Configurable via ``BOOKING_EMAIL_OPS_TO`` (Flask config or env), so a
+    QA/staging deploy can route booking emails to a shared inbox without
+    code edits. Used by both the SC multi-leg composer
+    (``/sc/quote/<id>/email-ops/send``) and the single-quote composer
+    (``/quotes/<id>/email/send``); defining it on the mail service
+    keeps the contract in one place instead of duplicating the lookup
+    across blueprints.
+    """
+
+    return (
+        current_app.config.get("BOOKING_EMAIL_OPS_TO")
+        or os.getenv("BOOKING_EMAIL_OPS_TO")
+        or "operations@freightservices.net"
+    )
 
 
 class MailRateLimitError(RuntimeError):
@@ -253,6 +273,7 @@ def log_email_dispatch(feature: str, user: Optional[User], recipient: str) -> No
 
 __all__ = [
     "MailRateLimitError",
+    "booking_email_ops_to",
     "enforce_mail_rate_limit",
     "log_email_dispatch",
     "send_email",

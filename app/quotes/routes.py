@@ -26,6 +26,7 @@ from . import quotes_bp
 from ..models import (
     BOOKING_EMAIL_KIND_SINGLE_QUOTE,
     BOOKING_EMAIL_STATUS_FAILED,
+    BOOKING_EMAIL_STATUS_PENDING,
     BOOKING_EMAIL_STATUS_SENT,
     db,
     BookingEmailReceipt,
@@ -43,6 +44,7 @@ from app.quote.zip_validation import validate_us_zip
 from app.services.constants import DIM_DIVISOR
 from app.services.mail import (
     MailRateLimitError,
+    booking_email_ops_to,
     send_email,
     user_has_mail_privileges,
 )
@@ -1243,7 +1245,7 @@ def _render_email_request(
         total_with_fee=total_with_fee,
         user_name=current_user.name or "",
         user_email=getattr(current_user, "email", "") or "",
-        user_company=getattr(current_user, "company", "") or "",
+        user_company=getattr(current_user, "company_name", "") or "",
         page_heading=heading_text,
         email_intro_line=intro_line,
         subject_prefix=subject_prefix,
@@ -1266,21 +1268,6 @@ def email_request_form(quote_id: str):
         heading_text="Email Booking Request",
         intro_line="I'd like to go ahead and book the following quote",
         subject_prefix="New Booking request",
-    )
-
-
-def _booking_email_ops_to() -> str:
-    """Return the configurable ops recipient address for booking emails.
-
-    Mirrors the SC composer helper - configurable via
-    ``BOOKING_EMAIL_OPS_TO`` so QA / staging deployments can re-route
-    booking emails to a shared inbox without code edits.
-    """
-
-    return (
-        current_app.config.get("BOOKING_EMAIL_OPS_TO")
-        or os.getenv("BOOKING_EMAIL_OPS_TO")
-        or "operations@freightservices.net"
     )
 
 
@@ -1321,7 +1308,20 @@ def email_request_send(quote_id: str):
         )
 
     quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
-    payload = request.get_json(silent=True) or {}
+    # ``get_json`` returns whatever the body parses to, which is only a
+    # ``dict`` for JSON objects. A JSON list / string / number would
+    # otherwise reach the ``payload.get`` calls below and raise
+    # ``AttributeError`` -> 500. Reject non-object payloads cleanly so
+    # the composer banner can surface a stable error string.
+    payload = request.get_json(silent=True)
+    if not isinstance(payload, dict):
+        return (
+            {
+                "status": "failed",
+                "message": "A valid JSON object with subject + body is required.",
+            },
+            400,
+        )
     subject = (payload.get("subject") or "").strip()
     body = payload.get("body") or ""
     if not subject or not body.strip():
@@ -1333,7 +1333,7 @@ def email_request_send(quote_id: str):
             400,
         )
 
-    to_addr = _booking_email_ops_to()
+    to_addr = booking_email_ops_to()
     cc_addr = (getattr(current_user, "email", "") or "").strip() or None
     headers: dict[str, str] = {}
     if cc_addr and cc_addr.lower() != to_addr.lower():
@@ -1341,6 +1341,11 @@ def email_request_send(quote_id: str):
     else:
         cc_addr = None
 
+    # Persist ``pending`` BEFORE the external send_email call so a
+    # crash / timeout / worker kill mid-send still leaves an audit row.
+    # The final ``sent`` / ``failed`` state is written in a second
+    # commit after send_email returns or raises. A stuck ``pending``
+    # row therefore unambiguously means "send_email never returned".
     receipt = BookingEmailReceipt(
         kind=BOOKING_EMAIL_KIND_SINGLE_QUOTE,
         reference=quote.quote_id,
@@ -1348,8 +1353,10 @@ def email_request_send(quote_id: str):
         to_addr=to_addr,
         cc_addr=cc_addr,
         subject=subject[:255],
-        status=BOOKING_EMAIL_STATUS_FAILED,
+        status=BOOKING_EMAIL_STATUS_PENDING,
     )
+    db.session.add(receipt)
+    db.session.commit()
 
     try:
         send_email(
@@ -1361,8 +1368,8 @@ def email_request_send(quote_id: str):
             headers=headers or None,
         )
     except MailRateLimitError as exc:
+        receipt.status = BOOKING_EMAIL_STATUS_FAILED
         receipt.error_text = str(exc)
-        db.session.add(receipt)
         db.session.commit()
         return (
             {
@@ -1378,8 +1385,8 @@ def email_request_send(quote_id: str):
             quote.quote_id,
             exc,
         )
+        receipt.status = BOOKING_EMAIL_STATUS_FAILED
         receipt.error_text = f"{exc.__class__.__name__}: {exc}"
-        db.session.add(receipt)
         db.session.commit()
         return (
             {
@@ -1391,7 +1398,6 @@ def email_request_send(quote_id: str):
         )
 
     receipt.status = BOOKING_EMAIL_STATUS_SENT
-    db.session.add(receipt)
     db.session.commit()
     return {
         "status": "sent",

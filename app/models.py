@@ -55,6 +55,7 @@ RATE_SET_SCIENCE_CARE = "science_care"
 
 BOOKING_EMAIL_KIND_SC_MULTI = "sc_multi"
 BOOKING_EMAIL_KIND_SINGLE_QUOTE = "single_quote"
+BOOKING_EMAIL_STATUS_PENDING = "pending"
 BOOKING_EMAIL_STATUS_SENT = "sent"
 BOOKING_EMAIL_STATUS_FAILED = "failed"
 
@@ -929,4 +930,11 @@ class BookingEmailReceipt(db.Model):
     subject = db.Column(db.String(255), nullable=False)
     status = db.Column(db.String(20), nullable=False, index=True)
     error_text = db.Column(db.Text, nullable=True)
+    # Reserved for the Postmark message id. The current SMTP transport
+    # in :mod:`app.services.mail` does not surface the
+    # ``X-PM-Message-Id`` reply header, so this column stays ``NULL``
+    # for now. The column is kept on the schema so the audit pipeline
+    # is forward-compatible: when ``send_email`` is extended to return
+    # the SMTP response, the routes will populate this without a
+    # follow-up migration.
     postmark_message_id = db.Column(db.String(120), nullable=True)

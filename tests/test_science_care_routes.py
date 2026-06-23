@@ -1803,6 +1803,81 @@ def test_sc_email_ops_send_blocks_non_sc_user(app: Flask) -> None:
     assert response.status_code == 403
 
 
+def test_sc_email_ops_preview_includes_user_company_name(
+    app: Flask,
+) -> None:
+    """The SC composer ``Requested by`` line must carry the user's
+    ``company_name`` column.
+
+    Regression: an earlier revision read ``getattr(..., "company")``,
+    which silently resolved to ``""`` and dropped the company from
+    every booking email. Asserting against a distinctive string is
+    enough to lock the contract.
+    """
+
+    user = User(
+        email="sc-co@example.com",
+        name="Casey SC",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+        company_name="ScienceCare Logistics Co",
+    )
+    db.session.add(user)
+    db.session.commit()
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    assert "ScienceCare Logistics Co" in html
+
+
+def test_sc_email_ops_send_persists_pending_row_before_send_email(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A crash inside ``send_email`` must still leave an audit row.
+
+    The route persists a ``pending`` BookingEmailReceipt before the
+    network call so a kill-9'd worker can't lose the attempt. This
+    test verifies the pre-send commit happens by inspecting the DB
+    from inside the ``send_email`` mock: at that point the row must
+    already exist with ``status=pending``.
+    """
+
+    from app.models import BookingEmailReceipt
+
+    user = _make_user(
+        "sc-pending@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    observed: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        # Snapshot the audit row state mid-send so the assertion runs
+        # before the route's post-send commit overwrites ``pending``.
+        row = BookingEmailReceipt.query.filter_by(
+            sender_user_id=user.id
+        ).one()
+        observed["status_during_send"] = row.status
+        observed["committed_id"] = row.id
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+
+    assert observed["status_during_send"] == "pending"
+    final = BookingEmailReceipt.query.get(observed["committed_id"])
+    assert final.status == "sent"
+
+
 def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
     sc_user = _make_user(
         "sc-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE
