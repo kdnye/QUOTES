@@ -106,10 +106,32 @@ def _resolve_per_worker_url(raw_url: str, worker_id: str) -> str:
 
     base_db = parsed.path.lstrip("/") or "postgres"
     per_worker_db = f"{base_db}_{worker_id}"
-    libpq_admin_dsn = raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    # Normalize the scheme via urlunparse so this keeps working for
+    # alternative driver names (postgresql+asyncpg, postgresql+pg8000,
+    # bare postgres://, etc.) instead of relying on string replace.
+    libpq_admin_dsn = urlunparse(parsed._replace(scheme="postgresql"))
     _ensure_database_exists(libpq_admin_dsn, per_worker_db)
 
     return urlunparse(parsed._replace(path=f"/{per_worker_db}"))
+
+
+@pytest.fixture(scope="session")
+def worker_id(request: pytest.FixtureRequest) -> str:
+    """Fallback for the ``worker_id`` fixture pytest-xdist normally provides.
+
+    pytest-xdist ships its own session-scoped ``worker_id`` fixture, so
+    when the plugin is active this fixture is shadowed and the xdist
+    value (``gw0``, ``gw1``, ...) is used. When the plugin is missing
+    or disabled (``pytest`` invoked without ``-n``), this fallback
+    returns ``"master"`` so the schema-reset and per-worker-DB
+    fixtures keep working instead of failing at collection time with
+    ``FixtureLookupError``.
+    """
+
+    workerinput = getattr(request.config, "workerinput", None)
+    if workerinput is None:
+        return "master"
+    return workerinput["workerid"]
 
 
 @pytest.fixture(scope="session")
@@ -157,10 +179,11 @@ def _reset_postgres_schema(worker_id: str):
     import psycopg2  # local import keeps the no-PG path free of the dep
 
     per_worker_url = _resolve_per_worker_url(raw_url, worker_id)
-    # Hand the DSN to psycopg2 verbatim (after dropping the SQLAlchemy
-    # driver prefix) so URL-encoded credentials like %40 / %23 get
-    # decoded by libpq instead of breaking auth on the way through.
-    dsn = per_worker_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    # Normalize the scheme for libpq (drops the SQLAlchemy driver
+    # suffix); urlunparse leaves URL-encoded credentials like %40 / %23
+    # intact so libpq decodes them instead of breaking auth on the way
+    # through.
+    dsn = urlunparse(urlparse(per_worker_url)._replace(scheme="postgresql"))
     conn = psycopg2.connect(dsn)
     try:
         conn.autocommit = True
