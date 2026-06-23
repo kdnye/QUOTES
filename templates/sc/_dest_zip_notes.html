@@ -1,0 +1,26 @@
+{# Destination ZIP shipment-notes banner for one leg.
+
+   Rendered both inline (initial page load) and as the HTMX swap
+   response from /sc/quote/dest-zip-notes. The wrapping <div> is the
+   stable swap target (hx-swap="outerHTML"), so it is emitted even
+   when there are no notes - that way HTMX can replace it again on
+   the next ZIP change.
+
+   Expected context:
+   * leg (int) - 1-based leg index, used to scope the target id.
+   * zip_code (str, optional) - the destination ZIP the user typed
+     (already trimmed). Displayed in the banner header so the
+     operator can tell which leg's notes they are looking at. The
+     inline include from quote.html omits it on initial render.
+   * notes (str | None, optional) - the ZipZone.notes value to
+     surface. None / empty / missing hides the banner.
+#}
+<div id="dest-zip-notes-{{ leg }}">
+  {% if notes is defined and notes %}
+  <div class="fsi-notice fsi-notice--warning shadow-sm mt-2 mb-2"
+       role="alert">
+    <strong>Shipment Notes!{% if zip_code is defined and zip_code %} ZIP {{ zip_code }}:{% endif %}</strong>
+    {{ notes }}
+  </div>
+  {% endif %}
+</div>

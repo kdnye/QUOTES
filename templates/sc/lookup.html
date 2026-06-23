@@ -38,25 +38,25 @@
   </div>
 </form>
 
-{% if session %}
+{% if sc_session %}
 <div class="card border-primary">
   <div class="card-header bg-primary-subtle d-flex flex-wrap justify-content-between align-items-center gap-2">
     <strong>Multi-leg quote summary</strong>
     <div class="d-flex flex-wrap align-items-center gap-2">
-      <span class="badge bg-dark">Ref: {{ session.multi_reference }}</span>
-      <span class="badge bg-primary">Session #{{ session.id }}</span>
+      <span class="badge bg-dark">Ref: {{ sc_session.multi_reference }}</span>
+      <span class="badge bg-primary">Session #{{ sc_session.id }}</span>
       <a class="btn btn-success btn-sm"
-         href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=session.id) }}">
+         href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=sc_session.id) }}">
         Email Ops for Booking
       </a>
       <a class="btn btn-outline-primary btn-sm"
-         href="{{ url_for('science_care.sc_quote_form', from_session=session.id) }}">
+         href="{{ url_for('science_care.sc_quote_form', from_session=sc_session.id) }}">
         Edit as new quote
       </a>
     </div>
   </div>
   <div class="card-body small text-body-secondary">
-    Submitted {{ session.submitted_at.strftime('%Y-%m-%d %H:%M UTC') if session.submitted_at else '—' }}.
+    Submitted {{ sc_session.submitted_at.strftime('%Y-%m-%d %H:%M UTC') if sc_session.submitted_at else '—' }}.
   </div>
   <div class="table-responsive">
     <table class="table table-sm align-middle mb-0">

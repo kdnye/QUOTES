@@ -152,7 +152,6 @@ _KNOWN_FAILURE_NODEIDS: frozenset[str] = frozenset(
         "tests/test_rate_sets_fallback.py::test_returns_none_when_neither_matches",
         "tests/test_rate_sets_fallback.py::test_returns_row_for_requested_rate_set",
         "tests/test_science_care_quote_service.py::test_retry_path_re_stamps_per_leg_quote_client_reference",
-        "tests/test_science_care_routes.py::test_sc_lookup_unknown_reference_flashes_warning",
         "tests/test_science_care_routes.py::test_sc_reference_allows_sc_admin",
         "tests/test_science_care_routes.py::test_sc_tissue_lookup_emits_subtotals_oob",
         "tests/test_science_care_user_lab_slots.py::test_defaults_form_renders_for_sc_user",
