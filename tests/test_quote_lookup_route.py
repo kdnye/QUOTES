@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import uuid
 
 import pytest
@@ -7,7 +8,7 @@ from flask import Flask
 from flask.testing import FlaskClient
 
 from app import create_app
-from app.models import Quote, User, db
+from app.models import Quote, User, ZipZone, db
 
 
 class TestQuoteLookupConfig:
@@ -497,3 +498,205 @@ def test_lookup_quote_post_approved_employee_can_access_other_users_quote(
 
     assert response.status_code == 200
     assert response.get_data(as_text=True) == "template=quote_result.html"
+
+
+# ---------------------------------------------------------------------------
+# Full HTML-render tests
+#
+# The tests below exercise the rendered ``quote_result.html`` template
+# end-to-end (no ``render_template`` monkeypatch) so the lookup route's
+# response body is asserted against real markup. They migrated from
+# tests/test_quote_lookup.py during the test-suite audit; the route file
+# already covered every "mocked render context" scenario, so the moves
+# below are the unique HTML-shape assertions only.
+# ---------------------------------------------------------------------------
+
+
+def _create_quote(
+    user: User,
+    quote_id: str,
+    *,
+    quote_metadata: str,
+    total: float = 210.0,
+) -> Quote:
+    """Persist a quote record with deterministic values for HTML assertions."""
+
+    quote = Quote(
+        quote_id=quote_id,
+        quote_type="Hotshot",
+        origin="30301",
+        destination="60601",
+        weight=500.0,
+        weight_method="Actual",
+        total=total,
+        quote_metadata=quote_metadata,
+        user_id=user.id,
+        user_email=user.email,
+    )
+    db.session.add(quote)
+    db.session.commit()
+    return quote
+
+
+def test_lookup_quote_get_renders_heading_for_authenticated_user(app: Flask) -> None:
+    """Authenticated users should see the lookup form heading on GET requests."""
+
+    client = app.test_client()
+    _create_user_and_login(client)
+
+    response = client.get("/quotes/lookup")
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Find Existing Quote" in html
+    assert "Quote ID" in html
+    assert "Client Reference" in html
+
+
+def test_lookup_quote_post_existing_quote_renders_full_html(app: Flask) -> None:
+    """Existing quote IDs should render core quote details and the total section."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    quote = _create_quote(
+        user,
+        "Q-HJKMNP23",
+        quote_metadata=json.dumps({"accessorial_total": 10.0, "pieces": 3}),
+        total=210.0,
+    )
+    db.session.add_all(
+        [
+            ZipZone(zipcode="30301", dest_zone=1, notes="Origin dock closes at 4 PM"),
+            ZipZone(
+                zipcode="60601", dest_zone=2, notes="Destination requires liftgate"
+            ),
+        ]
+    )
+    db.session.commit()
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Origin: 30301 | Destination: 60601" in html
+    assert html.index("Origin: 30301 | Destination: 60601") < html.index(
+        "Shipment Note for 30301:"
+    )
+    assert "Quote Total" in html
+    assert "$210.00" in html
+    assert "Pieces: 3" in html
+    assert "Shipment Note for 30301:" in html
+    assert "Shipment Note for 60601:" in html
+    assert "Origin dock closes at 4 PM" in html
+    assert "Destination requires liftgate" in html
+
+
+def test_lookup_quote_post_malformed_metadata_renders_without_server_error(
+    app: Flask,
+) -> None:
+    """Malformed ``quote_metadata`` should gracefully fall back to empty metadata."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    quote = _create_quote(
+        user,
+        "Q-HJKMNP23",
+        quote_metadata="not-json-text",
+        total=199.99,
+    )
+
+    response = client.post("/quotes/lookup", data={"quote_id": quote.quote_id})
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Origin: 30301 | Destination: 60601" in html
+    assert "Quote Total" in html
+    assert "$199.99" in html
+
+
+def test_lookup_quote_post_client_reference_returns_single_match(
+    app: Flask,
+) -> None:
+    """Client reference lookup should render result when exactly one scoped match exists."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    _create_quote(
+        user,
+        "Q-NMPQRT23",
+        quote_metadata=json.dumps({"client_reference": "PO 10452"}),
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "po 10452"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Q-NMPQRT23" in html
+
+
+def test_lookup_quote_post_client_reference_collision_shows_controlled_list_html(
+    app: Flask,
+) -> None:
+    """Collisions must not auto-select a first record and should show a list."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    _create_quote(
+        user,
+        "Q-COLLIDE2",
+        quote_metadata=json.dumps({"client_reference": "OPS-REF"}),
+    )
+    _create_quote(
+        user,
+        "Q-COLLIDE3",
+        quote_metadata=json.dumps({"client_reference": "OPS-REF"}),
+        total=245.5,
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "OPS-REF"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Multiple matches found" in html
+    assert "Q-COLLIDE2" in html
+    assert "Q-COLLIDE3" in html
+
+
+def test_lookup_quote_post_client_reference_scope_excludes_other_users(
+    app: Flask,
+) -> None:
+    """Customer users must only see collisions from their own quote scope."""
+
+    client = app.test_client()
+    user = _create_user_and_login(client)
+    other_user = _create_user(role="customer")
+    _create_quote(
+        user,
+        "Q-OWNMATCH2",
+        quote_metadata=json.dumps({"client_reference": "PO-ONLY-MINE"}),
+    )
+    _create_quote(
+        other_user,
+        "Q-OTHERMAT2",
+        quote_metadata=json.dumps({"client_reference": "PO-ONLY-MINE"}),
+    )
+
+    response = client.post(
+        "/quotes/lookup",
+        data={"lookup_mode": "client_reference", "client_reference": "PO-ONLY-MINE"},
+    )
+
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Quote Result" in html
+    assert "Q-OWNMATCH2" in html
+    assert "Q-OTHERMAT2" not in html

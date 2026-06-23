@@ -1,24 +1,122 @@
 from __future__ import annotations
 
 import os
-from urllib.parse import urlparse
+import uuid
+from urllib.parse import urlparse, urlunparse
 
 import pytest
+from flask.testing import FlaskClient
+
+
+class BaseTestConfig:
+    """Shared base configuration for PostgreSQL-backed test files.
+
+    The 24 PG-dependent test files used to redefine this 6-line block
+    each. Subclass and override only the fields that differ (e.g. mail
+    server, STARTUP_DB_CHECKS=False) - everything else inherits.
+    """
+
+    TESTING = True
+    SECRET_KEY = "test-secret-key"
+    SQLALCHEMY_DATABASE_URI = ""
+    SQLALCHEMY_TRACK_MODIFICATIONS = False
+    WTF_CSRF_ENABLED = False
+    STARTUP_DB_CHECKS = True
+
+
+def login_client(client: FlaskClient, user_id: int) -> None:
+    """Write Flask-Login session keys onto a test client."""
+
+    with client.session_transaction() as session:
+        session["_user_id"] = str(user_id)
+        session["_fresh"] = True
+
+
+def create_user(
+    *,
+    role: str = "customer",
+    employee_approved: bool = False,
+    email_prefix: str = "user",
+):
+    """Persist a User with a unique email and return it."""
+
+    from app.models import User, db
+
+    user = User(
+        email=f"{email_prefix}-{uuid.uuid4()}@example.com",
+        role=role,
+        employee_approved=employee_approved,
+    )
+    user.set_password("password123")
+    db.session.add(user)
+    db.session.commit()
+    return user
+
+
+def create_user_and_login(client: FlaskClient, **kwargs):
+    """Create a customer user and authenticate the supplied client."""
+
+    user = create_user(**kwargs)
+    login_client(client, user.id)
+    return user
+
+
+def _ensure_database_exists(admin_url: str, db_name: str) -> None:
+    """Create ``db_name`` on the cluster reachable via ``admin_url`` if absent.
+
+    Used to materialize per-worker databases for pytest-xdist; the
+    runner only provisions one DB so the conftest forks per-worker
+    copies on demand.
+    """
+
+    import psycopg2
+    from psycopg2 import sql
+
+    conn = psycopg2.connect(admin_url)
+    try:
+        conn.autocommit = True
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,)
+            )
+            if cur.fetchone() is None:
+                cur.execute(
+                    sql.SQL("CREATE DATABASE {}").format(sql.Identifier(db_name))
+                )
+    finally:
+        conn.close()
+
+
+def _resolve_per_worker_url(raw_url: str, worker_id: str) -> str:
+    """Resolve a raw DSN to the per-xdist-worker database it should target.
+
+    Without xdist ``worker_id`` is ``"master"`` and the raw URL is
+    returned unchanged. With xdist each worker (``gw0``, ``gw1``, ...)
+    gets its own database materialized on demand so the autouse
+    schema-reset fixture can drop schemas in parallel without workers
+    stomping on each other.
+    """
+
+    parsed = urlparse(raw_url)
+    if not parsed.scheme.startswith("postgres"):
+        raise ValueError("TEST_DATABASE_URL must be a PostgreSQL DSN.")
+
+    if worker_id == "master":
+        return raw_url
+
+    base_db = parsed.path.lstrip("/") or "postgres"
+    per_worker_db = f"{base_db}_{worker_id}"
+    libpq_admin_dsn = raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    _ensure_database_exists(libpq_admin_dsn, per_worker_db)
+
+    return urlunparse(parsed._replace(path=f"/{per_worker_db}"))
 
 
 @pytest.fixture(scope="session")
-def postgres_database_url() -> str:
-    """Return the PostgreSQL test database URL from the environment.
+def postgres_database_url(worker_id: str) -> str:
+    """Return a PostgreSQL DSN unique to the current xdist worker.
 
-    Args:
-        None.
-
-    Returns:
-        str: PostgreSQL SQLAlchemy database URL for test runs.
-
-    External Dependencies:
-        * Reads ``TEST_DATABASE_URL`` via :func:`os.getenv`.
-        * Skips tests via :func:`pytest.skip` when the environment is missing.
+    Skips PG-dependent tests when ``TEST_DATABASE_URL`` is unset.
     """
 
     raw_url = os.getenv("TEST_DATABASE_URL")
@@ -26,16 +124,11 @@ def postgres_database_url() -> str:
         pytest.skip(
             "TEST_DATABASE_URL is not set; skipping PostgreSQL-dependent tests."
         )
-
-    parsed = urlparse(raw_url)
-    if not parsed.scheme.startswith("postgres"):
-        raise ValueError("TEST_DATABASE_URL must be a PostgreSQL DSN.")
-
-    return raw_url
+    return _resolve_per_worker_url(raw_url, worker_id)
 
 
 @pytest.fixture(autouse=True)
-def _reset_postgres_schema():
+def _reset_postgres_schema(worker_id: str):
     """Reset the test database's ``public`` schema before each test.
 
     The 24 PG-dependent test files each define an ``app`` fixture whose
@@ -49,10 +142,11 @@ def _reset_postgres_schema():
     everything else so the per-file ``app`` fixtures re-run migrations
     from scratch.
 
-    The fixture is a no-op when ``TEST_DATABASE_URL`` is unset (pure
-    unit tests, CI-less local runs). Connects with ``psycopg2``
-    directly so we don't drag in the application's SQLAlchemy stack at
-    cleanup time.
+    No-op when ``TEST_DATABASE_URL`` is unset so pure unit tests that
+    never touch the DB still run. Resolves the per-worker URL inline
+    instead of depending on ``postgres_database_url`` because that
+    fixture skips when unset, which would cascade into skipping every
+    test in the suite.
     """
 
     raw_url = os.getenv("TEST_DATABASE_URL")
@@ -62,10 +156,11 @@ def _reset_postgres_schema():
 
     import psycopg2  # local import keeps the no-PG path free of the dep
 
+    per_worker_url = _resolve_per_worker_url(raw_url, worker_id)
     # Hand the DSN to psycopg2 verbatim (after dropping the SQLAlchemy
     # driver prefix) so URL-encoded credentials like %40 / %23 get
     # decoded by libpq instead of breaking auth on the way through.
-    dsn = raw_url.replace("postgresql+psycopg2://", "postgresql://", 1)
+    dsn = per_worker_url.replace("postgresql+psycopg2://", "postgresql://", 1)
     conn = psycopg2.connect(dsn)
     try:
         conn.autocommit = True
@@ -132,20 +227,19 @@ _KNOWN_FAILURE_NODEIDS: frozenset[str] = frozenset(
         "tests/test_quote_email_smtp_setting.py::test_admin_zip_zone_form_and_list_display_notes",
         "tests/test_quote_email_smtp_setting.py::test_root_redirects_anonymous_users_to_login",
         "tests/test_quote_email_smtp_setting.py::test_send_email_allowed_when_setting_enabled",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_client_reference_collision_shows_controlled_list",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_client_reference_returns_single_match",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_client_reference_scope_excludes_other_users",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_customer_cannot_access_other_users_quote",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_existing_quote_renders_expected_result_fields",
-        "tests/test_quote_lookup.py::test_lookup_quote_post_malformed_metadata_renders_without_server_error",
         "tests/test_quote_lookup_route.py::test_lookup_quote_get_client_reference_without_lookup_mode_defaults_correctly",
         "tests/test_quote_lookup_route.py::test_lookup_quote_get_with_client_reference_renders_result_context",
         "tests/test_quote_lookup_route.py::test_lookup_quote_get_with_quote_id_renders_result_context",
         "tests/test_quote_lookup_route.py::test_lookup_quote_post_approved_employee_can_access_other_users_quote",
+        "tests/test_quote_lookup_route.py::test_lookup_quote_post_client_reference_collision_shows_controlled_list_html",
         "tests/test_quote_lookup_route.py::test_lookup_quote_post_client_reference_returns_controlled_list_for_collisions",
+        "tests/test_quote_lookup_route.py::test_lookup_quote_post_client_reference_returns_single_match",
+        "tests/test_quote_lookup_route.py::test_lookup_quote_post_client_reference_scope_excludes_other_users",
         "tests/test_quote_lookup_route.py::test_lookup_quote_post_customer_cannot_access_other_users_quote",
+        "tests/test_quote_lookup_route.py::test_lookup_quote_post_existing_quote_renders_full_html",
         "tests/test_quote_lookup_route.py::test_lookup_quote_post_found_quote_renders_result_context",
         "tests/test_quote_lookup_route.py::test_lookup_quote_post_lowercase_quote_id_normalizes_to_match",
+        "tests/test_quote_lookup_route.py::test_lookup_quote_post_malformed_metadata_renders_without_server_error",
         "tests/test_rate_sets_fallback.py::test_does_not_cycle_back_when_rate_set_is_already_default",
         "tests/test_rate_sets_fallback.py::test_falls_back_to_default_when_requested_misses",
         "tests/test_rate_sets_fallback.py::test_multiple_kwargs_filter",
