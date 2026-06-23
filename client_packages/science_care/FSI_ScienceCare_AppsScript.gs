@@ -97,14 +97,21 @@ const LAB_ZIP = {
 // Confirm accepted names with your FSI account representative.
 // =====================================================================
 function accName(row) {
+  // Server-side Accessorial.name strings (see rates/accessorial_cost.csv).
+  // The pricing API does a stripped + lowercased lookup, so the value
+  // must match an Accessorial row exactly or the surcharge is silently
+  // dropped from the quote total. Delivery/pickup variants share the
+  // same Accessorial row (After Hours, Weekend) because the table does
+  // not split the two; pricing applies the surcharge once regardless of
+  // which leg of the move triggered it.
   const map = {
-    [CONFIG.ROW_ACC_4HR_WINDOW]:    '4 Hour Window',
-    [CONFIG.ROW_ACC_AFTERHOURS_DL]: 'Afterhours Delivery',
-    [CONFIG.ROW_ACC_WEEKEND_DL]:    'Weekend Delivery',
-    [CONFIG.ROW_ACC_SPECIAL_TIME]:  'Special Delivery Time',
-    [CONFIG.ROW_ACC_AFTERHOURS_PU]: 'Afterhours Pickup',
-    [CONFIG.ROW_ACC_WEEKEND_PU]:    'Weekend Pickup',
-    [CONFIG.ROW_ACC_TWO_MAN]:       'Two-Man Team',
+    [CONFIG.ROW_ACC_4HR_WINDOW]:    '4hr Window',
+    [CONFIG.ROW_ACC_AFTERHOURS_DL]: 'After Hours',
+    [CONFIG.ROW_ACC_WEEKEND_DL]:    'Weekend',
+    [CONFIG.ROW_ACC_SPECIAL_TIME]:  'Less than 4 hrs',
+    [CONFIG.ROW_ACC_AFTERHOURS_PU]: 'After Hours',
+    [CONFIG.ROW_ACC_WEEKEND_PU]:    'Weekend',
+    [CONFIG.ROW_ACC_TWO_MAN]:       'Two Man',
     [CONFIG.ROW_ACC_LIFTGATE]:      'Liftgate',
   };
   return map[row] || '';

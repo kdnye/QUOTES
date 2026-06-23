@@ -129,13 +129,13 @@ def _seed_reference(app: Flask) -> None:
             ),
             SCAccessorialMap(
                 form_field="J3",
-                display_label="4 Hour Window",
-                accessorial_name="PickUp 4 Hour Window (e.g 10:00-14:00)",
+                display_label="4 Hour Delivery/Pick-Up Window",
+                accessorial_name="4hr Window",
             ),
             SCAccessorialMap(
                 form_field="J8",
-                display_label="Liftgate",
-                accessorial_name="Liftgate Delivery",
+                display_label="Liftgate Required",
+                accessorial_name="Liftgate",
             ),
         ]
     )
@@ -313,8 +313,8 @@ def test_accessorials_resolved_via_map(
     form = _form(acc_J3_1="Y", acc_J8_1="Y")
     svc.compute_sc_multileg(form, user, request_ip="127.0.0.1")
     air_call = calls[0]
-    assert "PickUp 4 Hour Window (e.g 10:00-14:00)" in air_call["accessorials"]
-    assert "Liftgate Delivery" in air_call["accessorials"]
+    assert "4hr Window" in air_call["accessorials"]
+    assert "Liftgate" in air_call["accessorials"]
 
 
 def test_established_lane_respects_effective_dates(

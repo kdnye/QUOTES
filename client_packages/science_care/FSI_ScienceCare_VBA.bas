@@ -119,11 +119,11 @@ Private Const SC_TO_SC_LABEL    As String = "SC to SC"
 ' ==========================================================================
 Private Function AccName(cellAddr As String) As String
     Select Case cellAddr
-        Case CELL_ACC_4HR_WINDOW:   AccName = "PickUp 4 Hour Window (e.g 10:00-14:00)"
-        Case CELL_ACC_SPECIAL_TIME: AccName = "Specific PickUp Time (e.g. Deliver at 9:30am)"
-        Case CELL_ACC_AFTERHOURS:   AccName = "Delivery After Hours (17:01-07:59)"
-        Case CELL_ACC_TWO_MAN:      AccName = "Two Man Delivery"
-        Case CELL_ACC_LIFTGATE:     AccName = "Liftgate Delivery"
+        Case CELL_ACC_4HR_WINDOW:   AccName = "4hr Window"
+        Case CELL_ACC_SPECIAL_TIME: AccName = "Less than 4 hrs"
+        Case CELL_ACC_AFTERHOURS:   AccName = "After Hours"
+        Case CELL_ACC_TWO_MAN:      AccName = "Two Man"
+        Case CELL_ACC_LIFTGATE:     AccName = "Liftgate"
         Case Else:                  AccName = ""
     End Select
 End Function

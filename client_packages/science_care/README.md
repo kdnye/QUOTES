@@ -66,11 +66,11 @@ If the lookup sheet is missing or the lab code is not in the table, the macro wr
 
 | Form label | Cell | API string sent |
 |---|---|---|
-| 4 Hour Delivery/Pick-Up Window | J3 | `PickUp 4 Hour Window (e.g 10:00-14:00)` |
-| Special Pickup or Delivery Time | J4 | `Specific PickUp Time (e.g. Deliver at 9:30am)` |
-| Afterhours Delivery/Pickup | J5 | `Delivery After Hours (17:01-07:59)` |
-| Two-Man Team Required | J7 | `Two Man Delivery` |
-| Liftgate Required | J8 | `Liftgate Delivery` |
+| 4 Hour Delivery/Pick-Up Window | J3 | `4hr Window` |
+| Special Pickup or Delivery Time | J4 | `Less than 4 hrs` |
+| Afterhours Delivery/Pickup | J5 | `After Hours` |
+| Two-Man Team Required | J7 | `Two Man` |
+| Liftgate Required | J8 | `Liftgate` |
 
 A cell is treated as active when it contains the letter `Y` (case-insensitive).
 
