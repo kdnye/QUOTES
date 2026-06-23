@@ -1440,12 +1440,17 @@ def _hydrate_legs_for_display(
                 if qty <= 0:
                     continue
                 box = box_index_by_code.get(str(code).upper())
+                # ``None`` for unknown box codes so the template can
+                # distinguish "no SC reference row for this code" from a
+                # valid 0-lb tare. The subtotal still adds 0 for the
+                # unknown case so ``boxes_weight_lb`` stays consistent
+                # with the rendered breakdown.
                 tare_weight_lb = (
                     float(box.tare_weight_lb or 0.0)
                     if box is not None
-                    else 0.0
+                    else None
                 )
-                line_weight_lb = tare_weight_lb * qty
+                line_weight_lb = (tare_weight_lb or 0.0) * qty
                 row["boxes"].append(
                     {
                         "code": str(code),
