@@ -102,6 +102,7 @@ _FALLBACK_ACCESSORIAL_LABELS = {
     "J3": "4 Hour Delivery/Pick-Up Window",
     "J4": "Special Pickup or Delivery Time",
     "J5": "Afterhours Delivery/Pickup",
+    "J6": "Weekend Pickup/Delivery",
     "J7": "Two-Man Team Required",
     "J8": "Liftgate Required",
 }
