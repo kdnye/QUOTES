@@ -6,6 +6,7 @@ retrieve quote records for the application.
 """
 
 import json
+from dataclasses import dataclass
 from threading import Lock
 from time import time
 
@@ -17,21 +18,39 @@ from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.services.constants import DIM_DIVISOR
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
 
+
+@dataclass(frozen=True)
+class _AccessorialRow:
+    """Plain-value snapshot of an :class:`Accessorial` row.
+
+    The cache used to hold live ORM instances, but SQLAlchemy expires
+    column attributes after the loading session commits; a later request
+    would then trip ``DetachedInstanceError`` when it touched ``.name``
+    or ``.amount`` because the session was already gone. Storing plain
+    values means the cache outlives any one session safely.
+    """
+
+    name: str
+    amount: float
+    is_percentage: bool
+
+
 _ACCESSORIAL_CACHE_TTL_SECONDS = 60 * 60 * 24
 _accessorial_cache_lock = Lock()
-_accessorial_cache_rows: list[Accessorial] | None = None
+_accessorial_cache_rows: list[_AccessorialRow] | None = None
 _accessorial_cache_expires_at: float = 0.0
 
 
-def _get_accessorial_rows() -> list[Accessorial]:
+def _get_accessorial_rows() -> list[_AccessorialRow]:
     """Return cached accessorial rows with a 24-hour max refresh interval.
 
     Inputs:
         None.
 
     Outputs:
-        list[Accessorial]: Accessorial rows loaded via
-        :attr:`app.models.Accessorial.query`.
+        list[_AccessorialRow]: Plain-value snapshots loaded via
+        :attr:`app.models.Accessorial.query` and detached from the
+        loading session so they survive its commit.
 
     External dependencies:
         * Calls :meth:`flask_sqlalchemy.query.Query.all` through
@@ -51,7 +70,14 @@ def _get_accessorial_rows() -> list[Accessorial]:
         if _accessorial_cache_rows is not None and now < _accessorial_cache_expires_at:
             return _accessorial_cache_rows
 
-        rows = list(Accessorial.query.all())
+        rows = [
+            _AccessorialRow(
+                name=str(a.name),
+                amount=float(a.amount or 0.0),
+                is_percentage=bool(a.is_percentage),
+            )
+            for a in Accessorial.query.all()
+        ]
         _accessorial_cache_rows = rows
         _accessorial_cache_expires_at = now + _ACCESSORIAL_CACHE_TTL_SECONDS
         return rows
