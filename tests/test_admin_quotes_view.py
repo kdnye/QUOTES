@@ -120,6 +120,33 @@ def test_admin_quotes_html_renders_accessorial_badges_and_client_ref(
     assert '"accessorial_total"' not in html
 
 
+def test_admin_quotes_html_shows_zero_dollar_accessorial_amount(
+    app: Flask,
+) -> None:
+    """A $0.00 accessorial (free / included) must still render its
+    price badge — the badge was previously hidden because Jinja
+    treats 0.0 as falsy.
+    """
+
+    employee = _make_employee()
+    _add_quote(
+        employee,
+        quote_id="Q-ADM00004",
+        quote_metadata=json.dumps(
+            {
+                "accessorials": {"Included Liftgate": 0.0},
+                "accessorial_total": 0.0,
+            }
+        ),
+    )
+
+    client = app.test_client()
+    _login(client, employee.id)
+    html = client.get("/admin/quotes").get_data(as_text=True)
+    assert "Included Liftgate" in html
+    assert "$0.00" in html
+
+
 def test_admin_quotes_html_handles_missing_or_bad_metadata(app: Flask) -> None:
     """Missing client_reference and bad-JSON metadata must not 500
     the listing — they should render an em-dash + empty cell."""

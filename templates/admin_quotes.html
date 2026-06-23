@@ -57,9 +57,7 @@
                 {% for acc in row.accessorials %}
                   <span class="badge text-bg-info text-wrap" title="{{ acc.name }}: {{ acc.amount | currency }}">
                     {{ acc.name }}
-                    {% if acc.amount %}
-                      <span class="badge text-bg-light text-dark ms-1">{{ acc.amount | currency }}</span>
-                    {% endif %}
+                    <span class="badge text-bg-light text-dark ms-1">{{ acc.amount | currency }}</span>
                   </span>
                 {% endfor %}
               </div>
