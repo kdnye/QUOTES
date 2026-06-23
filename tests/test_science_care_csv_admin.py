@@ -884,6 +884,126 @@ def test_tissue_edit_replaces_capacities_and_default_box(app: Flask) -> None:
     assert caps == [("MED", 6)]
 
 
+def test_tissue_edit_ignores_renamed_tissue_code(app: Flask) -> None:
+    # The tissue_code is the join key for SCTissueBoxCapacity, so the
+    # edit view pins it to the stored value even when a (presumably
+    # tampered) POST submits a different string. Capacities must stay
+    # attached to the original code.
+    client = _login_sc_admin(app, "tissue-rename@example.com")
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="MED",
+                label="Medium",
+                length_in=10,
+                width_in=10,
+                height_in=10,
+                tare_weight_lb=2,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueCode(
+                tissue_code="BONE",
+                description="Femur",
+                unit_weight_lb=0.5,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="MED",
+                pieces_per_box=4,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    tissue_id = SCTissueCode.query.one().id
+    response = client.post(
+        f"/sc/reference/sc_tissue_codes/{tissue_id}/edit",
+        data={
+            "tissue_code": "RENAMED",
+            "description": "Femur",
+            "unit_weight_lb": "0.5",
+            "notes": "",
+            "cap_MED": "4",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    refreshed = db.session.get(SCTissueCode, tissue_id)
+    assert refreshed.tissue_code == "BONE"
+    cap = SCTissueBoxCapacity.query.one()
+    assert cap.tissue_code == "BONE"
+
+
+def test_box_type_delete_cascades_to_capacities(app: Flask) -> None:
+    # Box-type rows are referenced by SCTissueBoxCapacity via a string
+    # box_code column (no FK / cascade), so deleting the parent has to
+    # wipe matching capacity rows manually and refresh each affected
+    # tissue's default-box hint.
+    client = _login_sc_admin(app, "box-del@example.com")
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="MED",
+                label="Medium",
+                length_in=10,
+                width_in=10,
+                height_in=10,
+                tare_weight_lb=2,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCBoxType(
+                code="LRG",
+                label="Large",
+                length_in=15,
+                width_in=15,
+                height_in=15,
+                tare_weight_lb=3,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueCode(
+                tissue_code="BONE",
+                description="Femur",
+                unit_weight_lb=0.5,
+                default_box_type_code="LRG",
+                pieces_per_box=8,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="MED",
+                pieces_per_box=4,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="LRG",
+                pieces_per_box=8,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    lrg_id = SCBoxType.query.filter_by(code="LRG").one().id
+    response = client.post(
+        f"/sc/reference/sc_box_types/{lrg_id}/delete",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    # LRG box gone, and capacities referencing it are gone too.
+    assert SCBoxType.query.filter_by(code="LRG").count() == 0
+    caps = sorted(
+        (c.box_code, c.pieces_per_box)
+        for c in SCTissueBoxCapacity.query.all()
+    )
+    assert caps == [("MED", 4)]
+    # Default-box hint on the parent tissue is refreshed to MED so it
+    # doesn't dangle on the now-deleted LRG.
+    refreshed = SCTissueCode.query.one()
+    assert refreshed.default_box_type_code == "MED"
+    assert refreshed.pieces_per_box == 4
+
+
 def test_tissue_delete_cascades_to_capacities(app: Flask) -> None:
     client = _login_sc_admin(app, "tissue-del@example.com")
     db.session.add_all(

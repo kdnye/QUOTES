@@ -27,7 +27,15 @@
            id="field-tissue_code"
            name="tissue_code"
            value="{{ values.tissue_code }}"
+           {% if tissue %}readonly{% endif %}
            required>
+    {% if tissue %}
+    <div class="form-text">
+      The tissue code is the join key for per-box capacities and is
+      immutable once saved. Delete and re-create the tissue if you need
+      to rename it.
+    </div>
+    {% endif %}
   </div>
   <div class="mb-3">
     <label class="form-label" for="field-description">Description</label>

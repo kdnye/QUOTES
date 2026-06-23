@@ -1169,16 +1169,21 @@ def _save_tissue_capacities(
         )
 
 
-def _refresh_tissue_default_box(tissue: SCTissueCode) -> None:
+def _refresh_tissue_default_box(
+    tissue: SCTissueCode, caps: dict[str, int] | None = None
+) -> None:
     """Recompute the legacy default-box hint from the new capacity map.
 
     Mirrors the CSV importer's behaviour: the parent row's
     ``default_box_type_code`` + ``pieces_per_box`` track the box with
     the largest capacity so legacy callers (and the existing schema)
-    keep returning the same allocation hint they did before.
+    keep returning the same allocation hint they did before. Callers
+    that already know the new capacity map can pass it in to skip the
+    extra SELECT.
     """
 
-    caps = _sc_tissue_capacity_map(tissue.tissue_code)
+    if caps is None:
+        caps = _sc_tissue_capacity_map(tissue.tissue_code)
     if not caps:
         tissue.default_box_type_code = None
         tissue.pieces_per_box = None
@@ -1277,8 +1282,10 @@ def sc_reference_edit(table: str, row_id: int) -> Union[str, Response]:
 def sc_reference_delete(table: str, row_id: int) -> Response:
     """Delete one row from an SC reference table.
 
-    For ``sc_tissue_codes`` the matching capacity rows are wiped in the
-    same transaction so the per-tissue matrix stays consistent.
+    The SC capacity table links to its parents (tissue, box) by string
+    code rather than a FK with cascade delete, so deleting either side
+    has to wipe the matching capacity rows manually to keep the matrix
+    consistent.
     """
 
     spec = _resolve_sc_spec_or_404(table)
@@ -1291,6 +1298,26 @@ def sc_reference_delete(table: str, row_id: int) -> Response:
             rate_set=RATE_SET_SCIENCE_CARE,
             tissue_code=obj.tissue_code,
         ).delete(synchronize_session=False)
+    elif table == "sc_box_types":
+        # Wipe per-box capacities that referenced this box, then refresh
+        # the legacy default_box_type_code hint on every affected tissue
+        # so a stale code doesn't survive on the parent row.
+        affected_tissues = [
+            cap.tissue_code
+            for cap in SCTissueBoxCapacity.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE, box_code=obj.code
+            ).all()
+        ]
+        SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE, box_code=obj.code
+        ).delete(synchronize_session=False)
+        db.session.flush()
+        for tissue_code in set(affected_tissues):
+            tissue = SCTissueCode.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE, tissue_code=tissue_code
+            ).first()
+            if tissue is not None:
+                _refresh_tissue_default_box(tissue)
     db.session.delete(obj)
     db.session.commit()
     flash(f"{spec.label} row {label} deleted.", "success")
@@ -1406,11 +1433,17 @@ def _sc_tissue_form(tissue: SCTissueCode | None) -> Union[str, Response]:
                 f"cap_{box.code}", ""
             )
 
-        try:
-            tissue_code = _parse_required_string(submitted["tissue_code"])
-        except ValueError as exc:
-            errors.append(f"Tissue Code: {exc}")
-            tissue_code = None
+        # Tissue code is the join key for SCTissueBoxCapacity, so let the
+        # admin rename it on edit would silently orphan every capacity
+        # row. Pin to the stored value when editing.
+        if tissue is not None:
+            tissue_code = tissue.tissue_code
+        else:
+            try:
+                tissue_code = _parse_required_string(submitted["tissue_code"])
+            except ValueError as exc:
+                errors.append(f"Tissue Code: {exc}")
+                tissue_code = None
 
         description = _parse_optional_string(submitted["description"])
 
@@ -1464,7 +1497,7 @@ def _sc_tissue_form(tissue: SCTissueCode | None) -> Union[str, Response]:
                 db.session.add(target)
             db.session.flush()
             _save_tissue_capacities(target.tissue_code, per_box)
-            _refresh_tissue_default_box(target)
+            _refresh_tissue_default_box(target, per_box)
             try:
                 db.session.commit()
             except Exception as exc:  # noqa: BLE001
