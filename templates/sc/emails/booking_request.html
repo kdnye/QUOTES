@@ -15,6 +15,48 @@
     </p>
     <p style="margin:0 0 16px 0;font-size:14px;">No booking fee is applied to SC multi-leg quotes.</p>
 
+    {% if intake_has_content %}
+    <h2 style="font-size:16px;margin:24px 0 8px 0;">Booking details</h2>
+    <table cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;background:#f8f9fa;">
+      <tr>
+        <td style="border:1px solid #dee2e6;width:50%;vertical-align:top;">
+          <strong>Pickup date:</strong> {{ intake.pickup_date or '—' }}
+        </td>
+        <td style="border:1px solid #dee2e6;width:50%;vertical-align:top;">
+          <strong>Delivery date:</strong> {{ intake.delivery_date or '—' }}
+        </td>
+      </tr>
+      {% set shipper = intake.shipper or {} %}
+      {% set consignee = intake.consignee or {} %}
+      <tr>
+        <td style="border:1px solid #dee2e6;vertical-align:top;">
+          <div style="font-weight:bold;margin-bottom:4px;">Shipper</div>
+          {{ shipper.name or '—' }}{% if shipper.contact %} — {{ shipper.contact }}{% endif %}<br>
+          {% if shipper.phone %}{{ shipper.phone }}<br>{% endif %}
+          {% if shipper.street or shipper.city or shipper.state or shipper.zip %}
+          <span style="color:#6c757d;">
+            {{ shipper.street }}{% if shipper.street and (shipper.city or shipper.state or shipper.zip) %}, {% endif %}{{ shipper.city }}{% if shipper.city and shipper.state %}, {% endif %}{{ shipper.state }} {{ shipper.zip }}
+          </span><br>
+          {% endif %}
+          {% if shipper.reference %}<span style="color:#6c757d;">Ref: {{ shipper.reference }}</span><br>{% endif %}
+          {% if shipper.notes %}<div style="color:#6c757d;margin-top:4px;">Notes: {{ shipper.notes }}</div>{% endif %}
+        </td>
+        <td style="border:1px solid #dee2e6;vertical-align:top;">
+          <div style="font-weight:bold;margin-bottom:4px;">Consignee</div>
+          {{ consignee.name or '—' }}{% if consignee.contact %} — {{ consignee.contact }}{% endif %}<br>
+          {% if consignee.phone %}{{ consignee.phone }}<br>{% endif %}
+          {% if consignee.street or consignee.city or consignee.state or consignee.zip %}
+          <span style="color:#6c757d;">
+            {{ consignee.street }}{% if consignee.street and (consignee.city or consignee.state or consignee.zip) %}, {% endif %}{{ consignee.city }}{% if consignee.city and consignee.state %}, {% endif %}{{ consignee.state }} {{ consignee.zip }}
+          </span><br>
+          {% endif %}
+          {% if consignee.reference %}<span style="color:#6c757d;">Ref: {{ consignee.reference }}</span><br>{% endif %}
+          {% if consignee.notes %}<div style="color:#6c757d;margin-top:4px;">Notes: {{ consignee.notes }}</div>{% endif %}
+        </td>
+      </tr>
+    </table>
+    {% endif %}
+
     <h2 style="font-size:16px;margin:24px 0 8px 0;">Leg summary</h2>
     <table cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
       <thead>

@@ -1685,6 +1685,393 @@ def _seed_sc_session_with_legs(user_id: int):
     return session, leg
 
 
+_SAMPLE_INTAKE_FORM = {
+    "pickup_date": "2026-07-01",
+    "delivery_date": "2026-07-02",
+    "shipper_name": "Acme Tissue Bank",
+    "shipper_contact": "Jamie Shipper",
+    "shipper_street": "123 Donor Way",
+    "shipper_city": "Tucson",
+    "shipper_state": "AZ",
+    "shipper_zip": "85705",
+    "shipper_phone": "555-111-2222",
+    "shipper_reference": "ATB-9001",
+    "shipper_notes": "Use rear dock. Closes at 4pm.",
+    "consignee_name": "Recipient Lab",
+    "consignee_contact": "Pat Consignee",
+    "consignee_street": "789 Receiving Blvd",
+    "consignee_city": "Seattle",
+    "consignee_state": "WA",
+    "consignee_zip": "98101",
+    "consignee_phone": "555-333-4444",
+    "consignee_reference": "RL-CASE-42",
+    "consignee_notes": "Page on arrival.",
+}
+
+
+def test_sc_email_ops_intake_renders_form(app: Flask) -> None:
+    """The intake GET surfaces all shipper / consignee / date fields
+    so the SC user can fill them in. Empty session -> empty inputs.
+    """
+
+    user = _make_user(
+        "sc-intake-get@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        f"/sc/quote/{session.id}/email-ops/intake"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Every form field the parser knows about must have a matching
+    # input on the page so the round-trip works.
+    for prefix in ("shipper", "consignee"):
+        for field in (
+            "name",
+            "street",
+            "city",
+            "state",
+            "zip",
+            "contact",
+            "reference",
+            "phone",
+            "notes",
+        ):
+            assert f'name="{prefix}_{field}"' in html
+    assert 'name="pickup_date"' in html
+    assert 'name="delivery_date"' in html
+
+
+def test_sc_email_ops_intake_post_persists_and_round_trips(
+    app: Flask,
+) -> None:
+    """Submitting the intake form writes booking_intake_json,
+    redirects to the composer, and pre-fills the form on a re-GET.
+    """
+
+    from app.models import SCQuoteSession
+
+    user = _make_user(
+        "sc-intake-post@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data=_SAMPLE_INTAKE_FORM,
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert response.location.endswith(
+        f"/sc/quote/{session.id}/email-ops"
+    )
+
+    db.session.expire_all()
+    persisted = SCQuoteSession.query.get(session.id)
+    import json as _json
+
+    intake = _json.loads(persisted.booking_intake_json)
+    assert intake["pickup_date"] == "2026-07-01"
+    assert intake["delivery_date"] == "2026-07-02"
+    assert intake["shipper"]["name"] == "Acme Tissue Bank"
+    assert intake["shipper"]["contact"] == "Jamie Shipper"
+    assert intake["consignee"]["zip"] == "98101"
+    assert intake["consignee"]["notes"] == "Page on arrival."
+
+    # Re-GET pre-fills the values into the form.
+    response = client.get(
+        f"/sc/quote/{session.id}/email-ops/intake"
+    )
+    html = response.get_data(as_text=True)
+    assert "Acme Tissue Bank" in html
+    assert "RL-CASE-42" in html
+
+
+def test_sc_email_ops_composer_shows_intake_card_when_populated(
+    app: Flask,
+) -> None:
+    """The composer page surfaces the captured intake as a
+    read-only card so the user can review before clicking send.
+    """
+
+    user = _make_user(
+        "sc-intake-card@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data=_SAMPLE_INTAKE_FORM,
+    )
+
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    assert "Acme Tissue Bank" in html
+    assert "Edit booking details" in html
+
+
+def test_sc_email_ops_composer_shows_empty_state_without_intake(
+    app: Flask,
+) -> None:
+    """When no intake has been captured, the composer prompts to
+    capture it instead of rendering an empty card.
+    """
+
+    user = _make_user(
+        "sc-intake-empty@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    assert "Add booking details" in html
+
+
+def test_sc_email_ops_email_body_includes_intake_block(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The intake values must appear in BOTH the text body and the
+    HTML body that the send route hands to Postmark.
+    """
+
+    user = _make_user(
+        "sc-intake-body@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data=_SAMPLE_INTAKE_FORM,
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+        captured["html_body"] = kwargs.get("html_body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+
+    body = captured["body"]
+    assert "BOOKING DETAILS" in body
+    assert "Acme Tissue Bank" in body
+    assert "Pat Consignee" in body
+    assert "2026-07-01" in body
+    assert "Page on arrival." in body
+
+    html_body = captured["html_body"]
+    assert "Acme Tissue Bank" in html_body
+    assert "Booking details" in html_body
+
+
+def test_sc_email_ops_email_body_omits_intake_block_when_empty(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unfilled intake must not ship an empty ``BOOKING DETAILS``
+    header in the plain-text body.
+    """
+
+    user = _make_user(
+        "sc-intake-skip@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    assert "BOOKING DETAILS" not in captured["body"]
+
+
+def test_sc_email_ops_intake_uppercases_state_and_zip(app: Flask) -> None:
+    """State + ZIP fields normalize to uppercase at the parser
+    boundary so downstream renderers (composer card + email body)
+    don't carry mixed-case noise into ops's inbox.
+    """
+
+    from app.models import SCQuoteSession
+    import json as _json
+
+    user = _make_user(
+        "sc-intake-case@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_state": "az",
+            "shipper_zip": "m5v 3l9",
+            "consignee_state": "wa",
+            "consignee_zip": "98101-1234",
+            "shipper_name": "Jane Doe",
+        },
+    )
+    db.session.expire_all()
+    persisted = SCQuoteSession.query.get(session.id)
+    intake = _json.loads(persisted.booking_intake_json)
+    assert intake["shipper"]["state"] == "AZ"
+    assert intake["shipper"]["zip"] == "M5V 3L9"
+    assert intake["consignee"]["state"] == "WA"
+    assert intake["consignee"]["zip"] == "98101-1234"
+    # Free-text fields are NOT uppercased (would be obnoxious in a name).
+    assert intake["shipper"]["name"] == "Jane Doe"
+
+
+def test_sc_email_ops_text_body_skips_empty_address_continuation(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a shipper or consignee block has a street address but no
+    city/state/zip, the email body must NOT emit a trailing line of
+    whitespace where the ``city, state zip`` continuation would
+    otherwise sit. The conditional on the continuation line guards
+    against that.
+    """
+
+    user = _make_user(
+        "sc-intake-no-csz@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Whitespace Test",
+            "shipper_street": "456 Mystery Lane",
+            # city / state / zip intentionally omitted
+            "consignee_name": "Also Whitespace",
+            "consignee_street": "789 Unknown Rd",
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    body = captured["body"]
+    # The street should appear, but the continuation indent (11
+    # spaces from ``Address:   ``) followed by nothing-but-whitespace
+    # must not.
+    assert "456 Mystery Lane" in body
+    assert "789 Unknown Rd" in body
+    assert "           \n" not in body
+    # And no run of trailing whitespace after the street line:
+    assert "456 Mystery Lane\n           \n" not in body
+
+
+def test_sc_email_ops_composer_escapes_intake_for_xss(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stored intake values rendered into the composer page must be
+    HTML-escaped so a malicious shipper-notes string can't become
+    stored XSS for the next user who opens
+    ``/sc/quote/<id>/email-ops``.
+
+    The Postmark plain-text body, by contrast, must NOT be escaped -
+    the email body is literal text and ops should see the original
+    characters in their inbox.
+    """
+
+    user = _make_user(
+        "sc-intake-xss@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    payload = "<script>alert('xss')</script>"
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Acme",
+            "shipper_notes": payload,
+            "consignee_name": "Recipient",
+        },
+    )
+
+    composer_html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    # The raw payload must NOT survive on the composer page - it would
+    # execute in the next viewer's browser.
+    assert payload not in composer_html
+    # ...but the escaped form must be present so ops still sees the
+    # literal text rendered in the preview.
+    assert "&lt;script&gt;alert" in composer_html
+
+    # The Postmark plain-text body, in contrast, must keep the raw
+    # characters - the body is literal text the mail client never
+    # interprets as HTML.
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    assert payload in captured["body"]
+
+
+def test_sc_results_partial_links_to_intake_form() -> None:
+    """The 'Email Ops for Booking' button in the SC results card
+    routes through the new intake form rather than jumping straight
+    to the composer page. Asserts on the template source - the
+    partial has many context vars and rendering it standalone is
+    overkill for a URL-routing check.
+    """
+
+    from pathlib import Path
+
+    template = Path("templates/sc/_results_partial.html").read_text()
+    assert "science_care.sc_email_ops_intake" in template
+    # The old direct-to-composer route reference must NOT survive on
+    # the button (other references to ``sc_email_ops_for_booking``
+    # are fine).
+    assert "sc_email_ops_for_booking" not in template
+
+
 def test_sc_email_ops_text_body_separates_consecutive_legs(
     app: Flask,
 ) -> None:

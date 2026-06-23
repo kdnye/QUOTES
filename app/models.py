@@ -811,6 +811,14 @@ class SCQuoteSession(db.Model):
     multi_reference = db.Column(
         db.String(64), unique=True, index=True, nullable=True
     )
+    # Booking-intake form data: pickup/delivery dates plus
+    # shipper/consignee blocks (name, street, city, state, zip,
+    # contact, reference, phone, notes) captured on
+    # /sc/quote/<id>/email-ops/intake before the composer page is
+    # shown. Stored as JSON so the schema can evolve without a new
+    # migration each time the intake form gains a field. ``None``
+    # until the user submits the intake form for the first time.
+    booking_intake_json = db.Column(db.Text, nullable=True)
 
 
 class SCQuoteSessionLeg(db.Model):

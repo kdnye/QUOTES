@@ -4,7 +4,35 @@ SCIENCE CARE MULTI-LEG BOOKING REQUEST
 Reference:   {{ ref_display }}
 Requested by: {{ user_name }}{% if user_company %} ({{ user_company }}){% endif %}
 Email:       {{ user_email }}
+{% if intake_has_content %}
+BOOKING DETAILS
+------------------------------------------
+Pickup date:   {{ intake.pickup_date or '—' }}
+Delivery date: {{ intake.delivery_date or '—' }}
 
+[ SHIPPER ]
+{% set shipper = intake.shipper or {} -%}
+Name:      {{ shipper.name or '—' }}
+Contact:   {{ shipper.contact or '—' }}
+Phone:     {{ shipper.phone or '—' }}
+Address:   {{ shipper.street or '—' }}{% if shipper.city or shipper.state or shipper.zip %}
+           {{ shipper.city }}{% if shipper.city and shipper.state %}, {% endif %}{{ shipper.state }} {{ shipper.zip }}{% endif %}
+Reference: {{ shipper.reference or '—' }}
+{% if shipper.notes %}Notes:
+{{ shipper.notes }}
+{% endif %}
+[ CONSIGNEE ]
+{% set consignee = intake.consignee or {} -%}
+Name:      {{ consignee.name or '—' }}
+Contact:   {{ consignee.contact or '—' }}
+Phone:     {{ consignee.phone or '—' }}
+Address:   {{ consignee.street or '—' }}{% if consignee.city or consignee.state or consignee.zip %}
+           {{ consignee.city }}{% if consignee.city and consignee.state %}, {% endif %}{{ consignee.state }} {{ consignee.zip }}{% endif %}
+Reference: {{ consignee.reference or '—' }}
+{% if consignee.notes %}Notes:
+{{ consignee.notes }}
+{% endif %}
+{% endif %}
 LEG SUMMARY
 ------------------------------------------
 {% for leg in legs -%}

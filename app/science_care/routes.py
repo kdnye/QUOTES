@@ -1525,6 +1525,144 @@ def _hydrate_legs_for_display(
     return out
 
 
+_BOOKING_INTAKE_SHIPPER_FIELDS = (
+    "name",
+    "street",
+    "city",
+    "state",
+    "zip",
+    "contact",
+    "reference",
+    "phone",
+    "notes",
+)
+_BOOKING_INTAKE_CONSIGNEE_FIELDS = _BOOKING_INTAKE_SHIPPER_FIELDS
+
+
+def _load_booking_intake(session: SCQuoteSession) -> dict[str, Any]:
+    """Deserialize ``SCQuoteSession.booking_intake_json`` into a dict.
+
+    Returns an empty dict (``{"pickup_date": "", "delivery_date": "",
+    "shipper": {}, "consignee": {}}`` shape) when no intake has been
+    submitted yet so the composer/template can `.get()` keys without
+    branching.
+    """
+
+    raw = _safe_json_load(session.booking_intake_json)
+    if not isinstance(raw, dict):
+        raw = {}
+    shipper = raw.get("shipper") if isinstance(raw.get("shipper"), dict) else {}
+    consignee = (
+        raw.get("consignee") if isinstance(raw.get("consignee"), dict) else {}
+    )
+    return {
+        "pickup_date": str(raw.get("pickup_date") or ""),
+        "delivery_date": str(raw.get("delivery_date") or ""),
+        "shipper": {f: str(shipper.get(f) or "") for f in _BOOKING_INTAKE_SHIPPER_FIELDS},
+        "consignee": {
+            f: str(consignee.get(f) or "")
+            for f in _BOOKING_INTAKE_CONSIGNEE_FIELDS
+        },
+    }
+
+
+def _booking_intake_has_content(intake: Mapping[str, Any]) -> bool:
+    """Return ``True`` when any intake field has been filled in.
+
+    The booking-email templates render the intake block only when this
+    returns ``True`` so a never-filled session doesn't ship an empty
+    "Booking details" header.
+    """
+
+    if intake.get("pickup_date") or intake.get("delivery_date"):
+        return True
+    for block in ("shipper", "consignee"):
+        for value in (intake.get(block) or {}).values():
+            if str(value or "").strip():
+                return True
+    return False
+
+
+def _parse_booking_intake_form(form: Mapping[str, str]) -> dict[str, Any]:
+    """Turn the intake form payload into the JSON shape we persist.
+
+    All values are trimmed strings; date fields are passed through
+    verbatim (the ``<input type="date">`` browser widget produces
+    ISO ``YYYY-MM-DD`` already). Unknown form keys are ignored so a
+    future field addition doesn't require a parser change at every
+    call site.
+    """
+
+    def _f(key: str) -> str:
+        val = (form.get(key) or "").strip()
+        # State codes are two-letter USPS abbreviations and ZIPs are
+        # commonly stored uppercase (e.g. ``M5V 3L9`` Canada); normalize
+        # at the boundary so downstream renderers (composer card +
+        # email body) don't carry mixed-case noise into ops's inbox.
+        if key.endswith("_state") or key.endswith("_zip"):
+            return val.upper()
+        return val
+
+    return {
+        "pickup_date": _f("pickup_date"),
+        "delivery_date": _f("delivery_date"),
+        "shipper": {
+            field: _f(f"shipper_{field}")
+            for field in _BOOKING_INTAKE_SHIPPER_FIELDS
+        },
+        "consignee": {
+            field: _f(f"consignee_{field}")
+            for field in _BOOKING_INTAKE_CONSIGNEE_FIELDS
+        },
+    }
+
+
+@science_care_bp.get("/quote/<int:session_id>/email-ops/intake")
+@login_required
+@sc_user_required
+def sc_email_ops_intake(session_id: int):
+    """Render the order-level intake form.
+
+    Pre-fills from ``SCQuoteSession.booking_intake_json`` so the user
+    can fix typos or finish a partially-filled form without losing
+    data. Submitting the form posts to
+    :func:`sc_email_ops_intake_submit` which persists the JSON and
+    redirects to the booking-email composer.
+    """
+
+    session = _load_sc_session_or_404(session_id)
+    intake = _load_booking_intake(session)
+    return render_template(
+        "sc/email_ops_intake.html",
+        sc_session=session,
+        intake=intake,
+    )
+
+
+@science_care_bp.post("/quote/<int:session_id>/email-ops/intake")
+@login_required
+@sc_user_required
+def sc_email_ops_intake_submit(session_id: int):
+    """Persist the order-level intake form and continue to the composer.
+
+    Stores the parsed form as JSON on ``booking_intake_json`` and
+    redirects to ``GET /sc/quote/<id>/email-ops`` so the user lands
+    on the preview with their answers reflected at the top of the
+    body. Idempotent - resubmitting overwrites the prior JSON.
+    """
+
+    session = _load_sc_session_or_404(session_id)
+    intake = _parse_booking_intake_form(request.form)
+    session.booking_intake_json = json.dumps(intake)
+    db.session.commit()
+    return redirect(
+        url_for(
+            "science_care.sc_email_ops_for_booking",
+            session_id=session.id,
+        )
+    )
+
+
 @science_care_bp.get("/quote/<int:session_id>/email-ops")
 @login_required
 @sc_user_required
@@ -1536,12 +1674,41 @@ def sc_email_ops_for_booking(session_id: int):
     SC multi-leg jobs are billed off the raw cheapest-of total. The
     page generates a ``mailto:operations@freightservices.net`` link
     pre-populated with one block per non-skipped leg, the grand total,
-    and the multi-leg reference in the subject.
+    and the multi-leg reference in the subject. The composer also
+    renders the order-level booking intake (shipper / consignee /
+    pickup-delivery dates) captured on
+    ``/sc/quote/<id>/email-ops/intake`` above the per-leg summary
+    when present.
     """
 
     session = _load_sc_session_or_404(session_id)
     leg_rows = _load_sc_session_legs(session)
     legs = _hydrate_legs_for_display(leg_rows, session=session)
+    intake = _load_booking_intake(session)
+    intake_has_content = _booking_intake_has_content(intake)
+    # Render the plain-text body server-side and pass it through to
+    # the composer template instead of `{% include %}`-ing the ``.txt``
+    # template directly. Jinja resolves autoescape per template by
+    # name, so a `{% include "...txt" %}` inside an HTML page renders
+    # without autoescape regardless of an enclosing
+    # ``{% autoescape true %}`` block - i.e. user-controlled intake
+    # text would otherwise become stored XSS for the next viewer of
+    # ``/sc/quote/<id>/email-ops``. Rendering once here and passing
+    # the result to the .html template forces autoescape via the
+    # parent's filename. The Postmark send route re-renders the same
+    # template standalone (which keeps autoescape OFF), so the
+    # outbound email body still ships as literal text.
+    text_preview = render_template(
+        "sc/emails/booking_request.txt",
+        sc_session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=getattr(current_user, "name", "") or "",
+        user_email=getattr(current_user, "email", "") or "",
+        user_company=getattr(current_user, "company_name", "") or "",
+        intake=intake,
+        intake_has_content=intake_has_content,
+    )
     return render_template(
         "sc/email_ops_request.html",
         sc_session=session,
@@ -1550,6 +1717,9 @@ def sc_email_ops_for_booking(session_id: int):
         user_name=getattr(current_user, "name", "") or "",
         user_email=getattr(current_user, "email", "") or "",
         user_company=getattr(current_user, "company_name", "") or "",
+        intake=intake,
+        intake_has_content=intake_has_content,
+        text_preview=text_preview,
     )
 
 
@@ -1584,6 +1754,8 @@ def sc_email_ops_send(session_id: int):
     user_name = getattr(current_user, "name", "") or ""
     user_email = getattr(current_user, "email", "") or ""
     user_company = getattr(current_user, "company_name", "") or ""
+    intake = _load_booking_intake(session)
+    intake_has_content = _booking_intake_has_content(intake)
 
     text_body = render_template(
         "sc/emails/booking_request.txt",
@@ -1593,6 +1765,8 @@ def sc_email_ops_send(session_id: int):
         user_name=user_name,
         user_email=user_email,
         user_company=user_company,
+        intake=intake,
+        intake_has_content=intake_has_content,
     )
     html_body = render_template(
         "sc/emails/booking_request.html",
@@ -1602,6 +1776,8 @@ def sc_email_ops_send(session_id: int):
         user_name=user_name,
         user_email=user_email,
         user_company=user_company,
+        intake=intake,
+        intake_has_content=intake_has_content,
     )
 
     headers: dict[str, str] = {}

@@ -33,7 +33,7 @@ Services portal.
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Accepts form and JSON submissions and persists quotes. |
 | Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. The composer's **Email to Book** button dispatches via Postmark (`POST /quotes/<id>/email/send`) with the requesting user as `Cc`; the **Open in mail client (fallback)** button keeps the legacy `mailto:` path for offline use. Every Postmark attempt persists an audit row in `booking_email_receipts` (`kind="single_quote"`). |
-| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Composer-style preview with three actions: **Email to Book** (`POST /sc/quote/<id>/email-ops/send`) sends via Postmark with ops on `To` and the requester on `Cc`, **Copy body** clones the plain-text body to the clipboard, **Open in mail client (fallback)** keeps the `mailto:` link. Both the Postmark and `mailto:` paths render the same plain-text body; Postmark also attaches a multipart HTML alternative. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Audit row per attempt in `booking_email_receipts` (`kind="sc_multi"`). |
+| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Two-step workflow. Step 1 is an **intake form** (`/sc/quote/<id>/email-ops/intake`) that captures order-level shipper + consignee blocks plus pickup / delivery dates and persists them to `SCQuoteSession.booking_intake_json`. Step 2 is the **composer preview** (`/sc/quote/<id>/email-ops`) with three actions: **Email to Book** (`POST /sc/quote/<id>/email-ops/send`) sends via Postmark with ops on `To` and the requester on `Cc`; **Copy body** clones the plain-text body to the clipboard; **Open in mail client (fallback)** keeps the `mailto:` link. Both the Postmark and `mailto:` paths render the same plain-text body; Postmark also attaches a multipart HTML alternative. The intake block (shipper / consignee / dates) appears above the per-leg shipment summary in both bodies when populated. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Audit row per attempt in `booking_email_receipts` (`kind="sc_multi"`). |
 | SC multi-leg lookup (`/sc/quote/lookup`) | ✅ Stable | Any SC user can resolve a multi-leg reference (`SCMQ0042` or a customer string) to the full persisted summary so they can re-send the ops booking email or pull a quote for a customer service call. |
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
@@ -598,12 +598,26 @@ be tied together by one identifier.
   carries `client_reference=<multi_reference>-L<leg>-<AIR|HOT>` so a customer
   can still look up a single leg by its suffixed string.
 
-**Email Ops for Booking** (`GET /sc/quote/<session_id>/email-ops`) is a
-composer-style preview page that renders both a plain-text body and an HTML
-preview of the aggregated booking message. The view intentionally adds **no**
-admin / booking fee — that $15 fee is specific to the single-quote
-`/quotes/<id>/email` workflow. Multi-leg jobs bill off the raw cheapest-of
-total.
+**Email Ops for Booking** is a two-step workflow. The "Email Ops for Booking"
+button on the SC results card routes through an **intake form** first
+(`GET /sc/quote/<session_id>/email-ops/intake`) that captures order-level
+shipper and consignee blocks (name, contact, address, phone, reference,
+notes) plus pickup / delivery dates. The form is pre-filled from
+`SCQuoteSession.booking_intake_json` on every visit so re-loading the page
+recalls what the user typed; the parser accepts any subset, so a user can
+skip the form via the "Skip and use existing details" link if they want to
+send without an intake block. Submitting the intake form
+(`POST /sc/quote/<session_id>/email-ops/intake`) persists the JSON and
+redirects to the composer preview.
+
+The **composer preview** (`GET /sc/quote/<session_id>/email-ops`) renders
+both a plain-text body and an HTML preview of the aggregated booking
+message. The captured intake (when present) shows above the per-leg shipment
+summary in both bodies and as a read-only "Booking details" card on the
+page with an "Edit booking details" link back to the intake form. The view
+intentionally adds **no** admin / booking fee — that $15 fee is specific
+to the single-quote `/quotes/<id>/email` workflow. Multi-leg jobs bill off
+the raw cheapest-of total.
 
 The composer exposes three actions:
 

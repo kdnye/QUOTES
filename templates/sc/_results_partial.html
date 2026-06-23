@@ -12,7 +12,7 @@
       {% endif %}
       <span class="badge bg-primary">Session #{{ session.id }}</span>
       <a class="btn btn-success btn-sm"
-         href="{{ url_for('science_care.sc_email_ops_for_booking', session_id=session.id) }}">
+         href="{{ url_for('science_care.sc_email_ops_intake', session_id=session.id) }}">
         Email Ops for Booking
       </a>
     </div>
