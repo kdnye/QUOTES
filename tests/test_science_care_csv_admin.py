@@ -326,8 +326,13 @@ def test_accessorial_map_csv_round_trip(app: Flask) -> None:
     rows = SCAccessorialMap.query.filter_by(
         rate_set=RATE_SET_SCIENCE_CARE
     ).order_by(SCAccessorialMap.form_field).all()
-    assert [r.form_field for r in rows] == ["J3", "J8"]
-    assert rows[0].accessorial_name == "4hr Window"
+    # J6 is seeded by migration c8f1a3b6d92e for the Weekend accessorial;
+    # the 'add' action only inserts the uploaded rows, so the seed stays.
+    assert [r.form_field for r in rows] == ["J3", "J6", "J8"]
+    by_field = {r.form_field: r for r in rows}
+    assert by_field["J3"].accessorial_name == "4hr Window"
+    assert by_field["J8"].accessorial_name == "Liftgate"
+    assert by_field["J6"].accessorial_name == "Weekend"
 
 
 # --- Tissue codes with per-box capacity columns -----------------------------

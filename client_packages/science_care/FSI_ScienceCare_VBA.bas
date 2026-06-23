@@ -49,11 +49,12 @@ Private Const CELL_DEST_ZIP       As String = "B4"   ' US destination ZIP (5 dig
 Private Const CELL_INTL_COUNTRY   As String = "B6"   ' International country - if filled, macro skips (API is domestic-only)
 
 ' Accessorial Y/N markers - cell holds "Y" when that service is selected.
-' Cells without an API equivalent (Weekend J6, VSC J9) are intentionally not
-' sent: VSC is computed server-side from zone; Weekend has no API name.
+' VSC (J9) is intentionally not sent: it is computed server-side from the
+' destination zone, not selected per quote.
 Private Const CELL_ACC_4HR_WINDOW   As String = "J3"  ' 4 Hour Delivery/Pick-Up Window ($50)
 Private Const CELL_ACC_SPECIAL_TIME As String = "J4"  ' Special Pickup or Delivery Time (+$95)
 Private Const CELL_ACC_AFTERHOURS   As String = "J5"  ' Afterhours Delivery/Pickup (+$110)
+Private Const CELL_ACC_WEEKEND      As String = "J6"  ' Weekend Pickup/Delivery (+$125)
 Private Const CELL_ACC_TWO_MAN      As String = "J7"  ' Two-Man Team Required (+$125)
 Private Const CELL_ACC_LIFTGATE     As String = "J8"  ' Liftgate Required (+$75)
 
@@ -122,6 +123,7 @@ Private Function AccName(cellAddr As String) As String
         Case CELL_ACC_4HR_WINDOW:   AccName = "4hr Window"
         Case CELL_ACC_SPECIAL_TIME: AccName = "Less than 4 hrs"
         Case CELL_ACC_AFTERHOURS:   AccName = "After Hours"
+        Case CELL_ACC_WEEKEND:      AccName = "Weekend"
         Case CELL_ACC_TWO_MAN:      AccName = "Two Man"
         Case CELL_ACC_LIFTGATE:     AccName = "Liftgate"
         Case Else:                  AccName = ""
@@ -496,17 +498,18 @@ End Function
 Private Function BuildAccessorialsJson(ws As Worksheet) As String
     ' Note: not named "cells" — that shadows the Cells property on
     ' Worksheet/Range and trips VBA's "Ambiguous name" check on some setups.
-    Dim accCells(0 To 4) As String
+    Dim accCells(0 To 5) As String
     accCells(0) = CELL_ACC_4HR_WINDOW
     accCells(1) = CELL_ACC_SPECIAL_TIME
     accCells(2) = CELL_ACC_AFTERHOURS
-    accCells(3) = CELL_ACC_TWO_MAN
-    accCells(4) = CELL_ACC_LIFTGATE
+    accCells(3) = CELL_ACC_WEEKEND
+    accCells(4) = CELL_ACC_TWO_MAN
+    accCells(5) = CELL_ACC_LIFTGATE
 
     Dim result As String
     result = ""
     Dim i As Long
-    For i = 0 To 4
+    For i = LBound(accCells) To UBound(accCells)
         Dim v As Variant
         v = ws.Range(accCells(i)).Value
         If Not IsError(v) Then

@@ -56,9 +56,9 @@ If the lookup sheet is missing or the lab code is not in the table, the macro wr
 | Total shipment weight (lbs) | **I37** | Used as `weight` |
 | Total boxes | **A30** | Used as `pieces` (defaults to 1 if empty) |
 | Box quantities (for dim weight) | **A26 / A27 / A28 / A29** | Medium / Large / X-Large / Airtray |
-| Accessorials (Y/N markers) | **J3, J4, J5, J7, J8** | See mapping below |
+| Accessorials (Y/N markers) | **J3, J4, J5, J6, J7, J8** | See mapping below |
 
-`J6` (Weekend) and `J9` (VSC) are intentionally not sent: VSC is computed server-side from the lane zone, and Weekend has no current API equivalent.
+`J9` (VSC) is intentionally not sent: it is computed server-side from the lane zone, not selected per quote.
 
 ---
 
@@ -69,6 +69,7 @@ If the lookup sheet is missing or the lab code is not in the table, the macro wr
 | 4 Hour Delivery/Pick-Up Window | J3 | `4hr Window` |
 | Special Pickup or Delivery Time | J4 | `Less than 4 hrs` |
 | Afterhours Delivery/Pickup | J5 | `After Hours` |
+| Weekend Pickup/Delivery | J6 | `Weekend` |
 | Two-Man Team Required | J7 | `Two Man` |
 | Liftgate Required | J8 | `Liftgate` |
 
