@@ -145,7 +145,12 @@
                      data-sc-dest-zip="{{ leg }}"
                      inputmode="numeric"
                      pattern="\d{5}"
-                     maxlength="5" />
+                     maxlength="5"
+                     hx-get="{{ url_for('science_care.sc_dest_zip_notes_partial') }}"
+                     hx-trigger="change delay:200ms, keyup changed delay:400ms"
+                     hx-target="#dest-zip-notes-{{ leg }}"
+                     hx-swap="outerHTML"
+                     hx-vals='{"leg": {{ leg }}}' />
               <small id="dest_city_state_{{ leg }}"
                      class="form-text text-body-secondary sc-dest-city-state"
                      data-leg="{{ leg }}"
@@ -199,17 +204,32 @@
             </div>
           </div>
 
+          {# Destination ZIP shipment-notes banner. Empty container on
+             first render (and on dest-ZIP clears) - HTMX swaps the
+             whole div via outerHTML the moment the dest ZIP changes,
+             mirroring the source workbook's airport / cargo warning
+             row that appears between origin/dest and the accessorial
+             checklist. #}
+          {% include "sc/_dest_zip_notes.html" with context %}
+
           <fieldset class="mb-3">
             <legend class="h6">Accessorials</legend>
+            <div class="alert alert-warning py-2 mb-3" role="note">
+              <strong>Heads-up:</strong> These ancillary fees apply for both RETURNS &amp; PICK-UPS.
+            </div>
             <div class="d-flex flex-wrap gap-3">
-              {% for field, label in accessorials %}
+              {% for field, label, cost_label in accessorials %}
               <div class="form-check">
                 <input class="form-check-input"
                        type="checkbox"
                        value="Y"
                        id="acc_{{ field }}_{{ leg }}"
                        name="acc_{{ field }}_{{ leg }}" />
-                <label class="form-check-label" for="acc_{{ field }}_{{ leg }}">{{ label }}</label>
+                <label class="form-check-label" for="acc_{{ field }}_{{ leg }}">
+                  {{ label }}{% if cost_label %}
+                  <span class="text-body-secondary">({{ cost_label }})</span>
+                  {% endif %}
+                </label>
               </div>
               {% endfor %}
             </div>
@@ -270,6 +290,15 @@
                   weight_lb = subtotals_initial.tissue_lb %}
             {% include "sc/_section_subtotal.html" %}
           {% endwith %}
+
+          {# Static box-sizing guidance lifted verbatim from the source
+             workbook. Sits between the tissue rows and the Boxes
+             section so the operator sees it while deciding whether to
+             override the auto-allocated box counts. #}
+          <div class="alert alert-info py-2 mt-3 mb-2" role="note">
+            <p class="mb-1"><strong>Always quote the larger size</strong> if it shows a specimen can ship in two different sizes. <em>Ex: 1 can ship in L and 1 in XL box — quote XL box.</em></p>
+            <p class="mb-0">If shipping multiple tissue types together and it's not intuitive, <strong>ask the lab how they would package</strong> / for total wt.</p>
+          </div>
 
           <fieldset class="mb-3 mt-3">
             <legend class="h6">Boxes</legend>

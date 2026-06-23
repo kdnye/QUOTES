@@ -121,6 +121,115 @@ def test_sc_reference_allows_sc_admin(app: Flask) -> None:
         assert key in html
 
 
+def test_sc_dest_zip_notes_renders_banner(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ZIP-based shipment notes surface in the per-leg banner.
+
+    Stubs :func:`app.services.quote.get_zip_notes` so the test does
+    not depend on the ``zip_zones.notes`` column being present (a
+    pre-existing schema drift between the SQLAlchemy model and the
+    migration history that the rest of the SC test suite works around
+    via :data:`tests/conftest.py::_KNOWN_FAILURE_NODEIDS`).
+    """
+
+    from app.science_care import routes as sc_routes
+
+    def _fake_get_zip_notes(zip_code, rate_set, session=None):
+        if zip_code == "30301":
+            return (
+                "Destination Airport Cargo Warnings: Airtray "
+                "Restrictions on Weekends"
+            )
+        return None
+
+    monkeypatch.setattr(sc_routes, "get_zip_notes", _fake_get_zip_notes)
+
+    user = _make_user("notes@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/dest-zip-notes?leg=2&dest_zip_2=30301"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert 'id="dest-zip-notes-2"' in html
+    assert "Airtray Restrictions on Weekends" in html
+    assert "ZIP 30301" in html
+
+
+def test_sc_dest_zip_notes_empty_when_no_match(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """No-match still returns an empty target div so HTMX can swap again."""
+
+    from app.science_care import routes as sc_routes
+
+    monkeypatch.setattr(
+        sc_routes, "get_zip_notes", lambda *a, **k: None
+    )
+
+    user = _make_user(
+        "notes-empty@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        "/sc/quote/dest-zip-notes?leg=5&dest_zip_5=99999"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Stable swap target survives even when no notes exist - HTMX
+    # re-targets this div on the next ZIP change.
+    assert 'id="dest-zip-notes-5"' in html
+    assert "fsi-notice--warning" not in html
+
+
+def test_sc_quote_form_renders_accessorial_costs(app: Flask) -> None:
+    """Accessorial checkboxes show the dollar (or %) cost beside the label."""
+
+    from app.models import Accessorial, SCAccessorialMap
+
+    user = _make_user(
+        "acc-cost@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    db.session.add_all(
+        [
+            Accessorial(name="Liftgate", amount=85.0, is_percentage=False),
+            SCAccessorialMap(
+                form_field="J8",
+                display_label="Liftgate Required",
+                accessorial_name="Liftgate",
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get("/sc/quote").get_data(as_text=True)
+    assert "Liftgate Required" in html
+    assert "$85.00" in html
+
+
+def test_sc_quote_form_renders_static_guidance_notes(app: Flask) -> None:
+    """Static workbook-derived guidance notes render on the SC quote page."""
+
+    user = _make_user(
+        "guidance@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get("/sc/quote").get_data(as_text=True)
+    # Accessorial banner reminding the operator the fees apply both
+    # ways. The ampersand is HTML-escaped (``&amp;``) by Jinja's
+    # autoescape so assert on the entity, not the literal ``&``.
+    assert "These ancillary fees apply for both RETURNS &amp; PICK-UPS" in html
+    # Box-sizing guidance between the tissue rows and the Boxes section.
+    assert "Always quote the larger size" in html
+    assert "ask the lab how they would" in html
+
+
 def test_sc_lab_lookup_returns_origin(app: Flask) -> None:
     user = _make_user("lab@example.com", rate_set=RATE_SET_SCIENCE_CARE)
     db.session.add(

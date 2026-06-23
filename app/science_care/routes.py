@@ -54,6 +54,7 @@ from app.admin import (
 )
 from app.models import (
     RATE_SET_SCIENCE_CARE,
+    Accessorial,
     Quote,
     SCAccessorialMap,
     SCBoxType,
@@ -80,6 +81,7 @@ from app.services.science_care_quote import (
     recommended_box_for_qty,
 )
 from app.services.bulk_import import record_rate_upload, save_unique
+from app.services.quote import get_zip_notes
 from app.services.zip_city_lookup import lookup_city_state
 
 from . import science_care_bp
@@ -127,13 +129,44 @@ _TISSUE_BOX_COLUMN_TO_CODE: dict[str, str] = {
 }
 
 
-def _accessorial_labels() -> list[tuple[str, str]]:
-    """Return ``(form_field, display_label)`` pairs for the form.
+def _format_accessorial_cost(
+    amount: float | None, is_percentage: bool
+) -> str:
+    """Return a human-readable cost label like ``"$25.00"`` or ``"5%"``.
+
+    Returns an empty string when ``amount`` is missing or zero so the
+    template can suppress the parenthetical entirely for accessorials
+    that carry no listed price.
+    """
+
+    try:
+        value = float(amount or 0.0)
+    except (TypeError, ValueError):
+        return ""
+    if value <= 0:
+        return ""
+    if is_percentage:
+        if value == int(value):
+            return f"{int(value)}%"
+        return f"{value:g}%"
+    return f"${value:,.2f}"
+
+
+def _accessorial_labels() -> list[tuple[str, str, str]]:
+    """Return ``(form_field, display_label, cost_label)`` triples for the form.
 
     Reads :class:`app.models.SCAccessorialMap` for the science-care
     rate-set first; falls back to the hard-coded labels so a freshly
-    migrated database still renders a usable form.
+    migrated database still renders a usable form. ``cost_label`` is a
+    formatted string (e.g. ``"$25.00"`` or ``"5%"``) sourced from the
+    matching :class:`app.models.Accessorial` row, or an empty string
+    when no priced accessorial maps to the form field.
     """
+
+    cost_by_name: dict[str, tuple[float, bool]] = {
+        str(a.name): (float(a.amount or 0.0), bool(a.is_percentage))
+        for a in Accessorial.query.all()
+    }
 
     rows = (
         SCAccessorialMap.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
@@ -141,9 +174,27 @@ def _accessorial_labels() -> list[tuple[str, str]]:
         .all()
     )
     if rows:
-        return [(row.form_field, row.display_label) for row in rows]
+        labeled: list[tuple[str, str, str]] = []
+        for row in rows:
+            amount, is_percentage = cost_by_name.get(
+                row.accessorial_name, (0.0, False)
+            )
+            labeled.append(
+                (
+                    row.form_field,
+                    row.display_label,
+                    _format_accessorial_cost(amount, is_percentage),
+                )
+            )
+        return labeled
     return [
-        (field, label)
+        (
+            field,
+            label,
+            _format_accessorial_cost(
+                *cost_by_name.get(label, (0.0, False))
+            ),
+        )
         for field, label in _FALLBACK_ACCESSORIAL_LABELS.items()
     ]
 
@@ -465,6 +516,50 @@ def sc_tissue_lookup_partial() -> str:
         args, leg, box_types, box_index, oob=True
     )
     return tissue_row_html + box_counts_html + subtotals_html
+
+
+@science_care_bp.get("/quote/dest-zip-notes")
+@login_required
+@sc_user_required
+def sc_dest_zip_notes_partial() -> str:
+    """Return the destination ZIP shipment-notes banner for one leg.
+
+    Triggered by the destination ZIP input on each leg so the operator
+    sees the source workbook's ZIP-specific cargo warnings (airport
+    restrictions, airtray weekend rules, etc.) the moment they finish
+    typing the ZIP. Notes come from :class:`app.models.ZipZone` via
+    :func:`app.services.quote.get_zip_notes`.
+
+    Query parameters:
+        leg: 1-based leg index (used to scope the swap target).
+        zip: Destination ZIP. HTMX sends the input's ``name``
+            (``dest_zip_<leg>``) rather than ``zip``, so the dynamic
+            name is checked as a fallback.
+    """
+
+    leg = max(1, min(SC_LEG_COUNT, _safe_int(request.args.get("leg"), 1)))
+
+    zip_code = request.args.get("zip")
+    if not zip_code:
+        zip_code = request.args.get(f"dest_zip_{leg}")
+    zip_code = (zip_code or "").strip()
+
+    # The dest-ZIP input is `pattern="\d{5}" maxlength="5"`, so any value
+    # shorter than 5 chars is mid-typing and can't possibly match a
+    # ZipZone row. Skip the DB round-trip until the operator has a full
+    # ZIP - HTMX fires this endpoint on every keystroke.
+    notes: str | None = None
+    if len(zip_code) == 5:
+        notes = get_zip_notes(
+            zip_code, RATE_SET_SCIENCE_CARE, session=db.session
+        )
+
+    return render_template(
+        "sc/_dest_zip_notes.html",
+        leg=leg,
+        zip_code=zip_code,
+        notes=notes,
+    )
 
 
 @science_care_bp.get("/quote/lab-lookup")
