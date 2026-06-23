@@ -61,6 +61,10 @@
           <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none"
              href="{{ url_for('quotes.my_quotes') }}">My Quotes</a>
         </li>
+        <li class="nav-item">
+          <a class="fsi-brand__lockup d-flex align-items-center justify-content-center text-decoration-none"
+             href="{{ url_for('quotes.edit_quote') }}">Edit a Quote</a>
+        </li>
 
         {% if current_user.is_authenticated and (
               current_user.role == 'super_admin'

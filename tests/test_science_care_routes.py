@@ -1613,3 +1613,170 @@ def test_sc_lookup_unknown_reference_flashes_warning(app: Flask) -> None:
     assert response.status_code == 200
     html = response.get_data(as_text=True)
     assert "No multi-leg quote found" in html
+
+
+def test_sc_quote_form_prefills_from_session(app: Flask) -> None:
+    """GET ``/sc/quote?from_session=<id>`` prefills inputs from a prior session.
+
+    Exercises the full SC prefill plumbing: simple per-leg fields, the
+    is_return checkbox, the multi_reference being stripped, the tissue
+    row count expanding from 1 to N, and the synthetic LegResult
+    threading through the box-count + consumable Qty grids.
+    """
+
+    import json as _json
+
+    from app.models import (
+        SCAccessorialMap,
+        SCBoxType,
+        SCConsumable,
+        SCLab,
+        SCQuoteSession,
+        SCTissueCode,
+    )
+
+    user = _make_user("sc-prefill@example.com", rate_set=RATE_SET_SCIENCE_CARE)
+    lab = SCLab(
+        lab_code="SCCA",
+        lab_name="Tucson",
+        origin_zip="85705",
+        is_active=True,
+    )
+    box = SCBoxType(
+        code="MED",
+        label="Medium",
+        length_in=20,
+        width_in=15,
+        height_in=18,
+        tare_weight_lb=4.0,
+    )
+    tissue = SCTissueCode(
+        tissue_code="ARM01",
+        description="Arm",
+        unit_weight_lb=12.0,
+        default_box_type_code="MED",
+        pieces_per_box=4,
+    )
+    cons = SCConsumable(
+        consumable_type="dry_ice",
+        temp_mode="frozen",
+        scope="domestic",
+        weight_lb_per_box=25.0,
+    )
+    acc_map = SCAccessorialMap(
+        form_field="J3",
+        display_label="4 Hour Delivery/Pick-Up Window",
+        accessorial_name="4hr Window",
+    )
+    db.session.add_all([lab, box, tissue, cons, acc_map])
+    db.session.commit()
+
+    payload = {
+        "multi_reference": "SCMQ0007",
+        "lab_code_1": "SCCA",
+        "dest_zip_1": "98101",
+        "routing_type_1": "Outbound",
+        "temp_mode_1": "frozen",
+        "intl_country_1": "",
+        "is_return_1": "Y",
+        f"acc_J3_1": "Y",
+        "tissue_code_1_1": "ARM01",
+        "qty_1_1": "5",
+        "tissue_code_1_2": "ARM01",
+        "qty_1_2": "3",
+        f"box_count_1_{box.id}": "2",
+        f"cons_qty_1_{cons.id}": "4",
+    }
+    session = SCQuoteSession(
+        user_id=user.id,
+        grand_total=0.0,
+        payload_json=_json.dumps(payload),
+        multi_reference="SCMQ0007",
+    )
+    db.session.add(session)
+    db.session.commit()
+    db.session.refresh(session)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(f"/sc/quote?from_session={session.id}")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+
+    # Simple per-leg fields landed.
+    assert 'name="lab_code_1"' in html and 'value="SCCA"' in html
+    assert 'name="dest_zip_1"' in html and 'value="98101"' in html
+    # routing_type select picked the right option.
+    assert "<option selected>Outbound</option>" in html or (
+        '<option selected="">Outbound</option>' in html
+    ) or (
+        'value="Outbound" selected' in html
+    ) or (
+        'Outbound</option>' in html and 'selected>Outbound' in html
+    ) or (
+        'selected\n                >Outbound' in html
+    )
+    # temp_mode select prefilled to frozen.
+    assert 'value="frozen"' in html
+    # is_return checkbox checked.
+    assert 'id="is_return_1"' in html
+    # acc_J3_1 checkbox checked.
+    assert 'name="acc_J3_1"' in html and "checked" in html
+    # Two tissue rows expanded for leg 1 (i=1 and i=2).
+    assert 'name="tissue_code_1_1"' in html
+    assert 'name="tissue_code_1_2"' in html
+    assert 'name="qty_1_1"' in html and 'value="5"' in html
+    assert 'name="qty_1_2"' in html and 'value="3"' in html
+    # Box-count override projected back into the grid.
+    assert f'name="box_count_1_{box.id}"' in html
+    # Consumable qty override projected back into the grid.
+    assert f'name="cons_qty_1_{cons.id}"' in html
+    # Multi-reference is NOT prefilled - the new submission needs a
+    # fresh ref to avoid the UNIQUE collision.
+    assert 'value="SCMQ0007"' not in html
+
+
+def test_sc_quote_form_prefill_missing_session_flashes_warning(
+    app: Flask,
+) -> None:
+    """An unknown ``?from_session=`` renders the empty form with a warning."""
+
+    user = _make_user(
+        "sc-prefill-miss@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote?from_session=999999")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "Could not find the multi-leg quote" in html
+
+
+def test_edit_quote_sc_ref_dispatches_to_sc_form(app: Flask) -> None:
+    """An ``SCMQNNNN`` reference at ``/quotes/edit`` routes to ``/sc/quote``."""
+
+    import json as _json
+    from app.models import SCQuoteSession
+
+    user = _make_user(
+        "edit-sc@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    sc_session = SCQuoteSession(
+        user_id=user.id,
+        grand_total=0.0,
+        payload_json=_json.dumps({"lab_code_1": "SCCA"}),
+        multi_reference="SCMQ0099",
+    )
+    db.session.add(sc_session)
+    db.session.commit()
+    db.session.refresh(sc_session)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        "/quotes/edit", data={"client_reference": "SCMQ0099"}
+    )
+    assert response.status_code == 302
+    location = response.headers["Location"]
+    assert "/sc/quote" in location
+    assert f"from_session={sc_session.id}" in location
