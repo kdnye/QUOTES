@@ -13,8 +13,6 @@ from app.services.hotshot_rates import (
 )
 from app.services.rate_sets import DEFAULT_RATE_SET, _call_with_rate_set
 
-ZONE_X_PER_LB_RATE = 5.1
-ZONE_X_PER_MILE_RATE = 6.0192
 LOGGER = logging.getLogger(__name__)
 
 
@@ -194,11 +192,19 @@ def calculate_hotshot_quote(
     Returns:
         A dictionary with keys ``zone``, ``miles``, ``quote_total``,
         ``weight_break``, ``per_lb``, ``per_mile`` and ``min_charge``.
-        ``weight_break`` may be ``None`` when not defined. Zones ``A`` through
-        ``J`` charge solely by weight with a minimum charge. Zone ``X``
-        overrides the database values and charges ``5.1`` USD per pound with a
-        mileage-based minimum of ``(miles * 5.2)`` before surcharge and
-        accessorial charges.
+        ``weight_break`` may be ``None`` when not defined.
+
+        Zones ``A`` through ``J`` charge ``max(min_charge, weight * per_lb)``,
+        with all three values sourced from the resolved :class:`HotshotRate`
+        row.
+
+        Zone ``X`` charges ``max(miles * per_mile, weight * per_lb)``, also
+        sourced from the rate row. The row's ``per_mile`` must be non-NULL for
+        any Zone X record; a NULL value raises :class:`ValueError` because
+        Zone X mileage minimums cannot be computed without it. The admin form
+        at :class:`app.admin.HotshotRateForm` enforces the same constraint at
+        edit time, so customers and admins can change Zone X pricing per
+        rate set without a code deploy.
 
     Surcharge policy:
         The rate table ``fuel_pct`` is applied to the base to produce a
@@ -215,8 +221,13 @@ def calculate_hotshot_quote(
     weight_break = float(rate.weight_break) if rate.weight_break is not None else None
 
     if zone.upper() == "X":
-        per_lb = ZONE_X_PER_LB_RATE
-        per_mile = ZONE_X_PER_MILE_RATE
+        if rate.per_mile is None:
+            raise ValueError(
+                f"Zone X HotshotRate row is missing per_mile "
+                f"(rate_set={rate_set!r}, miles={miles}). "
+                f"Edit the row in /admin/hotshot_rates and set Per Mile."
+            )
+        per_mile = float(rate.per_mile)
         min_charge = miles * per_mile
         base = max(min_charge, weight * per_lb)
     else:

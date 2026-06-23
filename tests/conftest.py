@@ -110,7 +110,6 @@ _KNOWN_FAILURE_NODEIDS: frozenset[str] = frozenset(
         "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc",
         "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_rate_fuel_pct_affects_vsc_base",
         "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing",
-        "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_zone_x_uses_override_rates",
         "tests/test_logic_hotshot.py::test_get_vsc_zone_for_zip_can_raise_typed_error_when_missing",
         "tests/test_logic_hotshot.py::test_miles_are_ceiling_rounded",
         "tests/test_mail_privileges.py::test_mail_privileges_allow_approved_employee",

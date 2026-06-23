@@ -25,16 +25,14 @@ def test_miles_are_ceiling_rounded(monkeypatch):
         accessorial_total=0.0,
         zone_lookup=lambda miles, rate_set=None: "X" if miles == 24 else "A",
         rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
-            per_lb=1.0, fuel_pct=0.0, weight_break=None, min_charge=10.0
+            per_lb=5.1, per_mile=6.0192, fuel_pct=0.0, weight_break=None, min_charge=10.0
         ),
         zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=1),
     )
 
     assert result["miles"] == 24
     assert result["zone"] == "X"
-    assert result["min_charge"] == pytest.approx(
-        24 * logic_hotshot.ZONE_X_PER_MILE_RATE
-    )
+    assert result["min_charge"] == pytest.approx(24 * 6.0192)
 
 
 def test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc(monkeypatch):
@@ -76,16 +74,17 @@ def test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc(monkeypatch):
     assert result["warning_metadata"] == []
 
 
-def test_calculate_hotshot_quote_zone_x_uses_override_rates(monkeypatch):
-    """Zone X overrides per_lb and per_mile; fuel_pct still comes from rate table.
+def test_calculate_hotshot_quote_zone_x_uses_rate_row_values(monkeypatch):
+    """Zone X reads per_lb and per_mile from the rate row; fuel_pct does too.
 
-    miles=10, ZONE_X_PER_MILE_RATE=6.0192 -> min_charge=60.192
-    ZONE_X_PER_LB_RATE=5.1, weight=1 -> weight_cost=5.1
-    base = max(60.192, 5.1) = 60.192
-    fuel_surcharge = 60.192 * 0.315 = 18.96048
-    base_with_fuel = 79.15248
-    vsc = 79.15248 * 0.0 = 0
-    total = 79.15248
+    With the seeded defaults per_lb=5.1, per_mile=6.0192:
+        miles=10, per_mile=6.0192 -> min_charge=60.192
+        per_lb=5.1, weight=1 -> weight_cost=5.1
+        base = max(60.192, 5.1) = 60.192
+        fuel_surcharge = 60.192 * 0.315 = 18.96048
+        base_with_fuel = 79.15248
+        vsc = 79.15248 * 0.0 = 0
+        total = 79.15248
     """
 
     monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 10.0)
@@ -98,22 +97,105 @@ def test_calculate_hotshot_quote_zone_x_uses_override_rates(monkeypatch):
         accessorial_total=0.0,
         zone_lookup=lambda _miles, rate_set=None: "X",
         rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
-            per_lb=1.0,
+            per_lb=5.1,
+            per_mile=6.0192,
             fuel_pct=0.315,
             weight_break=None,
             min_charge=1.0,
         ),
         zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=7),
+        vsc_zone_lookup=lambda _zip, rate_set=None: 7,
     )
 
-    expected_base = 10.0 * logic_hotshot.ZONE_X_PER_MILE_RATE
+    expected_base = 10.0 * 6.0192
     expected_fuel = expected_base * 0.315
-    assert result["per_lb"] == logic_hotshot.ZONE_X_PER_LB_RATE
-    assert result["per_mile"] == logic_hotshot.ZONE_X_PER_MILE_RATE
+    assert result["per_lb"] == 5.1
+    assert result["per_mile"] == 6.0192
     assert result["base_rate"] == pytest.approx(expected_base)
     assert result["fuel_surcharge_base_amount"] == pytest.approx(expected_fuel)
     assert result["vsc_amount"] == pytest.approx(0.0)
     assert result["quote_total"] == pytest.approx(expected_base + expected_fuel)
+
+
+def test_calculate_hotshot_quote_zone_x_null_per_mile_raises(monkeypatch):
+    """Zone X row with NULL per_mile is a data-integrity error and must raise."""
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 100.0)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.0)
+
+    with pytest.raises(ValueError, match="Zone X HotshotRate row is missing per_mile"):
+        logic_hotshot.calculate_hotshot_quote(
+            origin="11111",
+            destination="22222",
+            weight=1.0,
+            accessorial_total=0.0,
+            zone_lookup=lambda _miles, rate_set=None: "X",
+            rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+                per_lb=5.1,
+                per_mile=None,
+                fuel_pct=0.315,
+                weight_break=None,
+                min_charge=1.0,
+            ),
+            zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=7),
+        )
+
+
+def test_calculate_hotshot_quote_zone_x_honors_custom_rate_set(monkeypatch):
+    """A custom rate_set with its own Zone X per_mile overrides the default seed.
+
+    Simulates a customer assigned to rate_set "custom_test" whose Zone X
+    per_mile is 8.0 (vs the default seed of 6.0192). With miles=200 the
+    customer's quote uses 8.0:
+        min_charge = 200 * 8.0 = 1600
+        base = max(1600, weight*per_lb=510) = 1600
+    A default-rate-set quote with miles=200 would yield 200*6.0192=1203.84,
+    proving the rate row's per_mile is the authority.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 200.0)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.0)
+
+    rate_rows = {
+        "default": SimpleNamespace(
+            per_lb=5.1, per_mile=6.0192, fuel_pct=0.0, weight_break=None, min_charge=1.0
+        ),
+        "custom_test": SimpleNamespace(
+            per_lb=5.1, per_mile=8.0, fuel_pct=0.0, weight_break=None, min_charge=1.0
+        ),
+    }
+
+    def rate_lookup(_zone, rate_set=None):
+        return rate_rows[rate_set]
+
+    custom_result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="22222",
+        weight=100.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "X",
+        rate_lookup=rate_lookup,
+        zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=7),
+        vsc_zone_lookup=lambda _zip, rate_set=None: 7,
+        rate_set="custom_test",
+    )
+    default_result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="22222",
+        weight=100.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "X",
+        rate_lookup=rate_lookup,
+        zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=7),
+        vsc_zone_lookup=lambda _zip, rate_set=None: 7,
+        rate_set="default",
+    )
+
+    assert custom_result["per_mile"] == 8.0
+    assert custom_result["min_charge"] == pytest.approx(200.0 * 8.0)
+    assert default_result["per_mile"] == 6.0192
+    assert default_result["min_charge"] == pytest.approx(200.0 * 6.0192)
+    assert custom_result["quote_total"] != default_result["quote_total"]
 
 
 def test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing(
