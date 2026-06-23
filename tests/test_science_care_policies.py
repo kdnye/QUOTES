@@ -47,13 +47,19 @@ def app(postgres_database_url: str, monkeypatch: pytest.MonkeyPatch) -> Flask:
         db.drop_all()
 
 
-def _make_user(email: str, rate_set: str, is_sc_admin: bool = False) -> User:
+def _make_user(
+    email: str,
+    rate_set: str,
+    is_sc_admin: bool = False,
+    employee_approved: bool = False,
+) -> User:
     user = User(
         email=email,
         name=email,
         password_hash="x",
         rate_set=rate_set,
         is_sc_admin=is_sc_admin,
+        employee_approved=employee_approved,
     )
     db.session.add(user)
     db.session.commit()
@@ -131,18 +137,38 @@ def test_sc_admin_required_allows_fsi_admin(app: Flask) -> None:
     assert response.status_code == 200
 
 
-def test_sc_admin_required_allows_freightservices_employee(app: Flask) -> None:
-    # Any @freightservices.net user gets reference access automatically,
-    # no is_sc_admin flag required.
+def test_sc_admin_required_allows_approved_freightservices_employee(
+    app: Flask,
+) -> None:
+    # An approved @freightservices.net user gets reference access
+    # automatically, no is_sc_admin flag required.
     user = _make_user(
         "ops@freightservices.net",
         rate_set="default",
         is_sc_admin=False,
+        employee_approved=True,
     )
     client = app.test_client()
     _login(client, user.id)
     response = client.get("/probe/admin")
     assert response.status_code == 200
+
+
+def test_sc_admin_required_blocks_unapproved_freightservices_employee(
+    app: Flask,
+) -> None:
+    # Self-registered @freightservices.net accounts land unapproved; they
+    # must not get reference access until an admin flips employee_approved.
+    user = _make_user(
+        "new-hire@freightservices.net",
+        rate_set="default",
+        is_sc_admin=False,
+        employee_approved=False,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/probe/admin")
+    assert response.status_code == 403
 
 
 def test_sc_admin_required_blocks_plain_external_user(app: Flask) -> None:

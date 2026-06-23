@@ -174,9 +174,12 @@ def sc_admin_required(view: Callable) -> Callable:
     Gates ``/sc/reference`` endpoints. Access is granted to:
 
     * FSI super-admins (``is_admin``), who can always triage.
-    * Freight Services employees identified by an ``@freightservices.net``
-      email address - internal staff get reference-table access by
-      virtue of their domain, no extra flag required.
+    * Approved Freight Services employees identified by an
+      ``@freightservices.net`` email address - internal staff get
+      reference-table access by virtue of their domain, but only once an
+      admin has flipped ``employee_approved`` (self-registered FSI emails
+      land unapproved and must not get free access via the domain check
+      alone).
     * Any user (including external customers) whose
       :attr:`app.models.User.is_sc_admin` flag is set via the admin user
       form. The flag is the explicit opt-in for non-FSI accounts that
@@ -192,7 +195,9 @@ def sc_admin_required(view: Callable) -> Callable:
         if getattr(current_user, "is_admin", False):
             return view(*args, **kwargs)
         email = (getattr(current_user, "email", "") or "").lower()
-        if email.endswith(EMPLOYEE_EMAIL_DOMAIN):
+        if email.endswith(EMPLOYEE_EMAIL_DOMAIN) and getattr(
+            current_user, "employee_approved", False
+        ):
             return view(*args, **kwargs)
         if getattr(current_user, "is_sc_admin", False):
             return view(*args, **kwargs)
