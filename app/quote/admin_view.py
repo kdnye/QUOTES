@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import csv
-import json
 from io import StringIO
 from typing import Final
 
@@ -46,40 +45,6 @@ def _escape_for_csv(value: str | None) -> str:
     return text
 
 
-def _parse_accessorials(quote_metadata: str | None) -> list[dict[str, object]]:
-    """Return ``[{"name": str, "amount": float}]`` parsed from a quote's metadata.
-
-    ``Quote.quote_metadata`` is the JSON blob written by
-    :func:`app.services.quote.create_quote`: the ``"accessorials"`` key
-    holds a ``{display_name: cost}`` dict. Malformed or missing JSON,
-    a missing ``accessorials`` key, or a non-dict value all return an
-    empty list so the admin table renders an empty cell instead of
-    surfacing raw JSON. Amounts that can't be coerced to ``float`` fall
-    back to ``0.0`` so a single bad row can't 500 the page.
-    """
-
-    if not quote_metadata:
-        return []
-    try:
-        data = json.loads(quote_metadata)
-    except (TypeError, ValueError):
-        return []
-    if not isinstance(data, dict):
-        return []
-    accessorials = data.get("accessorials")
-    if not isinstance(accessorials, dict):
-        return []
-    out: list[dict[str, object]] = []
-    for name, amount in accessorials.items():
-        try:
-            amount_f = float(amount)
-        except (TypeError, ValueError):
-            amount_f = 0.0
-        out.append({"name": str(name), "amount": amount_f})
-    out.sort(key=lambda item: str(item["name"]).lower())
-    return out
-
-
 @admin_quotes_bp.route("/quotes")
 @employee_required(approved_only=True)
 def quotes_html() -> str:
@@ -98,16 +63,9 @@ def quotes_html() -> str:
         * :func:`services.mail.user_has_mail_privileges` to toggle email links.
     """
     quotes = Quote.query.order_by(Quote.created_at.desc()).all()
-    rows = [
-        {
-            "quote": q,
-            "accessorials": _parse_accessorials(q.quote_metadata),
-        }
-        for q in quotes
-    ]
     return render_template(
         "admin_quotes.html",
-        rows=rows,
+        quotes=quotes,
         can_use_email_request=user_has_mail_privileges(current_user),
     )
 
@@ -130,7 +88,6 @@ def quotes_csv() -> Response:
     writer.writerow(
         [
             "Quote ID",
-            "Client Reference",
             "User ID",
             "User Email",
             "Type",
@@ -147,15 +104,9 @@ def quotes_csv() -> Response:
         ]
     )
     for q in quotes:
-        accessorials = _parse_accessorials(q.quote_metadata)
-        accessorial_summary = "; ".join(
-            f"{item['name']}: ${item['amount']:.2f}"
-            for item in accessorials
-        )
         writer.writerow(
             [
                 q.quote_id,
-                _escape_for_csv(q.client_reference),
                 q.user_id,
                 _escape_for_csv(q.user_email),
                 _escape_for_csv(q.quote_type),
@@ -167,7 +118,7 @@ def quotes_csv() -> Response:
                 _escape_for_csv(q.weight_method),
                 _escape_for_csv(q.zone),
                 q.total,
-                _escape_for_csv(accessorial_summary),
+                _escape_for_csv(q.quote_metadata),
                 q.created_at.strftime("%Y-%m-%d %H:%M") if q.created_at else "",
             ]
         )

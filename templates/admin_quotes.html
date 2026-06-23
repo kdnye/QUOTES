@@ -7,11 +7,10 @@
     <a class="btn btn-primary" href="{{ url_for('admin_quotes.quotes_csv') }}">Download CSV</a>
   </div>
   <div class="table-responsive">
-    <table class="table table-striped table-sm align-middle">
+    <table class="table table-striped table-sm">
       <thead>
         <tr>
           <th>Quote ID</th>
-          <th>Client Ref</th>
           <th>User ID</th>
           <th>User Email</th>
           <th>Type</th>
@@ -29,17 +28,9 @@
         </tr>
       </thead>
       <tbody>
-        {% for row in rows %}
-        {% set q = row.quote %}
+        {% for q in quotes %}
         <tr>
           <td class="text-break">{{ q.quote_id }}</td>
-          <td class="text-break">
-            {% if q.client_reference %}
-              <code>{{ q.client_reference }}</code>
-            {% else %}
-              <span class="text-body-secondary">—</span>
-            {% endif %}
-          </td>
           <td class="text-break">{{ q.user_id }}</td>
           <td class="text-break">{{ q.user_email }}</td>
           <td class="text-break">{{ q.quote_type }}</td>
@@ -50,21 +41,8 @@
           <td>{{ '%.2f'|format(q.weight or 0) }}</td>
           <td class="text-break">{{ q.weight_method }}</td>
           <td class="text-break">{{ q.zone }}</td>
-          <td>{{ (q.total or 0) | currency }}</td>
-          <td>
-            {% if row.accessorials %}
-              <div class="d-flex flex-wrap gap-1">
-                {% for acc in row.accessorials %}
-                  <span class="badge text-bg-info text-wrap" title="{{ acc.name }}: {{ acc.amount | currency }}">
-                    {{ acc.name }}
-                    <span class="badge text-bg-light text-dark ms-1">{{ acc.amount | currency }}</span>
-                  </span>
-                {% endfor %}
-              </div>
-            {% else %}
-              <span class="text-body-secondary">—</span>
-            {% endif %}
-          </td>
+          <td>${{ '%.2f'|format(q.total or 0) }}</td>
+          <td class="text-break fsi-admin-quotes__metadata">{{ q.quote_metadata }}</td>
           <td class="text-break">{{ q.created_at.strftime('%Y-%m-%d %H:%M') if q.created_at else '' }}</td>
           <td>
             {% if can_use_email_request %}
