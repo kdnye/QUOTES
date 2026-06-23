@@ -52,11 +52,18 @@ _RENAMES = [
 ]
 
 
+# Scope the rewrite to the science_care rate set so a future tenant with
+# its own form_field=J3 row can't get clobbered by this migration. The
+# constant is duplicated here (rather than imported from app.models) so
+# the migration stays runnable without the Flask app on the path.
+_SC_RATE_SET = "science_care"
+
 _UPDATE_SQL = sa.text(
     "UPDATE sc_accessorial_map "
     "SET accessorial_name = :new_name "
     "WHERE form_field = :form_field "
-    "  AND accessorial_name = :old_name"
+    "  AND accessorial_name = :old_name "
+    "  AND rate_set = :rate_set"
 )
 
 
@@ -65,7 +72,12 @@ def upgrade() -> None:
     for form_field, old_name, new_name in _RENAMES:
         bind.execute(
             _UPDATE_SQL,
-            {"form_field": form_field, "old_name": old_name, "new_name": new_name},
+            {
+                "form_field": form_field,
+                "old_name": old_name,
+                "new_name": new_name,
+                "rate_set": _SC_RATE_SET,
+            },
         )
 
 
@@ -74,5 +86,10 @@ def downgrade() -> None:
     for form_field, old_name, new_name in _RENAMES:
         bind.execute(
             _UPDATE_SQL,
-            {"form_field": form_field, "old_name": new_name, "new_name": old_name},
+            {
+                "form_field": form_field,
+                "old_name": new_name,
+                "new_name": old_name,
+                "rate_set": _SC_RATE_SET,
+            },
         )
