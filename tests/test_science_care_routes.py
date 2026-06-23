@@ -1411,9 +1411,13 @@ def test_sc_email_ops_includes_per_leg_booking_details(app: Flask) -> None:
     html = client.get(f"/sc/quote/{session.id}/email-ops").get_data(
         as_text=True
     )
-    # Origin lab + city.
+    # Origin lab + city. Address parsing pulls "TUCSON, AZ" out of the
+    # lab's address verbatim, so the city/state assertions are robust
+    # to a missing Zipcode_Zones.csv in the test image.
     assert "TUC" in html
     assert "Tucson Recovery" in html
+    assert "TUCSON" in html
+    assert "AZ" in html
     # Destination city/state surfaces from the dest ZIP. ZIP lookup may
     # be a no-op when Zipcode_Zones.csv is missing in the test image, so
     # only assert the destination ZIP is present.

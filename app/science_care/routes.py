@@ -886,6 +886,15 @@ def _lab_city_state(lab: SCLab | None) -> tuple[str, str]:
 
     if lab is None:
         return "", ""
+    if lab.address:
+        parts = [p.strip() for p in lab.address.split(",") if p.strip()]
+        if len(parts) >= 2:
+            city = parts[-2].upper()
+            state_tokens = parts[-1].split()
+            if state_tokens:
+                state = state_tokens[0].upper()
+                if len(state) == 2:
+                    return city, state
     city_state = lookup_city_state(lab.origin_zip)
     if city_state is not None:
         return city_state
@@ -944,11 +953,16 @@ def _hydrate_legs_for_display(
     box_index_by_code: dict[str, SCBoxType] = {}
     consumable_index_by_id: dict[int, SCConsumable] = {}
     if session is not None:
+        # Code/key columns are uppercased on every lookup path (form
+        # parsing, CSV import, orchestrator) so normalize the pre-cache
+        # too - a tenant who saved a mixed-case row directly via the
+        # admin form would otherwise silently fail to match.
         lab_index = {
-            lab.lab_code: lab
+            lab.lab_code.upper(): lab
             for lab in SCLab.query.filter_by(
                 rate_set=RATE_SET_SCIENCE_CARE
             ).all()
+            if lab.lab_code
         }
         accessorial_map = {
             a.form_field: a
@@ -957,16 +971,18 @@ def _hydrate_legs_for_display(
             ).all()
         }
         tissue_index = {
-            t.tissue_code: t
+            t.tissue_code.upper(): t
             for t in SCTissueCode.query.filter_by(
                 rate_set=RATE_SET_SCIENCE_CARE
             ).all()
+            if t.tissue_code
         }
         box_index_by_code = {
-            b.code: b
+            b.code.upper(): b
             for b in SCBoxType.query.filter_by(
                 rate_set=RATE_SET_SCIENCE_CARE
             ).all()
+            if b.code
         }
         consumable_index_by_id = {
             int(c.id): c
@@ -1098,7 +1114,7 @@ def _hydrate_legs_for_display(
                     continue
                 if qty <= 0:
                     continue
-                box = box_index_by_code.get(str(code))
+                box = box_index_by_code.get(str(code).upper())
                 row["boxes"].append(
                     {
                         "code": str(code),
