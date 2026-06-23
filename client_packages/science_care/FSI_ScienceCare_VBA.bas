@@ -509,7 +509,7 @@ Private Function BuildAccessorialsJson(ws As Worksheet) As String
     Dim result As String
     result = ""
     Dim i As Long
-    For i = 0 To 5
+    For i = LBound(accCells) To UBound(accCells)
         Dim v As Variant
         v = ws.Range(accCells(i)).Value
         If Not IsError(v) Then
