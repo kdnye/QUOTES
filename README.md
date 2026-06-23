@@ -546,12 +546,28 @@ resolve any `SCMQNNNN` (or customer-supplied reference) to the persisted
 multi-leg summary. This is intentional — customer service uses it to help
 customers find prior jobs by reference.
 
-### Reference table CSV admin
+### Reference table admin
 
-SC admins can download / upload each reference table individually from
-`/sc/reference`. CSVs are tenant-scoped (rows from other rate-sets are never
-included or overwritten) and uploads support both `replace` (truncate the SC
-slice and reload) and `add` (append, dedupe by primary key).
+SC admins can manage each reference table individually from
+`/sc/reference`. Every table card exposes three actions:
+
+* **View / Edit Rows** (`/sc/reference/<table>`) — paginated list with
+  per-row **Edit** and **Delete** buttons plus an **Add Row** action.
+  Mirrors the inline maintenance UX at `/admin/accessorials` (the form
+  is generated from each table's `TableSpec` columns so the parsers and
+  validators match the CSV import path). The tissue-codes form is
+  augmented with one **Pieces / box** input per existing SC box type;
+  the parent row's legacy `default_box_type_code` + `pieces_per_box`
+  hint is recomputed automatically from the box with the largest
+  capacity, matching the CSV importer's behaviour.
+* **Download CSV** (`/sc/reference/<table>/download`) — snapshot of the
+  SC tenant's rows.
+* **Upload CSV** (`/sc/reference/<table>/upload`) — bulk replace or
+  append, dedupe by primary key.
+
+All paths are tenant-scoped (rows from other rate-sets are never
+included, overwritten, edited, or deleted) and gated by
+`sc_admin_required`.
 
 ## Advanced
 

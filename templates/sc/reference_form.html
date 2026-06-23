@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if obj else 'Add' }} {{ table_label }}{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">{{ 'Edit' if obj else 'Add' }} {{ table_label }}</h1>
+
+{% if errors %}
+<div class="alert alert-danger" role="alert">
+  <strong>Please fix the following:</strong>
+  <ul class="mb-0">
+    {% for error in errors %}
+    <li>{{ error }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" novalidate>
+  {{ csrf_input() }}
+  {% for field in fields %}
+  <div class="mb-3">
+    {% if field.type == 'checkbox' %}
+      <div class="form-check">
+        <input class="form-check-input"
+               type="checkbox"
+               id="field-{{ field.name }}"
+               name="{{ field.name }}"
+               value="1"
+               {% if field.checked %}checked{% endif %}>
+        <label class="form-check-label" for="field-{{ field.name }}">
+          {{ field.header }}
+        </label>
+      </div>
+    {% else %}
+      <label class="form-label" for="field-{{ field.name }}">
+        {{ field.header }}{% if field.required %} <span class="text-danger">*</span>{% endif %}
+      </label>
+      <input class="form-control"
+             type="{{ field.type }}"
+             id="field-{{ field.name }}"
+             name="{{ field.name }}"
+             value="{{ field.value_str }}"
+             {% if field.step %}step="{{ field.step }}"{% endif %}
+             {% if field.pattern %}pattern="{{ field.pattern }}"{% endif %}
+             {% if field.inputmode %}inputmode="{{ field.inputmode }}"{% endif %}
+             {% if field.maxlength %}maxlength="{{ field.maxlength }}"{% endif %}
+             {% if field.required %}required{% endif %}>
+    {% endif %}
+  </div>
+  {% endfor %}
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ list_url }}">Cancel</a>
+</form>
+{% endblock %}
