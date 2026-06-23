@@ -13,9 +13,15 @@ migration backfills any Zone X row whose ``per_mile`` is NULL with
 removed constant. Idempotent: re-running it is a no-op because the
 WHERE clause matches only NULL rows.
 
-The downgrade nulls Zone X ``per_mile`` back out, which would cause
-Zone X quotes to raise ``ValueError`` until the rows are repopulated
-- intentional, since the old constant-based code path is also gone.
+The downgrade is intentionally a no-op. Nulling rows whose ``per_mile``
+matches the backfilled ``6.0192`` would also wipe out any intentional
+admin edit that happens to set Zone X ``per_mile`` to ``6.0192``
+(an entirely legitimate customer-specific value, since it's the seed
+default). Data-only migrations like this one are conventionally
+left in place on rollback - the schema is unchanged, and the old
+code path that ignored ``per_mile`` for Zone X simply doesn't read
+the column, so the populated cells are harmless under the older
+runtime.
 """
 
 from typing import Sequence, Union
@@ -37,7 +43,4 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute(
-        "UPDATE hotshot_rates SET per_mile = NULL "
-        "WHERE UPPER(zone) = 'X' AND per_mile = 6.0192"
-    )
+    pass
