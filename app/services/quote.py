@@ -53,8 +53,11 @@ def _get_accessorial_rows() -> list[_AccessorialRow]:
         loading session so they survive its commit.
 
     External dependencies:
-        * Calls :meth:`flask_sqlalchemy.query.Query.all` through
-          :attr:`app.models.Accessorial.query`.
+        * Opens a standalone :class:`app.database.Session` and runs
+          ``db.query(Accessorial).all()``. The standalone session keeps
+          the loader callable from background paths that don't have a
+          Flask application context, matching ``get_zip_notes``'s
+          fallback behaviour.
         * Uses :func:`time.time` to enforce a 24-hour time-to-live cache.
     """
 
@@ -70,14 +73,15 @@ def _get_accessorial_rows() -> list[_AccessorialRow]:
         if _accessorial_cache_rows is not None and now < _accessorial_cache_expires_at:
             return _accessorial_cache_rows
 
-        rows = [
-            _AccessorialRow(
-                name=str(a.name),
-                amount=float(a.amount or 0.0),
-                is_percentage=bool(a.is_percentage),
-            )
-            for a in Accessorial.query.all()
-        ]
+        with Session() as db:
+            rows = [
+                _AccessorialRow(
+                    name=str(a.name),
+                    amount=float(a.amount or 0.0),
+                    is_percentage=bool(a.is_percentage),
+                )
+                for a in db.query(Accessorial).all()
+            ]
         _accessorial_cache_rows = rows
         _accessorial_cache_expires_at = now + _ACCESSORIAL_CACHE_TTL_SECONDS
         return rows
