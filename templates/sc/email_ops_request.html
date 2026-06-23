@@ -20,6 +20,64 @@
   </a>
 </div>
 
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between align-items-center">
+    <strong>Booking details</strong>
+    <a class="btn btn-outline-secondary btn-sm"
+       href="{{ url_for('science_care.sc_email_ops_intake', session_id=sc_session.id) }}">
+      {% if intake_has_content %}Edit booking details{% else %}Add booking details{% endif %}
+    </a>
+  </div>
+  <div class="card-body">
+    {% if intake_has_content %}
+    <div class="row g-3 small">
+      <div class="col-md-4">
+        <div class="text-body-secondary">Pickup date</div>
+        <div>{{ intake.pickup_date or '—' }}</div>
+      </div>
+      <div class="col-md-4">
+        <div class="text-body-secondary">Delivery date</div>
+        <div>{{ intake.delivery_date or '—' }}</div>
+      </div>
+    </div>
+    <div class="row g-3 small mt-2">
+      <div class="col-md-6">
+        <div class="fw-bold mb-1">Shipper</div>
+        {% set shipper = intake.shipper or {} %}
+        <div>{{ shipper.name or '—' }}{% if shipper.contact %} — {{ shipper.contact }}{% endif %}</div>
+        {% if shipper.street or shipper.city or shipper.state or shipper.zip %}
+        <div class="text-body-secondary">
+          {{ shipper.street }}{% if shipper.street and (shipper.city or shipper.state or shipper.zip) %}, {% endif %}{{ shipper.city }}{% if shipper.city and shipper.state %}, {% endif %}{{ shipper.state }} {{ shipper.zip }}
+        </div>
+        {% endif %}
+        {% if shipper.phone %}<div>{{ shipper.phone }}</div>{% endif %}
+        {% if shipper.reference %}<div>Ref: <code>{{ shipper.reference }}</code></div>{% endif %}
+        {% if shipper.notes %}<div class="text-body-secondary">Notes: {{ shipper.notes }}</div>{% endif %}
+      </div>
+      <div class="col-md-6">
+        <div class="fw-bold mb-1">Consignee</div>
+        {% set consignee = intake.consignee or {} %}
+        <div>{{ consignee.name or '—' }}{% if consignee.contact %} — {{ consignee.contact }}{% endif %}</div>
+        {% if consignee.street or consignee.city or consignee.state or consignee.zip %}
+        <div class="text-body-secondary">
+          {{ consignee.street }}{% if consignee.street and (consignee.city or consignee.state or consignee.zip) %}, {% endif %}{{ consignee.city }}{% if consignee.city and consignee.state %}, {% endif %}{{ consignee.state }} {{ consignee.zip }}
+        </div>
+        {% endif %}
+        {% if consignee.phone %}<div>{{ consignee.phone }}</div>{% endif %}
+        {% if consignee.reference %}<div>Ref: <code>{{ consignee.reference }}</code></div>{% endif %}
+        {% if consignee.notes %}<div class="text-body-secondary">Notes: {{ consignee.notes }}</div>{% endif %}
+      </div>
+    </div>
+    {% else %}
+    <p class="mb-0 text-body-secondary small">
+      No shipper/consignee details captured yet. The booking email will
+      send without an intake block. Use <strong>Add booking details</strong>
+      to capture the order-level contacts.
+    </p>
+    {% endif %}
+  </div>
+</div>
+
 <div class="alert alert-info mb-3" role="note">
   <p class="mb-1">
     <strong>Heads up:</strong> Clicking <strong>Email to Book</strong> sends this

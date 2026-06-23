@@ -101,15 +101,28 @@ Key tables:
   `app/services/mail.py::send_email`, which already builds
   `multipart/alternative` messages and stamps the
   `X-PM-Message-Stream: quote-tool` header that Postmark routes on.
-- **SC multi-leg**: `GET /sc/quote/<id>/email-ops` renders the composer
-  using two reusable Jinja templates so the body lives in one place:
-  `templates/sc/emails/booking_request.txt` (the plain-text body shown
-  in the preview AND in the `mailto:` fallback) and
-  `templates/sc/emails/booking_request.html` (the formatted HTML
-  alternative for Postmark). `POST /sc/quote/<id>/email-ops/send`
-  re-renders both, calls `send_email(to=BOOKING_EMAIL_OPS_TO,
-  cc=current_user.email, html_body=...)`, and persists a
-  `BookingEmailReceipt` row.
+- **SC multi-leg**: two-step workflow gated by the "Email Ops for Booking"
+  button on the SC results card.
+  1. **Intake** (`GET /sc/quote/<id>/email-ops/intake` →
+     `templates/sc/email_ops_intake.html`) captures order-level
+     shipper + consignee + pickup / delivery dates and posts to
+     `POST /sc/quote/<id>/email-ops/intake`, which writes
+     `SCQuoteSession.booking_intake_json` (migration `e1f2a3b4c5d6`)
+     and redirects to the composer. The form pre-fills from the
+     persisted JSON so reloading recovers entered values.
+  2. **Composer** (`GET /sc/quote/<id>/email-ops`) renders both bodies
+     using two reusable Jinja templates so the content lives in one
+     place: `templates/sc/emails/booking_request.txt` (the plain-text
+     body shown in the preview AND in the `mailto:` fallback) and
+     `templates/sc/emails/booking_request.html` (the formatted HTML
+     alternative for Postmark). Both templates render the intake
+     block above the per-leg shipment summary when populated; an
+     unfilled intake is silently omitted via a single
+     `intake_has_content` guard.
+  3. **Send** (`POST /sc/quote/<id>/email-ops/send`) re-renders both
+     bodies, calls `send_email(to=BOOKING_EMAIL_OPS_TO,
+     cc=current_user.email, html_body=...)`, and persists a
+     `BookingEmailReceipt` row.
 - **Single-quote**: `GET /quotes/<id>/email` renders the legacy form;
   the JS builds the plain-text body client-side. The new
   `POST /quotes/<id>/email/send` accepts `{subject, body}` JSON,
