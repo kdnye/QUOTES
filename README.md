@@ -460,6 +460,23 @@ ships defaulted to `— select —` so the operator has to explicitly pick
 **Frozen** or **Ready to Use**; a blank Mode short-circuits the temp_mode
 consumable auto-default but otherwise quotes the leg normally.
 
+The dest-ZIP field also fires a server-side HTMX call to
+`/sc/quote/dest-zip-notes` that surfaces the matching `ZipZone.notes` row as
+a yellow shipment-notes banner above the accessorials checklist — mirroring
+the workbook's airport / cargo-warning row (e.g. *"Destination Airport Cargo
+Warnings: Airtray Restrictions on Weekends"*). The lookup is scoped to the
+science-care rate-set and falls back to the default rate-set's note when no
+SC-specific row exists. The accessorial checklist itself carries two static
+operator hints: a yellow *"These ancillary fees apply for both RETURNS &
+PICK-UPS"* banner above the checkboxes, and each checkbox renders its
+priced amount in parentheses (e.g. `Liftgate Required ($85.00)` or
+`Driver Assistance (5%)`) sourced from `Accessorial.amount` via the
+`SCAccessorialMap.accessorial_name` join. A blue info banner between the
+tissue rows and the Boxes section repeats the workbook's box-sizing
+guidance (*"Always quote the larger size if it shows a specimen can ship in
+two different sizes"* and *"If shipping multiple tissue types together and
+it's not intuitive, ask the lab how they would package"*).
+
 ### Per-tissue box capacities
 
 Each tissue ships in a specific box size; some tissues fit multiple sizes with
