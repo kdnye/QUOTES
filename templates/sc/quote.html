@@ -179,6 +179,24 @@
                      name="intl_country_{{ leg }}"
                      placeholder="e.g. France" />
             </div>
+            <div class="col-12">
+              <div class="form-check">
+                {% set is_return_key = 'is_return_' ~ leg %}
+                {% set leg_is_return = request.form.get(is_return_key) in ('Y', 'on', 'true', '1') %}
+                <input class="form-check-input"
+                       type="checkbox"
+                       value="Y"
+                       id="is_return_{{ leg }}"
+                       name="is_return_{{ leg }}"
+                       {% if leg_is_return %}checked{% endif %} />
+                <label class="form-check-label" for="is_return_{{ leg }}">
+                  This is a return
+                  <span class="text-body-secondary fw-normal">
+                    (quotes from the destination ZIP back to the lab)
+                  </span>
+                </label>
+              </div>
+            </div>
           </div>
 
           <fieldset class="mb-3">
