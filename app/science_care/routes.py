@@ -1594,7 +1594,14 @@ def _parse_booking_intake_form(form: Mapping[str, str]) -> dict[str, Any]:
     """
 
     def _f(key: str) -> str:
-        return (form.get(key) or "").strip()
+        val = (form.get(key) or "").strip()
+        # State codes are two-letter USPS abbreviations and ZIPs are
+        # commonly stored uppercase (e.g. ``M5V 3L9`` Canada); normalize
+        # at the boundary so downstream renderers (composer card +
+        # email body) don't carry mixed-case noise into ops's inbox.
+        if key.endswith("_state") or key.endswith("_zip"):
+            return val.upper()
+        return val
 
     return {
         "pickup_date": _f("pickup_date"),

@@ -1910,6 +1910,93 @@ def test_sc_email_ops_email_body_omits_intake_block_when_empty(
     assert "BOOKING DETAILS" not in captured["body"]
 
 
+def test_sc_email_ops_intake_uppercases_state_and_zip(app: Flask) -> None:
+    """State + ZIP fields normalize to uppercase at the parser
+    boundary so downstream renderers (composer card + email body)
+    don't carry mixed-case noise into ops's inbox.
+    """
+
+    from app.models import SCQuoteSession
+    import json as _json
+
+    user = _make_user(
+        "sc-intake-case@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_state": "az",
+            "shipper_zip": "m5v 3l9",
+            "consignee_state": "wa",
+            "consignee_zip": "98101-1234",
+            "shipper_name": "Jane Doe",
+        },
+    )
+    db.session.expire_all()
+    persisted = SCQuoteSession.query.get(session.id)
+    intake = _json.loads(persisted.booking_intake_json)
+    assert intake["shipper"]["state"] == "AZ"
+    assert intake["shipper"]["zip"] == "M5V 3L9"
+    assert intake["consignee"]["state"] == "WA"
+    assert intake["consignee"]["zip"] == "98101-1234"
+    # Free-text fields are NOT uppercased (would be obnoxious in a name).
+    assert intake["shipper"]["name"] == "Jane Doe"
+
+
+def test_sc_email_ops_text_body_skips_empty_address_continuation(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a shipper or consignee block has a street address but no
+    city/state/zip, the email body must NOT emit a trailing line of
+    whitespace where the ``city, state zip`` continuation would
+    otherwise sit. The conditional on the continuation line guards
+    against that.
+    """
+
+    user = _make_user(
+        "sc-intake-no-csz@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Whitespace Test",
+            "shipper_street": "456 Mystery Lane",
+            # city / state / zip intentionally omitted
+            "consignee_name": "Also Whitespace",
+            "consignee_street": "789 Unknown Rd",
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    body = captured["body"]
+    # The street should appear, but the continuation indent (11
+    # spaces from ``Address:   ``) followed by nothing-but-whitespace
+    # must not.
+    assert "456 Mystery Lane" in body
+    assert "789 Unknown Rd" in body
+    assert "           \n" not in body
+    # And no run of trailing whitespace after the street line:
+    assert "456 Mystery Lane\n           \n" not in body
+
+
 def test_sc_results_partial_links_to_intake_form() -> None:
     """The 'Email Ops for Booking' button in the SC results card
     routes through the new intake form rather than jumping straight
