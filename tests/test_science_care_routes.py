@@ -1278,6 +1278,155 @@ def test_sc_email_ops_404s_for_unknown_session(app: Flask) -> None:
     )
 
 
+def test_sc_email_ops_includes_per_leg_booking_details(app: Flask) -> None:
+    """The booking email body must surface origin lab/city, dest
+    city/state, accessorials, tissue items, boxes, and consumables
+    per leg so ops can book without re-keying the form.
+    """
+
+    from app.models import (
+        Quote,
+        SCAccessorialMap,
+        SCBoxType,
+        SCConsumable,
+        SCLab,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+        SCTissueCode,
+    )
+
+    user = _make_user(
+        "sc-ops-detail@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    # SC reference rows the booking-email page joins against.
+    db.session.add_all(
+        [
+            SCLab(
+                lab_code="TUC",
+                lab_name="Tucson Recovery",
+                origin_zip="85705",
+                address="123 Lab Way, Tucson, AZ",
+                is_active=True,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCAccessorialMap(
+                form_field="J8",
+                display_label="Liftgate Required",
+                accessorial_name="Liftgate",
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueCode(
+                tissue_code="ARM01",
+                description="Arm tissue",
+                unit_weight_lb=2.5,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCBoxType(
+                code="MED",
+                label="Medium box",
+                length_in=12.0,
+                width_in=12.0,
+                height_in=12.0,
+                tare_weight_lb=2.0,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCConsumable(
+                consumable_type="dry_ice",
+                temp_mode="frozen",
+                scope="domestic",
+                weight_lb_per_box=5.0,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+
+    cons = SCConsumable.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE
+    ).first()
+
+    import json
+
+    payload = {
+        "multi_reference": "SCMQ0099",
+        "lab_code_1": "TUC",
+        "dest_zip_1": "98101",
+        "temp_mode_1": "frozen",
+        "tissue_code_1_1": "ARM01",
+        "qty_1_1": "4",
+        "acc_J8_1": "on",
+    }
+    session = SCQuoteSession(
+        user_id=user.id,
+        grand_total=250.0,
+        payload_json=json.dumps(payload),
+        multi_reference="SCMQ0099",
+    )
+    db.session.add(session)
+    db.session.flush()
+    air = Quote(
+        user_id=user.id,
+        user_email="sc-buyer@example.com",
+        quote_type="Air",
+        origin="85705",
+        destination="98101",
+        weight=15.0,
+        pieces=1,
+        zone="X",
+        total=300.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    hot = Quote(
+        user_id=user.id,
+        user_email="sc-buyer@example.com",
+        quote_type="Hotshot",
+        origin="85705",
+        destination="98101",
+        weight=15.0,
+        pieces=1,
+        zone="X",
+        total=250.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add_all([air, hot])
+    db.session.flush()
+    db.session.add(
+        SCQuoteSessionLeg(
+            session_id=session.id,
+            leg_index=1,
+            air_quote_id=air.id,
+            hotshot_quote_id=hot.id,
+            winner_mode="Hotshot",
+            winner_total=250.0,
+            boxes_json=json.dumps({"MED": 2}),
+            consumables_json=json.dumps({str(cons.id): 2}),
+        )
+    )
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(f"/sc/quote/{session.id}/email-ops").get_data(
+        as_text=True
+    )
+    # Origin lab + city.
+    assert "TUC" in html
+    assert "Tucson Recovery" in html
+    # Destination city/state surfaces from the dest ZIP. ZIP lookup may
+    # be a no-op when Zipcode_Zones.csv is missing in the test image, so
+    # only assert the destination ZIP is present.
+    assert "98101" in html
+    # Accessorial display label, tissue item, box label, consumable
+    # entry must all show.
+    assert "Liftgate Required" in html
+    assert "ARM01" in html
+    assert "Arm tissue" in html
+    assert "MED" in html
+    assert "dry_ice" in html
+
+
 def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
     sc_user = _make_user(
         "sc-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE

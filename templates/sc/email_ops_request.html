@@ -128,6 +128,35 @@ Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} -> {{ leg.destination or '—
   Mode:   {{ leg.winner_mode or '—' }}
   Total:  {{ leg.winner_total | currency }}{% endif %}
 
+  Origin:      {% if leg.lab_code %}{{ leg.lab_code }}{% if leg.lab_name %} — {{ leg.lab_name }}{% endif %}{% else %}—{% endif %}
+  Origin city: {% if leg.lab_city %}{{ leg.lab_city }}{% if leg.lab_state %}, {{ leg.lab_state }}{% endif %}{% else %}—{% endif %}{% if leg.lab_address %}
+  Origin addr: {{ leg.lab_address }}{% endif %}
+  Destination: {{ leg.destination or '—' }}{% if leg.dest_city %} ({{ leg.dest_city }}{% if leg.dest_state %}, {{ leg.dest_state }}{% endif %}){% endif %}
+
+  Accessorials:
+{% if leg.accessorials -%}
+{% for acc in leg.accessorials %}    - {{ acc }}
+{% endfor -%}
+{% else %}    (none)
+{% endif %}
+  Tissue items:
+{% if leg.tissue_items -%}
+{% for item in leg.tissue_items %}    - {{ item.code }} x {{ item.qty }}{% if item.description %} — {{ item.description }}{% endif %}{% if item.unit_weight_lb is not none %} ({{ '%.2f'|format(item.unit_weight_lb) }} lb/ea){% endif %}
+{% endfor -%}
+{% else %}    (none)
+{% endif %}
+  Boxes:
+{% if leg.boxes -%}
+{% for box in leg.boxes %}    - {{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} x {{ box.count }}
+{% endfor -%}
+{% else %}    (none)
+{% endif %}
+  Consumables:
+{% if leg.consumables -%}
+{% for c in leg.consumables %}    - {{ c.name or '—' }}{% if c.temp_mode or c.scope %} [{% if c.temp_mode %}{{ c.temp_mode }}{% endif %}{% if c.temp_mode and c.scope %}/{% endif %}{% if c.scope %}{{ c.scope }}{% endif %}]{% endif %} x {{ c.qty }}{% if c.weight_lb %} ({{ '%.2f'|format(c.weight_lb) }} lb){% endif %}
+{% endfor -%}
+{% else %}    (none)
+{% endif %}
 {% endfor -%}
 ==========================================
 GRAND TOTAL (no booking fee): {{ grand_total | currency }}
