@@ -1181,7 +1181,7 @@ def sc_email_ops_for_booking(session_id: int):
     legs = _hydrate_legs_for_display(leg_rows, session=session)
     return render_template(
         "sc/email_ops_request.html",
-        session=session,
+        sc_session=session,
         legs=legs,
         grand_total=float(session.grand_total or 0.0),
         user_name=getattr(current_user, "name", "") or "",
@@ -1228,7 +1228,7 @@ def sc_quote_lookup():
     legs = _hydrate_legs_for_display(leg_rows, session=session)
     return render_template(
         "sc/lookup.html",
-        session=session,
+        sc_session=session,
         legs=legs,
         grand_total=float(session.grand_total or 0.0),
         looked_up_ref=reference,
