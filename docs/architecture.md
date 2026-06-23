@@ -76,7 +76,12 @@ Key tables:
 - `routes.py` registers all `/sc/*` endpoints (quote, lookup, reference) on the
   `science_care_bp` blueprint. Two policy decorators gate access:
   `sc_user_required` for the quote/lookup paths and `sc_admin_required` for the
-  reference-table maintenance paths.
+  reference-table maintenance paths. `sc_admin_required` grants access to FSI
+  super-admins, any user whose email ends in `@freightservices.net`, and any
+  user with the `is_sc_admin` flag set via the admin user form's **Allow edit
+  of Science care reference tables** checkbox (the latter is rate-set
+  independent, so customers outside the science-care tenant can still be
+  granted reference-data maintenance).
 - `csv_admin.py` defines `SC_TABLE_SPECS`, the per-table `TableSpec` metadata
   the upload / download / list / edit / delete routes drive off. Reuses the
   parsers and `ColumnSpec` machinery from `app/admin.py` so the SC and FSI

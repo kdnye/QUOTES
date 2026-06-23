@@ -44,6 +44,7 @@ from wtforms import (
 )
 from wtforms.validators import DataRequired, Optional, Regexp
 
+from app.services.auth_utils import EMPLOYEE_EMAIL_DOMAIN
 from app.services.bulk_import import record_rate_upload, save_unique
 from .models import (
     Accessorial,
@@ -1239,6 +1240,7 @@ def create_user() -> Union[str, Response]:
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
             "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
+            "is_sc_admin": bool(request.form.get("is_sc_admin")),
             "rate_set": request.form.get("rate_set") or DEFAULT_RATE_SET,
         }
         display_name = (
@@ -1323,6 +1325,7 @@ def create_user() -> Union[str, Response]:
             employee_approved=employee_approved,
             can_send_mail=form_data["can_send_mail"],
             show_cost_breakdown=form_data["show_cost_breakdown"],
+            is_sc_admin=form_data["is_sc_admin"],
             rate_set=rate_set,
         )
         user.set_password(form_data["password"])
@@ -1387,6 +1390,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
             "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
+            "is_sc_admin": bool(request.form.get("is_sc_admin")),
             "rate_set": request.form.get("rate_set") or user.rate_set,
         }
         display_name = (
@@ -1482,6 +1486,16 @@ def edit_user(user_id: int) -> Union[str, Response]:
         user.rate_set = parsed_rate_set
         user.can_send_mail = form_data["can_send_mail"]
         user.show_cost_breakdown = form_data["show_cost_breakdown"]
+        # Disabled checkboxes don't submit, so the form's is_sc_admin will
+        # always read False for super-admins and FSI-domain users; writing
+        # that back would silently wipe whatever flag was already stored.
+        # Skip the write for those rows - they get reference access via
+        # the role/domain branches in sc_admin_required regardless.
+        if not (
+            is_super_admin
+            or form_data["email"].endswith(EMPLOYEE_EMAIL_DOMAIN)
+        ):
+            user.is_sc_admin = form_data["is_sc_admin"]
 
         if is_super_admin:
             user.is_admin = True
