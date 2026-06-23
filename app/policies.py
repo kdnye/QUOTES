@@ -8,6 +8,7 @@ from typing import Callable, Iterable, Set
 from flask import abort, redirect, request, url_for
 from flask_login import current_user
 
+from app.services.auth_utils import EMPLOYEE_EMAIL_DOMAIN
 from app.services.rate_sets import SCIENCE_CARE_RATE_SETS, normalize_rate_set
 
 
@@ -170,14 +171,18 @@ def sc_user_required(view: Callable) -> Callable:
 def sc_admin_required(view: Callable) -> Callable:
     """Restrict access to Science Care reference-table maintenance.
 
-    Gates ``/sc/reference`` endpoints. Requires either a flagged SC admin
-    *whose ``rate_set`` is also a Science Care tag* or an FSI super-admin
-    (``is_admin``). The dual ``rate_set`` + ``is_sc_admin`` check enforces
-    strict tenant isolation: a user from a different rate-set who is
-    accidentally flagged ``is_sc_admin`` still cannot edit the SC tables.
-    Regular SC users (a Science Care ``rate_set`` without the
-    ``is_sc_admin`` flag) are 403'd so they can quote without editing the
-    underlying reference tables.
+    Gates ``/sc/reference`` endpoints. Access is granted to:
+
+    * FSI super-admins (``is_admin``), who can always triage.
+    * Freight Services employees identified by an ``@freightservices.net``
+      email address - internal staff get reference-table access by
+      virtue of their domain, no extra flag required.
+    * Any user (including external customers) whose
+      :attr:`app.models.User.is_sc_admin` flag is set via the admin user
+      form. The flag is the explicit opt-in for non-FSI accounts that
+      need to maintain Science Care reference data.
+
+    Other authenticated users are 403'd.
     """
 
     @wraps(view)
@@ -186,12 +191,11 @@ def sc_admin_required(view: Callable) -> Callable:
             return redirect(url_for("auth.login", next=request.url))
         if getattr(current_user, "is_admin", False):
             return view(*args, **kwargs)
-        rate_set = normalize_rate_set(getattr(current_user, "rate_set", None))
-        if (
-            rate_set not in SCIENCE_CARE_RATE_SETS
-            or not getattr(current_user, "is_sc_admin", False)
-        ):
-            abort(403)
-        return view(*args, **kwargs)
+        email = (getattr(current_user, "email", "") or "").lower()
+        if email.endswith(EMPLOYEE_EMAIL_DOMAIN):
+            return view(*args, **kwargs)
+        if getattr(current_user, "is_sc_admin", False):
+            return view(*args, **kwargs)
+        abort(403)
 
     return wrapped

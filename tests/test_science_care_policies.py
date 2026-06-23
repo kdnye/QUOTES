@@ -107,18 +107,18 @@ def test_sc_admin_required_allows_sc_admin(app: Flask) -> None:
     assert response.status_code == 200
 
 
-def test_sc_admin_required_blocks_cross_tenant_sc_admin(app: Flask) -> None:
-    # A non-science_care user accidentally flagged is_sc_admin must NOT
-    # gain access - strict tenant isolation.
+def test_sc_admin_required_allows_cross_tenant_sc_admin(app: Flask) -> None:
+    # A user from any rate-set explicitly flagged is_sc_admin via the
+    # admin user form is granted reference-table access.
     user = _make_user(
-        "wrong-tenant@example.com",
+        "external-sc-editor@example.com",
         rate_set="default",
         is_sc_admin=True,
     )
     client = app.test_client()
     _login(client, user.id)
     response = client.get("/probe/admin")
-    assert response.status_code == 403
+    assert response.status_code == 200
 
 
 def test_sc_admin_required_allows_fsi_admin(app: Flask) -> None:
@@ -129,6 +129,32 @@ def test_sc_admin_required_allows_fsi_admin(app: Flask) -> None:
     _login(client, user.id)
     response = client.get("/probe/admin")
     assert response.status_code == 200
+
+
+def test_sc_admin_required_allows_freightservices_employee(app: Flask) -> None:
+    # Any @freightservices.net user gets reference access automatically,
+    # no is_sc_admin flag required.
+    user = _make_user(
+        "ops@freightservices.net",
+        rate_set="default",
+        is_sc_admin=False,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/probe/admin")
+    assert response.status_code == 200
+
+
+def test_sc_admin_required_blocks_plain_external_user(app: Flask) -> None:
+    user = _make_user(
+        "external@example.com",
+        rate_set="default",
+        is_sc_admin=False,
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/probe/admin")
+    assert response.status_code == 403
 
 
 def test_sc_user_required_redirects_anonymous(app: Flask) -> None:

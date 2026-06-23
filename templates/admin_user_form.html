@@ -170,6 +170,47 @@
       When checked, the quote result page displays an itemized breakdown of base rate, fuel surcharge, VSC, and accessorials.
     </div>
   </div>
+  {% set current_email = (data.get('email', user.email if user else '')) | lower %}
+  {% set is_super_admin_selected = (data.get('role', user.role if user else 'customer')) == 'super_admin' %}
+  {% set is_fsi_employee = current_email.endswith('@freightservices.net') %}
+  {% if is_super_admin_selected or is_fsi_employee %}
+    <div class="form-check mb-3" id="sc-admin-auto-group">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        id="is_sc_admin"
+        name="is_sc_admin"
+        checked
+        disabled
+      >
+      <label class="form-check-label" for="is_sc_admin">
+        Allow edit of Science care reference tables
+      </label>
+      <div class="form-text">
+        {% if is_super_admin_selected %}
+          Super admins always have access to the Science Care reference tables at <code>/sc/reference</code>.
+        {% else %}
+          Freight Services employees (<code>@freightservices.net</code>) always have access to the Science Care reference tables at <code>/sc/reference</code>.
+        {% endif %}
+      </div>
+    </div>
+  {% else %}
+    <div class="form-check mb-3">
+      <input
+        class="form-check-input"
+        type="checkbox"
+        id="is_sc_admin"
+        name="is_sc_admin"
+        {% if data.get('is_sc_admin', user.is_sc_admin if user else False) %}checked{% endif %}
+      >
+      <label class="form-check-label" for="is_sc_admin">
+        Allow edit of Science care reference tables
+      </label>
+      <div class="form-text">
+        When checked, this user can access <code>/sc/reference</code> to upload and edit Science Care reference data regardless of their rate set.
+      </div>
+    </div>
+  {% endif %}
   <button class="btn btn-primary" type="submit">Save</button>
   <a class="btn btn-secondary" href="{{ url_for('admin.dashboard') }}">Cancel</a>
 </form>

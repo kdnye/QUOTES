@@ -445,6 +445,17 @@ The `sc_user_required` and `sc_admin_required` policies in `app/policies.py`
 treat both `scicr` and `science_care` as Science Care tenants, so users
 landing on `/sc/quote` are not 403'd by the access gate.
 
+`sc_admin_required` (the gate on `/sc/reference`) grants access to:
+
+* FSI super-admins (`is_admin`).
+* Freight Services employees identified by an `@freightservices.net` email
+  address — internal staff get reference-table access automatically.
+* Any user (including external customers) whose `User.is_sc_admin` flag is
+  enabled via the admin user form's **Allow edit of Science care reference
+  tables** checkbox. The flag is the explicit opt-in for non-FSI accounts
+  that need to maintain Science Care reference data and is not bound to any
+  particular rate set.
+
 ## Science Care multi-lab quote
 
 The Science Care blueprint at `/sc` adds a 7-leg quote form that mirrors the
@@ -619,7 +630,10 @@ SC admins can manage each reference table individually from
 
 All paths are tenant-scoped (rows from other rate-sets are never
 included, overwritten, edited, or deleted) and gated by
-`sc_admin_required`.
+`sc_admin_required`. Reference-table access is granted to FSI
+super-admins, `@freightservices.net` employees, and any user the admin
+checkbox **Allow edit of Science care reference tables** is set for —
+see the rate-set routing section above for the full policy.
 
 ## Advanced
 
