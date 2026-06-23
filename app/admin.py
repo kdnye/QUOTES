@@ -186,23 +186,25 @@ class HotshotRateForm(FlaskForm):
     miles = IntegerField("Miles", validators=[DataRequired()])
     zone = StringField("Zone", validators=[DataRequired()])
     per_lb = FloatField("Per LB", validators=[Optional()])
-    per_mile = FloatField("Per Mile", validators=[Optional()])
+    per_mile = FloatField(
+        "Per Mile",
+        validators=[Optional()],
+        description=(
+            "Required for Zone X (per-mile minimum multiplier, e.g. 6.0192). "
+            "Leave blank for Zones A-J."
+        ),
+    )
     min_charge = FloatField("Min Charge", validators=[DataRequired()])
     weight_break = FloatField("Weight Break", validators=[DataRequired()])
     fuel_pct = FloatField("Fuel %", validators=[DataRequired()])
 
     def validate(self, extra_validators: dict | None = None) -> bool:
-        """Validate that at least one rate field is provided.
+        """Validate rate-field combinations.
 
-        Ensures either ``per_lb`` or ``per_mile`` is supplied and
-        greater than zero. Adds an error message to both fields when
-        neither is specified.
-
-        Args:
-            extra_validators: Optional mapping of additional validators.
-
-        Returns:
-            ``True`` if the form is valid, ``False`` otherwise.
+        - At least one of ``per_lb`` or ``per_mile`` must be greater than zero.
+        - Zone X rows require ``per_mile`` because the runtime computes the
+          mileage minimum as ``miles * per_mile`` and there is no longer a
+          hardcoded fallback constant.
         """
 
         if not super().validate(extra_validators=extra_validators):
@@ -214,6 +216,14 @@ class HotshotRateForm(FlaskForm):
             msg = "Either Per LB or Per Mile must be provided and greater than zero."
             self.per_lb.errors.append(msg)
             self.per_mile.errors.append(msg)
+            return False
+
+        zone = (self.zone.data or "").strip().upper()
+        if zone == "X" and per_mile <= 0:
+            self.per_mile.errors.append(
+                "Per Mile is required for Zone X (used as the per-mile minimum "
+                "multiplier)."
+            )
             return False
         return True
 
@@ -406,6 +416,7 @@ class TableSpec:
     list_endpoint: str
     unique_attr: Sequence[str] | str | None = None
     order_by: Any | None = None
+    row_validator: Callable[[Dict[str, Any]], str | None] | None = None
 
 
 def _is_missing(value: Any) -> bool:
@@ -540,6 +551,21 @@ def _parse_zipcode(value: Any) -> str:
     raise ValueError("enter a ZIP code")
 
 
+def _validate_hotshot_rate_row(data: Dict[str, Any]) -> str | None:
+    """Cross-column validation for an uploaded HotshotRate CSV row.
+
+    Zone X charges ``miles * per_mile`` as its minimum, so a NULL per_mile
+    on a Zone X row would make every long-haul quote raise at runtime.
+    Mirrors the same check in :class:`HotshotRateForm.validate`.
+    """
+
+    zone = (data.get("zone") or "").strip().upper()
+    per_mile = data.get("per_mile")
+    if zone == "X" and (per_mile is None or per_mile <= 0):
+        return "Per Mile is required for Zone X (used as the per-mile minimum multiplier)."
+    return None
+
+
 TABLE_SPECS: Dict[str, TableSpec] = {
     "accessorials": TableSpec(
         name="accessorials",
@@ -601,6 +627,7 @@ TABLE_SPECS: Dict[str, TableSpec] = {
         ),
         list_endpoint="admin.list_hotshot_rates",
         order_by=(HotshotRate.rate_set, HotshotRate.miles),
+        row_validator=_validate_hotshot_rate_row,
     ),
     "zip_zones": TableSpec(
         name="zip_zones",
@@ -693,6 +720,11 @@ def _parse_csv_rows(file_storage: Any, spec: TableSpec) -> List[db.Model]:
         if row_errors:
             errors.append(f"Row {row_index}: {'; '.join(row_errors)}")
             continue
+        if spec.row_validator is not None:
+            row_error = spec.row_validator(data)
+            if row_error:
+                errors.append(f"Row {row_index}: {row_error}")
+                continue
         rows.append(spec.model(**data))
 
     if errors:
