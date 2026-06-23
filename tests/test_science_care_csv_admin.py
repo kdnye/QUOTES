@@ -312,8 +312,8 @@ def test_accessorial_map_csv_round_trip(app: Flask) -> None:
     csv = _csv_bytes(
         [
             "Form Field,Display Label,Accessorial Name",
-            "J3,4 Hour Window,PickUp 4 Hour Window (e.g 10:00-14:00)",
-            "J8,Liftgate Required,Liftgate Delivery",
+            "J3,4 Hour Window,4hr Window",
+            "J8,Liftgate Required,Liftgate",
         ]
     )
     response = client.post(
@@ -327,7 +327,7 @@ def test_accessorial_map_csv_round_trip(app: Flask) -> None:
         rate_set=RATE_SET_SCIENCE_CARE
     ).order_by(SCAccessorialMap.form_field).all()
     assert [r.form_field for r in rows] == ["J3", "J8"]
-    assert rows[0].accessorial_name == "PickUp 4 Hour Window (e.g 10:00-14:00)"
+    assert rows[0].accessorial_name == "4hr Window"
 
 
 # --- Tissue codes with per-box capacity columns -----------------------------

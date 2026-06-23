@@ -95,13 +95,15 @@ from .csv_admin import (
 
 
 # Form field → friendly accessorial labels used when the SC tenant has
-# not (yet) populated SCAccessorialMap rows.
+# not (yet) populated SCAccessorialMap rows. Display-only — the values
+# that actually drive pricing live on SCAccessorialMap.accessorial_name
+# and must match Accessorial.name (see rates/science_care/sc_accessorial_map.csv).
 _FALLBACK_ACCESSORIAL_LABELS = {
-    "J3": "4 Hour Window",
-    "J4": "Specific PickUp Time",
-    "J5": "Delivery After Hours",
-    "J7": "Two Man Delivery",
-    "J8": "Liftgate Delivery",
+    "J3": "4 Hour Delivery/Pick-Up Window",
+    "J4": "Special Pickup or Delivery Time",
+    "J5": "Afterhours Delivery/Pickup",
+    "J7": "Two-Man Team Required",
+    "J8": "Liftgate Required",
 }
 
 # Number of shipment legs supported by the multi-lab form.

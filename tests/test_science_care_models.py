@@ -180,7 +180,7 @@ def test_sc_accessorial_map_unique_per_form_field(app: Flask) -> None:
         SCAccessorialMap(
             form_field="J3",
             display_label="4 Hour Window",
-            accessorial_name="PickUp 4 Hour Window (e.g 10:00-14:00)",
+            accessorial_name="4hr Window",
         )
     )
     db.session.commit()
