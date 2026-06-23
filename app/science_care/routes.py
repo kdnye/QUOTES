@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import csv
 import io
+import json
 import os
 from typing import Any, Mapping, Union
 
@@ -79,6 +80,7 @@ from app.services.science_care_quote import (
     recommended_box_for_qty,
 )
 from app.services.bulk_import import record_rate_upload, save_unique
+from app.services.zip_city_lookup import lookup_city_state
 
 from . import science_care_bp
 from .csv_admin import (
@@ -856,8 +858,52 @@ def _load_sc_session_legs(session: SCQuoteSession) -> list[SCQuoteSessionLeg]:
     )
 
 
+def _safe_json_load(raw: str | None) -> Any:
+    """``json.loads(raw)`` that returns ``None`` on missing / bad input.
+
+    Used to defuse the ``payload_json`` / ``boxes_json`` /
+    ``consumables_json`` columns on historical SCQuoteSession rows:
+    NULL is expected (pre-feature legs) and a malformed value would
+    otherwise 500 the booking-email page.
+    """
+
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+
+
+def _lab_city_state(lab: SCLab | None) -> tuple[str, str]:
+    """Return ``(city, state)`` for a lab, falling back to zip lookup.
+
+    Prefer the lab's own ``address`` (last "City, ST" segment) when the
+    SC admin filled it in, otherwise resolve via ``Zipcode_Zones.csv``
+    using the lab's origin ZIP. Both values returned uppercase to match
+    the destination side rendered from ``lookup_city_state``.
+    """
+
+    if lab is None:
+        return "", ""
+    if lab.address:
+        parts = [p.strip() for p in lab.address.split(",") if p.strip()]
+        if len(parts) >= 2:
+            city = parts[-2].upper()
+            state_tokens = parts[-1].split()
+            if state_tokens:
+                state = state_tokens[0].upper()
+                if len(state) == 2:
+                    return city, state
+    city_state = lookup_city_state(lab.origin_zip)
+    if city_state is not None:
+        return city_state
+    return "", ""
+
+
 def _hydrate_legs_for_display(
     legs: list[SCQuoteSessionLeg],
+    session: SCQuoteSession | None = None,
 ) -> list[dict]:
     """Join each persisted leg with its winning :class:`Quote` row.
 
@@ -866,6 +912,15 @@ def _hydrate_legs_for_display(
     weight, winner mode/total, and a status string. Skipped legs are
     included so the booking email + lookup page can show why a leg has
     no price.
+
+    When ``session`` is supplied, each dict is also enriched with the
+    booking-detail fields the ops summary email needs: origin lab name
+    + city, destination city/state, the list of accessorial display
+    labels, and per-leg summaries of the tissue items, boxes, and
+    consumables the user submitted. These come from
+    ``session.payload_json`` (the original form) plus the JSON columns
+    on each :class:`SCQuoteSessionLeg`. The lookup-page caller passes
+    ``session`` too so the same enriched dicts can be reused there.
     """
 
     quote_ids = {
@@ -884,6 +939,58 @@ def _hydrate_legs_for_display(
             for q in Quote.query.filter(Quote.id.in_(sorted(quote_ids))).all()
         }
 
+    payload: Mapping[str, str] = {}
+    if session is not None:
+        raw_payload = _safe_json_load(session.payload_json)
+        if isinstance(raw_payload, dict):
+            payload = {str(k): str(v) for k, v in raw_payload.items()}
+
+    # Pre-cache the lookup tables once per request so the per-leg loop
+    # doesn't re-query the SC reference tables for each leg.
+    lab_index: dict[str, SCLab] = {}
+    accessorial_map: dict[str, SCAccessorialMap] = {}
+    tissue_index: dict[str, SCTissueCode] = {}
+    box_index_by_code: dict[str, SCBoxType] = {}
+    consumable_index_by_id: dict[int, SCConsumable] = {}
+    if session is not None:
+        # Code/key columns are uppercased on every lookup path (form
+        # parsing, CSV import, orchestrator) so normalize the pre-cache
+        # too - a tenant who saved a mixed-case row directly via the
+        # admin form would otherwise silently fail to match.
+        lab_index = {
+            lab.lab_code.upper(): lab
+            for lab in SCLab.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE
+            ).all()
+            if lab.lab_code
+        }
+        accessorial_map = {
+            a.form_field: a
+            for a in SCAccessorialMap.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE
+            ).all()
+        }
+        tissue_index = {
+            t.tissue_code.upper(): t
+            for t in SCTissueCode.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE
+            ).all()
+            if t.tissue_code
+        }
+        box_index_by_code = {
+            b.code.upper(): b
+            for b in SCBoxType.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE
+            ).all()
+            if b.code
+        }
+        consumable_index_by_id = {
+            int(c.id): c
+            for c in SCConsumable.query.filter_by(
+                rate_set=RATE_SET_SCIENCE_CARE
+            ).all()
+        }
+
     out: list[dict] = []
     for leg in legs:
         air = quotes_by_id.get(leg.air_quote_id) if leg.air_quote_id else None
@@ -898,26 +1005,160 @@ def _hydrate_legs_for_display(
         primary = (
             hot if (leg.winner_mode or "").lower() == "hotshot" else air
         ) or air or hot
-        out.append(
-            {
-                "leg_index": leg.leg_index,
-                "origin": primary.origin if primary else "",
-                "destination": primary.destination if primary else "",
-                "weight": float(primary.weight) if primary else 0.0,
-                "winner_mode": leg.winner_mode,
-                "winner_total": float(leg.winner_total or 0.0),
-                "skip_reason": leg.skip_reason,
-                "air_total": float(air.total) if air and air.total else None,
-                "hotshot_total": (
-                    float(hot.total) if hot and hot.total else None
-                ),
-                "established_rate": (
-                    float(leg.established_rate)
-                    if leg.established_rate is not None
-                    else None
-                ),
-            }
-        )
+
+        row: dict[str, Any] = {
+            "leg_index": leg.leg_index,
+            "origin": primary.origin if primary else "",
+            "destination": primary.destination if primary else "",
+            "weight": float(primary.weight) if primary else 0.0,
+            "winner_mode": leg.winner_mode,
+            "winner_total": float(leg.winner_total or 0.0),
+            "skip_reason": leg.skip_reason,
+            "air_total": float(air.total) if air and air.total else None,
+            "hotshot_total": (
+                float(hot.total) if hot and hot.total else None
+            ),
+            "established_rate": (
+                float(leg.established_rate)
+                if leg.established_rate is not None
+                else None
+            ),
+            "lab_code": "",
+            "lab_name": "",
+            "lab_address": "",
+            "lab_city": "",
+            "lab_state": "",
+            "dest_city": "",
+            "dest_state": "",
+            "accessorials": [],
+            "tissue_items": [],
+            "boxes": [],
+            "consumables": [],
+        }
+
+        if session is None:
+            out.append(row)
+            continue
+
+        lab_code = (
+            payload.get(f"lab_code_{leg.leg_index}") or ""
+        ).strip().upper()
+        row["lab_code"] = lab_code
+        lab = lab_index.get(lab_code) if lab_code else None
+        if lab is not None:
+            row["lab_name"] = lab.lab_name or ""
+            row["lab_address"] = lab.address or ""
+            row["lab_city"], row["lab_state"] = _lab_city_state(lab)
+
+        dest_zip = row["destination"] or (
+            payload.get(f"dest_zip_{leg.leg_index}") or ""
+        ).strip()
+        dest_city_state = lookup_city_state(dest_zip)
+        if dest_city_state is not None:
+            row["dest_city"], row["dest_state"] = dest_city_state
+
+        accessorials: list[str] = []
+        suffix = f"_{leg.leg_index}"
+        for key, value in payload.items():
+            if not key.startswith("acc_") or not key.endswith(suffix):
+                continue
+            if str(value).strip().upper() not in {"Y", "ON", "TRUE", "1"}:
+                continue
+            form_field = key[len("acc_") : -len(suffix)]
+            if not form_field:
+                continue
+            mapping = accessorial_map.get(form_field)
+            if mapping is not None:
+                # Display label is friendlier than accessorial_name for
+                # an ops-facing email - it's what the user saw on the
+                # form. Fall back to the field code so a tenant whose
+                # SCAccessorialMap is incomplete still sees something.
+                accessorials.append(
+                    mapping.display_label or mapping.accessorial_name
+                )
+            else:
+                fallback = _FALLBACK_ACCESSORIAL_LABELS.get(form_field)
+                accessorials.append(fallback or form_field)
+        row["accessorials"] = accessorials
+
+        # Tissue items: walk the same tissue_code_<leg>_<i> /
+        # qty_<leg>_<i> pairs the orchestrator parsed at submit time so
+        # the email's tissue list mirrors what the user picked.
+        tissue_rows = _collect_tissue_rows(payload, leg.leg_index)
+        for tr in tissue_rows:
+            if not tr.tissue_code:
+                continue
+            tissue = tissue_index.get(tr.tissue_code)
+            row["tissue_items"].append(
+                {
+                    "code": tr.tissue_code,
+                    "description": (
+                        tissue.description if tissue is not None else ""
+                    ) or "",
+                    "qty": tr.qty,
+                    "unit_weight_lb": (
+                        float(tissue.unit_weight_lb)
+                        if tissue is not None
+                        and tissue.unit_weight_lb is not None
+                        else None
+                    ),
+                }
+            )
+
+        boxes_map = _safe_json_load(leg.boxes_json)
+        if isinstance(boxes_map, dict):
+            for code, count in boxes_map.items():
+                try:
+                    qty = int(count)
+                except (TypeError, ValueError):
+                    continue
+                if qty <= 0:
+                    continue
+                box = box_index_by_code.get(str(code).upper())
+                row["boxes"].append(
+                    {
+                        "code": str(code),
+                        "label": (box.label if box is not None else "") or "",
+                        "count": qty,
+                    }
+                )
+
+        consumables_map = _safe_json_load(leg.consumables_json)
+        if isinstance(consumables_map, dict):
+            for cons_id, qty in consumables_map.items():
+                try:
+                    cid = int(cons_id)
+                    cqty = int(qty)
+                except (TypeError, ValueError):
+                    continue
+                if cqty <= 0:
+                    continue
+                cons = consumable_index_by_id.get(cid)
+                if cons is None:
+                    row["consumables"].append(
+                        {
+                            "name": f"#{cid}",
+                            "temp_mode": "",
+                            "scope": "",
+                            "qty": cqty,
+                            "weight_lb": 0.0,
+                        }
+                    )
+                    continue
+                weight_lb = (
+                    float(cons.weight_lb_per_box or 0.0) * cqty
+                )
+                row["consumables"].append(
+                    {
+                        "name": cons.consumable_type,
+                        "temp_mode": cons.temp_mode,
+                        "scope": cons.scope,
+                        "qty": cqty,
+                        "weight_lb": weight_lb,
+                    }
+                )
+
+        out.append(row)
     return out
 
 
@@ -937,7 +1178,7 @@ def sc_email_ops_for_booking(session_id: int):
 
     session = _load_sc_session_or_404(session_id)
     leg_rows = _load_sc_session_legs(session)
-    legs = _hydrate_legs_for_display(leg_rows)
+    legs = _hydrate_legs_for_display(leg_rows, session=session)
     return render_template(
         "sc/email_ops_request.html",
         session=session,
@@ -984,7 +1225,7 @@ def sc_quote_lookup():
         return redirect(url_for("science_care.sc_quote_lookup_form"))
 
     leg_rows = _load_sc_session_legs(session)
-    legs = _hydrate_legs_for_display(leg_rows)
+    legs = _hydrate_legs_for_display(leg_rows, session=session)
     return render_template(
         "sc/lookup.html",
         session=session,
