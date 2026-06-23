@@ -23,12 +23,14 @@ from __future__ import annotations
 
 import csv
 import io
+import os
 from typing import Any, Mapping, Union
 
 import pandas as pd
 from flask import (
     Response,
     abort,
+    current_app,
     flash,
     redirect,
     render_template,
@@ -187,6 +189,22 @@ def _tissue_code_choices() -> list[SCTissueCode]:
     )
 
 
+def _resolve_maps_api_key() -> str:
+    """Return the configured Google Maps key for client-side lookups.
+
+    Mirrors the resolution order used by the legacy quote form
+    (``app.quotes.routes``) so the SC page picks up the same key without
+    a second secret rollout.
+    """
+
+    return (
+        current_app.config.get("GOOGLE_MAPS_API_KEY")
+        or os.getenv("GOOGLE_MAPS_API_KEY")
+        or os.getenv("MAPS_API_KEY")
+        or ""
+    )
+
+
 def _default_lab_slots(user_id: int) -> dict[int, str]:
     """Return ``{leg_index: lab_code}`` of the user's saved default labs.
 
@@ -229,6 +247,7 @@ def sc_quote_form() -> str:
         tissue_codes=_tissue_code_choices(),
         consumables=_consumable_choices(),
         default_labs_by_leg=_default_lab_slots(current_user.id),
+        maps_api_key=_resolve_maps_api_key(),
     )
 
 
@@ -284,6 +303,7 @@ def sc_quote_submit():
         tissue_codes=_tissue_code_choices(),
         consumables=_consumable_choices(),
         default_labs_by_leg=_default_lab_slots(current_user.id),
+        maps_api_key=_resolve_maps_api_key(),
         results=context,
     )
 

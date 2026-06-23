@@ -142,9 +142,14 @@
                      name="dest_zip_{{ leg }}"
                      value="{{ leg_dest_value }}"
                      data-mirror-target="#sc-leg-summary-dest-{{ leg }}"
+                     data-sc-dest-zip="{{ leg }}"
                      inputmode="numeric"
                      pattern="\d{5}"
                      maxlength="5" />
+              <small id="dest_city_state_{{ leg }}"
+                     class="form-text text-body-secondary sc-dest-city-state"
+                     data-leg="{{ leg }}"
+                     data-placeholder="City, State will appear here">City, State will appear here</small>
             </div>
             <div class="col-12 col-md-3">
               <label class="form-label" for="routing_type_{{ leg }}">Shipment type</label>
@@ -162,6 +167,7 @@
               <select class="form-select"
                       id="temp_mode_{{ leg }}"
                       name="temp_mode_{{ leg }}">
+                <option value="" selected>— select —</option>
                 <option value="frozen">Frozen</option>
                 <option value="rtu">Ready to Use</option>
               </select>
@@ -315,6 +321,14 @@
   </div>
 </form>
 
+{% if maps_api_key %}
+<script
+  src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key|urlencode }}&callback=initScDestCityState"
+  async
+  defer
+></script>
+{% endif %}
+
 <section id="sc-results" class="mt-4">
   {% if results %}
     {% with session=results.session,
@@ -356,6 +370,132 @@
     };
     input.addEventListener("input", sync);
     sync(); // paint once at page load so prefills show immediately.
+  });
+
+  // Destination ZIP -> City, State readout via Google Maps Geocoder.
+  // Cached per process to avoid hammering the API as the user fans out
+  // the same ZIPs across multiple legs. Geocoder is only created after
+  // the Maps JS API finishes loading (initScDestCityState callback).
+  const scZipCityStateCache = new Map();
+  let scGeocoder = null;
+  const scPendingZipLookups = [];
+
+  function scSetCityStateText(leg, message, isError) {
+    const target = document.getElementById(`dest_city_state_${leg}`);
+    if (!target) return;
+    target.textContent = message;
+    target.classList.toggle("text-danger", Boolean(isError));
+    target.classList.toggle("text-body-secondary", !isError);
+  }
+
+  function scResetCityState(leg) {
+    const target = document.getElementById(`dest_city_state_${leg}`);
+    if (!target) return;
+    target.textContent = target.dataset.placeholder || "";
+    target.classList.remove("text-danger");
+    target.classList.add("text-body-secondary");
+  }
+
+  function scExtractCityState(results) {
+    if (!Array.isArray(results) || results.length === 0) return null;
+    const components = results[0].address_components || [];
+    let city = "";
+    let state = "";
+    for (const component of components) {
+      const types = component.types || [];
+      if (!city && (types.includes("locality") || types.includes("postal_town"))) {
+        city = component.long_name || "";
+      }
+      if (!city && !state && types.includes("sublocality")) {
+        city = component.long_name || "";
+      }
+      if (!state && types.includes("administrative_area_level_1")) {
+        state = component.short_name || component.long_name || "";
+      }
+    }
+    if (!city) {
+      for (const component of components) {
+        const types = component.types || [];
+        if (types.includes("administrative_area_level_2") || types.includes("neighborhood")) {
+          city = component.long_name || "";
+          break;
+        }
+      }
+    }
+    if (!city && !state) return null;
+    return { city, state };
+  }
+
+  function scLookupCityState(leg, zip) {
+    if (scZipCityStateCache.has(zip)) {
+      const cached = scZipCityStateCache.get(zip);
+      if (cached) {
+        scSetCityStateText(leg, `${cached.city}, ${cached.state}`.replace(/^, |, $/g, ""), false);
+      } else {
+        scSetCityStateText(leg, "No city/state found for this ZIP", true);
+      }
+      return;
+    }
+    if (!scGeocoder) {
+      // Maps JS not ready yet; queue and let initScDestCityState flush.
+      scPendingZipLookups.push({ leg, zip });
+      scSetCityStateText(leg, "Looking up city/state…", false);
+      return;
+    }
+    scSetCityStateText(leg, "Looking up city/state…", false);
+    scGeocoder.geocode(
+      {
+        address: zip,
+        componentRestrictions: { country: "US", postalCode: zip },
+      },
+      (results, status) => {
+        if (status !== "OK") {
+          scZipCityStateCache.set(zip, null);
+          scSetCityStateText(leg, "No city/state found for this ZIP", true);
+          return;
+        }
+        const parts = scExtractCityState(results);
+        if (!parts) {
+          scZipCityStateCache.set(zip, null);
+          scSetCityStateText(leg, "No city/state found for this ZIP", true);
+          return;
+        }
+        scZipCityStateCache.set(zip, parts);
+        scSetCityStateText(leg, `${parts.city}, ${parts.state}`.replace(/^, |, $/g, ""), false);
+      }
+    );
+  }
+
+  // Maps JS API callback - wires up the geocoder and flushes any
+  // ZIP lookups that the user kicked off before the script finished
+  // loading.
+  window.initScDestCityState = function () {
+    if (!window.google || !google.maps) return;
+    scGeocoder = new google.maps.Geocoder();
+    while (scPendingZipLookups.length) {
+      const { leg, zip } = scPendingZipLookups.shift();
+      scLookupCityState(leg, zip);
+    }
+  };
+
+  document.querySelectorAll("[data-sc-dest-zip]").forEach((input) => {
+    const leg = input.dataset.scDestZip;
+    let debounceTimer = null;
+    const handle = () => {
+      window.clearTimeout(debounceTimer);
+      const digits = (input.value || "").replace(/\D/g, "");
+      if (digits.length !== 5) {
+        scResetCityState(leg);
+        return;
+      }
+      debounceTimer = window.setTimeout(() => scLookupCityState(leg, digits), 250);
+    };
+    input.addEventListener("input", handle);
+    input.addEventListener("change", handle);
+    // Paint once on load so a prefilled ZIP resolves without a keystroke.
+    if ((input.value || "").replace(/\D/g, "").length === 5) {
+      handle();
+    }
   });
 
   // Update each tissue row's "Total lbs" / "Total kg" cells immediately

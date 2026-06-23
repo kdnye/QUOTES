@@ -451,6 +451,15 @@ client's offline workbook. Each leg picks the cheapest of Air, Hotshot, or the
 pre-negotiated Established Lane rate, and weight is rolled up from per-tissue
 quantities plus consumables and box tare.
 
+Each leg's **Destination ZIP** is paired with a read-only **City, State**
+readout that resolves client-side via the Google Maps Geocoder as soon as the
+ZIP reaches five digits — same `GOOGLE_MAPS_API_KEY` already wired into the
+single-leg quote and email request flows. When the key is absent the readout
+stays on its placeholder and no Maps request fires. The **Mode** dropdown
+ships defaulted to `— select —` so the operator has to explicitly pick
+**Frozen** or **Ready to Use**; a blank Mode short-circuits the temp_mode
+consumable auto-default but otherwise quotes the leg normally.
+
 ### Per-tissue box capacities
 
 Each tissue ships in a specific box size; some tissues fit multiple sizes with
