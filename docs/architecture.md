@@ -44,7 +44,7 @@ The JSON API (`POST /api/quote`) supports any HTTP client that can set `Authoriz
 
 ### Application Factory (`app/__init__.py`)
 - Initializes Flask, database, login manager, CSRF protection, and the Limiter integration.
-- Registers blueprints: `auth`, `admin`, `admin_quotes`, `quotes`, and `help`.
+- Registers blueprints: `auth`, `admin`, `admin_quotes`, `quotes`, `science_care`, and `help`.
 - Utility helpers:
   - `build_map_html` embeds a Google Maps iframe to show directions.
   - `send_email` sends SMTP messages based on app config after enforcing `services.mail` rate limits and domain checks.
@@ -71,6 +71,24 @@ Key tables:
 - `/api/quote` (see `app/api.py`) accepts `POST` requests with a `Bearer` token. Per-user API key quotes are tagged `quote_source="api_key"` and automatically attributed to the authenticated user; global service-token quotes are tagged `quote_source="api_service"`. The `quote_source` and `request_ip` fields are stored on every quote so admins can audit who made each request.
 - `/quotes/<quote_id>/email` gathers booking information and prepares an email for staff with mail privileges.
 - `/quotes/<quote_id>/email-volume` escalates overweight/overvalue shipments for manual review without applying the admin fee.
+
+### Science Care Blueprint (`app/science_care/`)
+- `routes.py` registers all `/sc/*` endpoints (quote, lookup, reference) on the
+  `science_care_bp` blueprint. Two policy decorators gate access:
+  `sc_user_required` for the quote/lookup paths and `sc_admin_required` for the
+  reference-table maintenance paths.
+- `csv_admin.py` defines `SC_TABLE_SPECS`, the per-table `TableSpec` metadata
+  the upload / download / list / edit / delete routes drive off. Reuses the
+  parsers and `ColumnSpec` machinery from `app/admin.py` so the SC and FSI
+  CSV pipelines stay in lock-step.
+- The reference-table CRUD surface (`/sc/reference/<table>` and the
+  per-row `new` / `edit` / `delete` views) renders generic templates
+  (`templates/sc/reference_list.html`, `reference_form.html`) keyed off
+  the shared TableSpec columns. The `sc_tissue_codes` table has its own
+  parent + per-box-capacity form (`reference_tissue_form.html`) since
+  one tissue row maps to many `SCTissueBoxCapacity` rows. Every CRUD
+  path forces `rate_set == "science_care"` and 404s on rows belonging to
+  another tenant so cross-tenant edits are impossible by construction.
 
 ### Pricing Logic (`quote` package)
 - `distance.py` – wraps Google Maps Directions API with retry logic.

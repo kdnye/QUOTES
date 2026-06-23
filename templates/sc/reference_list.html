@@ -1,0 +1,107 @@
+{% extends "base.html" %}
+
+{% block title %}{{ table_label }}{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
+  <div>
+    <h1 class="h3 mb-1">{{ table_label }}</h1>
+    <p class="text-body-secondary mb-0">
+      Add, edit, or delete individual rows. All edits stay scoped to
+      the Science Care tenant.
+    </p>
+  </div>
+  <div class="d-flex flex-wrap gap-2">
+    <a class="btn btn-success" href="{{ url_for('science_care.sc_reference_new', table=table) }}">
+      Add Row
+    </a>
+    <a class="btn btn-outline-primary" href="{{ url_for('science_care.sc_download_csv', table=table) }}">
+      Download CSV
+    </a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('science_care.sc_upload_csv', table=table) }}">
+      Upload CSV
+    </a>
+    <a class="btn btn-outline-secondary" href="{{ url_for('science_care.sc_reference_index') }}">
+      Back to Reference Data
+    </a>
+  </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    {% for category, message in messages %}
+      <div class="alert alert-{{ category if category in ['success','warning','danger','info'] else 'info' }}" role="alert">
+        {{ message }}
+      </div>
+    {% endfor %}
+  {% endif %}
+{% endwith %}
+
+<div class="table-responsive">
+  <table class="table table-striped align-middle">
+    <thead>
+      <tr>
+        {% for column in columns %}
+        <th>{{ column.header }}</th>
+        {% endfor %}
+        {% if table == 'sc_tissue_codes' %}
+        <th>Box Capacities</th>
+        {% endif %}
+        <th>Edit</th>
+        <th>Delete</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+      <tr>
+        {% for column in columns %}
+        <td>
+          {% set raw = row[column.attr] %}
+          {% if raw is none %}
+            <span class="text-body-secondary">—</span>
+          {% elif column.formatter %}
+            {{ column.formatter(raw) }}
+          {% else %}
+            {{ raw }}
+          {% endif %}
+        </td>
+        {% endfor %}
+        {% if table == 'sc_tissue_codes' %}
+        <td>
+          {% set caps = capacities_by_tissue.get(row.tissue_code, {}) %}
+          {% if caps %}
+            {% for box_code, qty in caps.items() %}
+              <span class="badge bg-secondary me-1">{{ box_code }}: {{ qty }}</span>
+            {% endfor %}
+          {% else %}
+            <span class="text-body-secondary">none</span>
+          {% endif %}
+        </td>
+        {% endif %}
+        <td>
+          <a class="btn btn-sm btn-info"
+             href="{{ url_for('science_care.sc_reference_edit', table=table, row_id=row.id) }}">
+            Edit
+          </a>
+        </td>
+        <td>
+          <form method="post"
+                action="{{ url_for('science_care.sc_reference_delete', table=table, row_id=row.id) }}"
+                onsubmit="return confirm('Delete this row? This cannot be undone.');">
+            {{ csrf_input() }}
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr>
+        <td colspan="{{ columns|length + (3 if table == 'sc_tissue_codes' else 2) }}"
+            class="text-body-secondary">
+          No rows yet. Use <strong>Add Row</strong> or <strong>Upload CSV</strong> to populate this table.
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

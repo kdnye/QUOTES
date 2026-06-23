@@ -552,3 +552,371 @@ def test_tissue_codes_upload_rejects_negative_pieces(app: Flask) -> None:
     # 400 from form validation error.
     assert response.status_code == 400
     assert SCTissueCode.query.count() == 0
+
+
+# --- Per-row CRUD routes ----------------------------------------------------
+#
+# Mirrors /admin/accessorials (Add Row / Edit / Delete) but scoped to
+# rate_set == "science_care". Drives the generic list/form templates and
+# the tissue-codes special-case form (parent + capacities) the routes
+# layer on top of the existing TableSpec metadata.
+
+
+def _login_sc_admin(app: Flask, email: str) -> FlaskClient:
+    user = _make_user(email, rate_set=RATE_SET_SCIENCE_CARE, is_sc_admin=True)
+    client = app.test_client()
+    _login(client, user.id)
+    return client
+
+
+def test_reference_list_blocked_for_plain_sc_user(app: Flask) -> None:
+    user = _make_user(
+        "plain-list@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/reference/sc_labs")
+    assert response.status_code == 403
+
+
+def test_reference_list_unknown_table_returns_404(app: Flask) -> None:
+    client = _login_sc_admin(app, "list-404@example.com")
+    response = client.get("/sc/reference/not_a_table")
+    assert response.status_code == 404
+
+
+def test_reference_list_renders_only_sc_rows(app: Flask) -> None:
+    # Two labs at the same rate-set the SC admin owns and one for a
+    # different tenant; only the SC rows must show up.
+    client = _login_sc_admin(app, "list-renders@example.com")
+    db.session.add_all(
+        [
+            SCLab(
+                lab_code="SCCA",
+                lab_name="Tucson",
+                origin_zip="85705",
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCLab(
+                lab_code="OTHER",
+                lab_name="Other Tenant",
+                origin_zip="99999",
+                rate_set="other_tenant",
+            ),
+        ]
+    )
+    db.session.commit()
+    response = client.get("/sc/reference/sc_labs")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "SCCA" in html
+    assert "Tucson" in html
+    assert "OTHER" not in html
+
+
+def test_reference_new_lab_persists_with_sc_rate_set(app: Flask) -> None:
+    client = _login_sc_admin(app, "new-lab@example.com")
+    response = client.post(
+        "/sc/reference/sc_labs/new",
+        data={
+            "lab_code": "SCCA",
+            "lab_name": "Tucson",
+            "origin_zip": "85705",
+            "address": "",
+            "contact_name": "",
+            "contact_phone": "",
+            "is_active": "1",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    row = SCLab.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, lab_code="SCCA"
+    ).one()
+    assert row.lab_name == "Tucson"
+    assert row.origin_zip == "85705"
+    assert row.is_active is True
+
+
+def test_reference_new_rejects_duplicate_unique_key(app: Flask) -> None:
+    client = _login_sc_admin(app, "dup@example.com")
+    db.session.add(
+        SCLab(
+            lab_code="SCCA",
+            lab_name="First",
+            origin_zip="85705",
+            rate_set=RATE_SET_SCIENCE_CARE,
+        )
+    )
+    db.session.commit()
+    response = client.post(
+        "/sc/reference/sc_labs/new",
+        data={
+            "lab_code": "SCCA",
+            "lab_name": "Dup",
+            "origin_zip": "11111",
+        },
+    )
+    assert response.status_code == 400
+    assert "already exists" in response.get_data(as_text=True).lower()
+    assert SCLab.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE
+    ).count() == 1
+
+
+def test_reference_new_rejects_missing_required_field(app: Flask) -> None:
+    client = _login_sc_admin(app, "missing@example.com")
+    response = client.post(
+        "/sc/reference/sc_labs/new",
+        data={"lab_code": "", "origin_zip": "85705"},
+    )
+    assert response.status_code == 400
+    assert "enter a value" in response.get_data(as_text=True).lower()
+
+
+def test_reference_edit_updates_row(app: Flask) -> None:
+    client = _login_sc_admin(app, "edit@example.com")
+    lab = SCLab(
+        lab_code="SCCA",
+        lab_name="Tucson",
+        origin_zip="85705",
+        is_active=True,
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(lab)
+    db.session.commit()
+    response = client.post(
+        f"/sc/reference/sc_labs/{lab.id}/edit",
+        data={
+            "lab_code": "SCCA",
+            "lab_name": "Renamed",
+            "origin_zip": "85705",
+            "address": "",
+            "contact_name": "",
+            "contact_phone": "",
+            # is_active omitted → checkbox unchecked
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    refreshed = db.session.get(SCLab, lab.id)
+    assert refreshed.lab_name == "Renamed"
+    assert refreshed.is_active is False
+
+
+def test_reference_edit_other_tenant_returns_404(app: Flask) -> None:
+    client = _login_sc_admin(app, "other-edit@example.com")
+    lab = SCLab(
+        lab_code="OTHER",
+        lab_name="Other",
+        origin_zip="99999",
+        rate_set="other_tenant",
+    )
+    db.session.add(lab)
+    db.session.commit()
+    response = client.get(f"/sc/reference/sc_labs/{lab.id}/edit")
+    assert response.status_code == 404
+
+
+def test_reference_delete_removes_row(app: Flask) -> None:
+    client = _login_sc_admin(app, "del@example.com")
+    lab = SCLab(
+        lab_code="SCCA",
+        lab_name="Tucson",
+        origin_zip="85705",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(lab)
+    db.session.commit()
+    lab_id = lab.id
+    response = client.post(
+        f"/sc/reference/sc_labs/{lab_id}/delete",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert db.session.get(SCLab, lab_id) is None
+
+
+def test_reference_delete_other_tenant_returns_404(app: Flask) -> None:
+    client = _login_sc_admin(app, "del-other@example.com")
+    lab = SCLab(
+        lab_code="OTHER",
+        lab_name="Other",
+        origin_zip="99999",
+        rate_set="other_tenant",
+    )
+    db.session.add(lab)
+    db.session.commit()
+    response = client.post(f"/sc/reference/sc_labs/{lab.id}/delete")
+    assert response.status_code == 404
+    # Row untouched.
+    assert db.session.get(SCLab, lab.id) is not None
+
+
+def test_tissue_new_form_persists_parent_and_capacities(app: Flask) -> None:
+    # Adding a tissue code with per-box quantities must write both the
+    # SCTissueCode parent row and one SCTissueBoxCapacity per non-zero
+    # quantity, and recompute the parent's default_box_type_code +
+    # pieces_per_box hint from the box with the largest capacity.
+    client = _login_sc_admin(app, "tissue-new@example.com")
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="MED",
+                label="Medium",
+                length_in=10,
+                width_in=10,
+                height_in=10,
+                tare_weight_lb=2,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCBoxType(
+                code="LRG",
+                label="Large",
+                length_in=15,
+                width_in=15,
+                height_in=15,
+                tare_weight_lb=3,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    response = client.post(
+        "/sc/reference/sc_tissue_codes/new",
+        data={
+            "tissue_code": "BONE",
+            "description": "Femur",
+            "unit_weight_lb": "0.5",
+            "notes": "fragile",
+            "cap_MED": "4",
+            "cap_LRG": "8",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    tissue = SCTissueCode.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code="BONE"
+    ).one()
+    assert tissue.default_box_type_code == "LRG"
+    assert tissue.pieces_per_box == 8
+    caps = sorted(
+        (c.box_code, c.pieces_per_box)
+        for c in SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE, tissue_code="BONE"
+        ).all()
+    )
+    assert caps == [("LRG", 8), ("MED", 4)]
+
+
+def test_tissue_edit_replaces_capacities_and_default_box(app: Flask) -> None:
+    # Editing a tissue must wipe + reinsert the per-box matrix so a
+    # capacity cleared in the form disappears from the DB (not just
+    # zeroed out).
+    client = _login_sc_admin(app, "tissue-edit@example.com")
+    db.session.add_all(
+        [
+            SCBoxType(
+                code="MED",
+                label="Medium",
+                length_in=10,
+                width_in=10,
+                height_in=10,
+                tare_weight_lb=2,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCBoxType(
+                code="LRG",
+                label="Large",
+                length_in=15,
+                width_in=15,
+                height_in=15,
+                tare_weight_lb=3,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueCode(
+                tissue_code="BONE",
+                description="Femur",
+                unit_weight_lb=0.5,
+                default_box_type_code="LRG",
+                pieces_per_box=8,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="MED",
+                pieces_per_box=4,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="LRG",
+                pieces_per_box=8,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    tissue_id = SCTissueCode.query.one().id
+    response = client.post(
+        f"/sc/reference/sc_tissue_codes/{tissue_id}/edit",
+        data={
+            "tissue_code": "BONE",
+            "description": "Updated",
+            "unit_weight_lb": "0.6",
+            "notes": "",
+            "cap_MED": "6",
+            "cap_LRG": "",  # cleared → row deleted
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    refreshed = db.session.get(SCTissueCode, tissue_id)
+    assert refreshed.description == "Updated"
+    assert refreshed.default_box_type_code == "MED"
+    assert refreshed.pieces_per_box == 6
+    caps = sorted(
+        (c.box_code, c.pieces_per_box)
+        for c in SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all()
+    )
+    assert caps == [("MED", 6)]
+
+
+def test_tissue_delete_cascades_to_capacities(app: Flask) -> None:
+    client = _login_sc_admin(app, "tissue-del@example.com")
+    db.session.add_all(
+        [
+            SCTissueCode(
+                tissue_code="BONE",
+                description="Femur",
+                unit_weight_lb=0.5,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+            SCTissueBoxCapacity(
+                tissue_code="BONE",
+                box_code="MED",
+                pieces_per_box=4,
+                rate_set=RATE_SET_SCIENCE_CARE,
+            ),
+        ]
+    )
+    db.session.commit()
+    tissue_id = SCTissueCode.query.one().id
+    response = client.post(
+        f"/sc/reference/sc_tissue_codes/{tissue_id}/delete",
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+    assert SCTissueCode.query.count() == 0
+    assert SCTissueBoxCapacity.query.count() == 0
+
+
+def test_reference_index_shows_view_edit_link(app: Flask) -> None:
+    client = _login_sc_admin(app, "index-link@example.com")
+    response = client.get("/sc/reference")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "View / Edit Rows" in html
+    assert "/sc/reference/sc_labs" in html

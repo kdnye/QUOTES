@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}{{ 'Edit' if tissue else 'Add' }} Tissue Code{% endblock %}
+
+{% block content %}
+<h1 class="h3 mb-3">{{ 'Edit' if tissue else 'Add' }} SC Tissue Code</h1>
+
+{% if errors %}
+<div class="alert alert-danger" role="alert">
+  <strong>Please fix the following:</strong>
+  <ul class="mb-0">
+    {% for error in errors %}
+    <li>{{ error }}</li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<form method="post" novalidate>
+  {{ csrf_input() }}
+  <div class="mb-3">
+    <label class="form-label" for="field-tissue_code">
+      Tissue Code <span class="text-danger">*</span>
+    </label>
+    <input class="form-control"
+           type="text"
+           id="field-tissue_code"
+           name="tissue_code"
+           value="{{ values.tissue_code }}"
+           required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label" for="field-description">Description</label>
+    <input class="form-control"
+           type="text"
+           id="field-description"
+           name="description"
+           value="{{ values.description }}">
+  </div>
+  <div class="mb-3">
+    <label class="form-label" for="field-unit_weight_lb">
+      Unit Weight (lb) <span class="text-danger">*</span>
+    </label>
+    <input class="form-control"
+           type="number"
+           step="any"
+           id="field-unit_weight_lb"
+           name="unit_weight_lb"
+           value="{{ values.unit_weight_lb }}"
+           required>
+  </div>
+  <div class="mb-3">
+    <label class="form-label" for="field-notes">Notes</label>
+    <textarea class="form-control"
+              id="field-notes"
+              name="notes"
+              rows="2">{{ values.notes }}</textarea>
+  </div>
+
+  <h2 class="h5 mt-4">Box Capacities</h2>
+  <p class="text-body-secondary small">
+    Pieces of this tissue that fit per box. Leave blank or set to 0 if a
+    box type cannot ship this tissue. The legacy default-box hint is
+    recomputed automatically from the box with the largest capacity.
+  </p>
+  {% if box_types %}
+  <div class="row g-3 mb-3">
+    {% for box in box_types %}
+    <div class="col-12 col-md-4">
+      <label class="form-label" for="cap-{{ box.code }}">
+        {{ box.code }}{% if box.label %} — {{ box.label }}{% endif %}
+      </label>
+      <input class="form-control"
+             type="number"
+             step="1"
+             min="0"
+             id="cap-{{ box.code }}"
+             name="cap_{{ box.code }}"
+             value="{{ capacities[box.code] }}">
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="alert alert-warning">
+    No box types are configured yet. Add box types under
+    <a href="{{ url_for('science_care.sc_reference_list', table='sc_box_types') }}">
+      SC Box Types
+    </a>
+    first so you can assign per-box capacities to this tissue.
+  </div>
+  {% endif %}
+
+  <button class="btn btn-primary" type="submit">Save</button>
+  <a class="btn btn-secondary" href="{{ list_url }}">Cancel</a>
+</form>
+{% endblock %}

@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import csv
 import io
-from typing import Mapping, Union
+from typing import Any, Mapping, Union
 
 import pandas as pd
 from flask import (
@@ -37,13 +37,25 @@ from flask import (
 )
 from flask_login import current_user, login_required
 
-from app.admin import CSVUploadForm, _parse_csv_rows
+from app.admin import (
+    CSVUploadForm,
+    _is_missing,
+    _parse_bool_flag,
+    _parse_csv_rows,
+    _parse_optional_float,
+    _parse_optional_int,
+    _parse_required_float,
+    _parse_required_int,
+    _parse_required_string,
+    _parse_zipcode,
+)
 from app.models import (
     RATE_SET_SCIENCE_CARE,
     Quote,
     SCAccessorialMap,
     SCBoxType,
     SCConsumable,
+    SCEstablishedLane,
     SCLab,
     SCQuoteSession,
     SCQuoteSessionLeg,
@@ -69,6 +81,8 @@ from app.services.bulk_import import record_rate_upload, save_unique
 from . import science_care_bp
 from .csv_admin import (
     SC_TABLE_SPECS,
+    _parse_optional_date,
+    _parse_optional_string,
     append_sc_tissue_codes,
     download_sc_tissue_codes_csv,
     force_science_care_rate_set,
@@ -992,6 +1006,519 @@ def _resolve_sc_spec_or_404(table: str):
     return spec
 
 
+# Parser → HTML input metadata. Drives the generic per-row edit form for
+# every SC reference table except sc_tissue_codes (which has a custom
+# parent + capacities form).
+_PARSER_INPUT_META: dict[Any, dict[str, Any]] = {
+    _parse_required_string: {"type": "text"},
+    _parse_optional_string: {"type": "text"},
+    _parse_required_float: {"type": "number", "step": "any"},
+    _parse_optional_float: {"type": "number", "step": "any"},
+    _parse_required_int: {"type": "number", "step": "1"},
+    _parse_optional_int: {"type": "number", "step": "1"},
+    _parse_bool_flag: {"type": "checkbox"},
+    _parse_zipcode: {
+        "type": "text",
+        "pattern": r"\d{5}",
+        "inputmode": "numeric",
+        "maxlength": "10",
+    },
+    _parse_optional_date: {"type": "date"},
+}
+
+
+def _form_field_meta(column: Any, obj: Any | None) -> dict[str, Any]:
+    """Build a render-ready dict describing one row-edit form input.
+
+    The TableSpec's ``ColumnSpec.parser`` identity tells us what HTML
+    input type to surface. The generic edit form template renders one
+    input per column from this metadata.
+    """
+
+    meta = dict(_PARSER_INPUT_META.get(column.parser, {"type": "text"}))
+    meta["name"] = column.attr
+    meta["header"] = column.header
+    meta["required"] = bool(column.required)
+    value = getattr(obj, column.attr, None) if obj is not None else None
+    if meta["type"] == "checkbox":
+        meta["checked"] = bool(value)
+        meta["value_str"] = ""
+    elif value is None:
+        meta["value_str"] = ""
+    elif meta["type"] == "date":
+        meta["value_str"] = value.isoformat() if hasattr(value, "isoformat") else str(value)
+    else:
+        meta["value_str"] = str(value)
+    return meta
+
+
+def _parse_row_form(spec: Any) -> tuple[dict[str, Any], list[str]]:
+    """Parse and validate request form data against ``spec.columns``.
+
+    Returns ``(values, errors)``. ``values`` is a dict of
+    ``attr -> parsed_value`` for columns that parsed cleanly. ``errors``
+    is a list of human-readable strings keyed back to the column header.
+    """
+
+    values: dict[str, Any] = {}
+    errors: list[str] = []
+    for column in spec.columns:
+        if column.parser is _parse_bool_flag:
+            raw = request.form.get(column.attr)
+            try:
+                parsed = _parse_bool_flag(raw) if raw is not None else False
+            except ValueError as exc:
+                errors.append(f"{column.header}: {exc}")
+                continue
+            values[column.attr] = parsed
+            continue
+
+        raw = request.form.get(column.attr, "")
+        try:
+            parsed = column.parser(raw)
+        except ValueError as exc:
+            errors.append(f"{column.header}: {exc}")
+            continue
+        if column.required and _is_missing(parsed):
+            errors.append(f"{column.header}: enter a value")
+            continue
+        values[column.attr] = parsed
+    return values, errors
+
+
+def _conflict_filter(spec: Any, values: dict[str, Any]):
+    """Return a ``filter_by`` kwargs dict for the spec's unique key.
+
+    Returns ``None`` if the spec has no ``unique_attr`` (no uniqueness
+    check needed) or any unique attribute is absent from ``values``.
+    """
+
+    if not spec.unique_attr:
+        return None
+    attrs = (
+        spec.unique_attr
+        if isinstance(spec.unique_attr, (list, tuple))
+        else (spec.unique_attr,)
+    )
+    filters: dict[str, Any] = {"rate_set": RATE_SET_SCIENCE_CARE}
+    for attr in attrs:
+        if attr == "rate_set":
+            continue
+        if attr not in values:
+            return None
+        filters[attr] = values[attr]
+    return filters
+
+
+def _row_label(spec: Any, row: Any) -> str:
+    """Human-readable label for a row (used in flash messages)."""
+
+    if spec.unique_attr:
+        attrs = (
+            spec.unique_attr
+            if isinstance(spec.unique_attr, (list, tuple))
+            else (spec.unique_attr,)
+        )
+        parts = [
+            str(getattr(row, attr, ""))
+            for attr in attrs
+            if attr != "rate_set"
+        ]
+        label = " / ".join(p for p in parts if p)
+        if label:
+            return label
+    return f"#{getattr(row, 'id', '?')}"
+
+
+def _sc_tissue_capacity_map(tissue_code: str) -> dict[str, int]:
+    """Return ``{box_code: pieces_per_box}`` for one SC tissue code."""
+
+    rows = (
+        SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE, tissue_code=tissue_code
+        ).all()
+    )
+    return {row.box_code: int(row.pieces_per_box) for row in rows}
+
+
+def _save_tissue_capacities(
+    tissue_code: str, new_caps: dict[str, int]
+) -> None:
+    """Replace the per-box capacities for ``tissue_code``.
+
+    Wipes the existing rows for this (rate_set, tissue_code) pair and
+    inserts a fresh set built from ``new_caps`` (``box_code → qty``).
+    Zero-qty entries are dropped so the matrix matches the CSV import's
+    "missing row means cannot ship" convention.
+    """
+
+    SCTissueBoxCapacity.query.filter_by(
+        rate_set=RATE_SET_SCIENCE_CARE, tissue_code=tissue_code
+    ).delete(synchronize_session=False)
+    db.session.flush()
+    for box_code, qty in new_caps.items():
+        if qty <= 0:
+            continue
+        db.session.add(
+            SCTissueBoxCapacity(
+                rate_set=RATE_SET_SCIENCE_CARE,
+                tissue_code=tissue_code,
+                box_code=box_code,
+                pieces_per_box=qty,
+            )
+        )
+
+
+def _refresh_tissue_default_box(tissue: SCTissueCode) -> None:
+    """Recompute the legacy default-box hint from the new capacity map.
+
+    Mirrors the CSV importer's behaviour: the parent row's
+    ``default_box_type_code`` + ``pieces_per_box`` track the box with
+    the largest capacity so legacy callers (and the existing schema)
+    keep returning the same allocation hint they did before.
+    """
+
+    caps = _sc_tissue_capacity_map(tissue.tissue_code)
+    if not caps:
+        tissue.default_box_type_code = None
+        tissue.pieces_per_box = None
+        return
+    default_box, pieces = max(caps.items(), key=lambda kv: kv[1])
+    tissue.default_box_type_code = default_box
+    tissue.pieces_per_box = pieces
+
+
+@science_care_bp.get("/reference/<string:table>")
+@login_required
+@sc_admin_required
+def sc_reference_list(table: str) -> str:
+    """List every row in one SC reference table for inline maintenance.
+
+    Mirrors the per-table list pages under ``/admin/<table>`` but is
+    scoped to ``rate_set == "science_care"`` so an SC admin can never
+    see another tenant's rows.
+    """
+
+    spec = _resolve_sc_spec_or_404(table)
+    query = spec.model.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+    if spec.order_by is not None:
+        order_by = (
+            spec.order_by
+            if isinstance(spec.order_by, (list, tuple))
+            else (spec.order_by,)
+        )
+        query = query.order_by(*order_by)
+    rows = query.all()
+
+    columns = [
+        {
+            "header": col.header,
+            "attr": col.attr,
+            "formatter": col.formatter,
+        }
+        for col in spec.columns
+    ]
+
+    capacities_by_tissue: dict[str, dict[str, int]] = {}
+    if table == "sc_tissue_codes":
+        for cap in SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE
+        ).all():
+            capacities_by_tissue.setdefault(cap.tissue_code, {})[
+                cap.box_code
+            ] = int(cap.pieces_per_box)
+
+    return render_template(
+        "sc/reference_list.html",
+        table=table,
+        table_label=spec.label,
+        columns=columns,
+        rows=rows,
+        capacities_by_tissue=capacities_by_tissue,
+    )
+
+
+@science_care_bp.route(
+    "/reference/<string:table>/new", methods=["GET", "POST"]
+)
+@login_required
+@sc_admin_required
+def sc_reference_new(table: str) -> Union[str, Response]:
+    """Create one row in an SC reference table."""
+
+    spec = _resolve_sc_spec_or_404(table)
+    if table == "sc_tissue_codes":
+        return _sc_tissue_form(tissue=None)
+    return _sc_generic_form(spec, obj=None)
+
+
+@science_care_bp.route(
+    "/reference/<string:table>/<int:row_id>/edit", methods=["GET", "POST"]
+)
+@login_required
+@sc_admin_required
+def sc_reference_edit(table: str, row_id: int) -> Union[str, Response]:
+    """Edit one row in an SC reference table."""
+
+    spec = _resolve_sc_spec_or_404(table)
+    obj = db.session.get(spec.model, row_id)
+    if obj is None or getattr(obj, "rate_set", None) != RATE_SET_SCIENCE_CARE:
+        abort(404)
+    if table == "sc_tissue_codes":
+        return _sc_tissue_form(tissue=obj)
+    return _sc_generic_form(spec, obj=obj)
+
+
+@science_care_bp.post(
+    "/reference/<string:table>/<int:row_id>/delete"
+)
+@login_required
+@sc_admin_required
+def sc_reference_delete(table: str, row_id: int) -> Response:
+    """Delete one row from an SC reference table.
+
+    For ``sc_tissue_codes`` the matching capacity rows are wiped in the
+    same transaction so the per-tissue matrix stays consistent.
+    """
+
+    spec = _resolve_sc_spec_or_404(table)
+    obj = db.session.get(spec.model, row_id)
+    if obj is None or getattr(obj, "rate_set", None) != RATE_SET_SCIENCE_CARE:
+        abort(404)
+    label = _row_label(spec, obj)
+    if table == "sc_tissue_codes":
+        SCTissueBoxCapacity.query.filter_by(
+            rate_set=RATE_SET_SCIENCE_CARE,
+            tissue_code=obj.tissue_code,
+        ).delete(synchronize_session=False)
+    db.session.delete(obj)
+    db.session.commit()
+    flash(f"{spec.label} row {label} deleted.", "success")
+    return redirect(url_for("science_care.sc_reference_list", table=table))
+
+
+def _sc_generic_form(spec: Any, obj: Any) -> Union[str, Response]:
+    """Render and handle the generic single-row form.
+
+    GET: render the form prefilled from ``obj`` (or blank when creating).
+    POST: validate + persist; on success redirect back to the list, on
+    failure rerender with field-level errors + the user's input.
+    """
+
+    errors: list[str] = []
+    submitted_values: dict[str, str] = {}
+    if request.method == "POST":
+        values, errors = _parse_row_form(spec)
+        submitted_values = {
+            col.attr: request.form.get(col.attr, "") for col in spec.columns
+        }
+        if not errors:
+            conflict_filter = _conflict_filter(spec, values)
+            if conflict_filter is not None:
+                existing = (
+                    spec.model.query.filter_by(**conflict_filter).first()
+                )
+                if existing is not None and getattr(existing, "id", None) != (
+                    getattr(obj, "id", None)
+                ):
+                    errors.append(
+                        f"A {spec.label} row with these key fields already exists."
+                    )
+            if not errors:
+                target = obj or spec.model()
+                target.rate_set = RATE_SET_SCIENCE_CARE
+                for attr, parsed in values.items():
+                    setattr(target, attr, parsed)
+                if obj is None:
+                    db.session.add(target)
+                try:
+                    db.session.commit()
+                except Exception as exc:  # noqa: BLE001 - surfaced as form error
+                    db.session.rollback()
+                    errors.append(f"Database error: {exc}")
+                else:
+                    verb = "updated" if obj is not None else "created"
+                    flash(
+                        f"{spec.label} row {_row_label(spec, target)} {verb}.",
+                        "success",
+                    )
+                    return redirect(
+                        url_for(
+                            "science_care.sc_reference_list", table=spec.name
+                        )
+                    )
+
+    fields = []
+    for column in spec.columns:
+        meta = _form_field_meta(column, obj)
+        if request.method == "POST":
+            override = submitted_values.get(column.attr, "")
+            if meta["type"] == "checkbox":
+                meta["checked"] = bool(request.form.get(column.attr))
+            else:
+                meta["value_str"] = override
+        fields.append(meta)
+
+    status = 400 if request.method == "POST" and errors else 200
+    return (
+        render_template(
+            "sc/reference_form.html",
+            table=spec.name,
+            table_label=spec.label,
+            fields=fields,
+            obj=obj,
+            errors=errors,
+            list_url=url_for(
+                "science_care.sc_reference_list", table=spec.name
+            ),
+        ),
+        status,
+    )
+
+
+def _sc_tissue_form(tissue: SCTissueCode | None) -> Union[str, Response]:
+    """Render + handle the SC tissue-code form (parent + box capacities).
+
+    Tissue rows carry a per-box capacity matrix. The form shows the
+    parent fields plus one ``Pieces / box`` input per existing SCBoxType
+    so the SC admin can edit a tissue end-to-end without touching CSVs.
+    """
+
+    box_types = (
+        SCBoxType.query.filter_by(rate_set=RATE_SET_SCIENCE_CARE)
+        .order_by(SCBoxType.code)
+        .all()
+    )
+
+    errors: list[str] = []
+    submitted: dict[str, str] = {}
+    submitted_caps: dict[str, str] = {}
+
+    if request.method == "POST":
+        submitted = {
+            "tissue_code": request.form.get("tissue_code", "").strip(),
+            "description": request.form.get("description", ""),
+            "unit_weight_lb": request.form.get("unit_weight_lb", ""),
+            "notes": request.form.get("notes", ""),
+        }
+        for box in box_types:
+            submitted_caps[box.code] = request.form.get(
+                f"cap_{box.code}", ""
+            )
+
+        try:
+            tissue_code = _parse_required_string(submitted["tissue_code"])
+        except ValueError as exc:
+            errors.append(f"Tissue Code: {exc}")
+            tissue_code = None
+
+        description = _parse_optional_string(submitted["description"])
+
+        try:
+            unit_weight = _parse_required_float(submitted["unit_weight_lb"])
+        except ValueError as exc:
+            errors.append(f"Unit Weight (lb): {exc}")
+            unit_weight = None
+
+        notes = _parse_optional_string(submitted["notes"])
+
+        per_box: dict[str, int] = {}
+        for box in box_types:
+            raw = submitted_caps.get(box.code, "")
+            if _is_missing(raw):
+                continue
+            try:
+                qty = _parse_required_int(raw)
+            except ValueError as exc:
+                errors.append(f"{box.code} pieces / box: {exc}")
+                continue
+            if qty < 0:
+                errors.append(
+                    f"{box.code} pieces / box: must be 0 or greater"
+                )
+                continue
+            per_box[box.code] = qty
+
+        if tissue_code is not None and not errors:
+            existing = (
+                SCTissueCode.query.filter_by(
+                    rate_set=RATE_SET_SCIENCE_CARE,
+                    tissue_code=tissue_code,
+                ).first()
+            )
+            if existing is not None and (
+                tissue is None or existing.id != tissue.id
+            ):
+                errors.append(
+                    f"A tissue code {tissue_code!r} already exists."
+                )
+
+        if not errors:
+            target = tissue or SCTissueCode()
+            target.rate_set = RATE_SET_SCIENCE_CARE
+            target.tissue_code = tissue_code
+            target.description = description
+            target.unit_weight_lb = unit_weight
+            target.notes = notes
+            if tissue is None:
+                db.session.add(target)
+            db.session.flush()
+            _save_tissue_capacities(target.tissue_code, per_box)
+            _refresh_tissue_default_box(target)
+            try:
+                db.session.commit()
+            except Exception as exc:  # noqa: BLE001
+                db.session.rollback()
+                errors.append(f"Database error: {exc}")
+            else:
+                verb = "updated" if tissue is not None else "created"
+                flash(
+                    f"Tissue code {target.tissue_code} {verb}.",
+                    "success",
+                )
+                return redirect(
+                    url_for(
+                        "science_care.sc_reference_list",
+                        table="sc_tissue_codes",
+                    )
+                )
+
+    if request.method == "POST":
+        values = submitted
+        capacities = submitted_caps
+    else:
+        values = {
+            "tissue_code": tissue.tissue_code if tissue else "",
+            "description": (tissue.description or "") if tissue else "",
+            "unit_weight_lb": (
+                str(tissue.unit_weight_lb) if tissue else ""
+            ),
+            "notes": (tissue.notes or "") if tissue else "",
+        }
+        cap_map = (
+            _sc_tissue_capacity_map(tissue.tissue_code) if tissue else {}
+        )
+        capacities = {
+            box.code: str(cap_map.get(box.code, "")) for box in box_types
+        }
+
+    status = 400 if request.method == "POST" and errors else 200
+    return (
+        render_template(
+            "sc/reference_tissue_form.html",
+            tissue=tissue,
+            values=values,
+            capacities=capacities,
+            box_types=box_types,
+            errors=errors,
+            list_url=url_for(
+                "science_care.sc_reference_list", table="sc_tissue_codes"
+            ),
+        ),
+        status,
+    )
+
+
 @science_care_bp.route(
     "/reference/<string:table>/upload", methods=["GET", "POST"]
 )
@@ -1057,7 +1584,11 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
                     form.file.errors.append(f"Database error: {exc}")
                 else:
                     flash(message, "success")
-                    return redirect(url_for(spec.list_endpoint))
+                    return redirect(
+                        url_for(
+                            "science_care.sc_reference_list", table=table
+                        )
+                    )
         else:
             try:
                 objects = _parse_csv_rows(file_storage, spec)
@@ -1113,7 +1644,11 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
                     form.file.errors.append(f"Database error: {exc}")
                 else:
                     flash(message, "success")
-                    return redirect(url_for(spec.list_endpoint))
+                    return redirect(
+                        url_for(
+                            "science_care.sc_reference_list", table=table
+                        )
+                    )
 
     status = 400 if request.method == "POST" else 200
     return (
@@ -1126,7 +1661,9 @@ def sc_upload_csv(table: str) -> Union[str, Response]:
             download_url=url_for(
                 "science_care.sc_download_csv", table=table
             ),
-            cancel_url=url_for(spec.list_endpoint),
+            cancel_url=url_for(
+                "science_care.sc_reference_list", table=table
+            ),
         ),
         status,
     )
