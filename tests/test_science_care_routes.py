@@ -1685,6 +1685,77 @@ def _seed_sc_session_with_legs(user_id: int):
     return session, leg
 
 
+def test_sc_email_ops_text_body_separates_consecutive_legs(
+    app: Flask,
+) -> None:
+    """The plain-text booking email must insert a visible separator
+    line between consecutive legs so a multi-leg shipment doesn't
+    read as one continuous block. The separator appears between legs
+    only - never before the first leg or after the last leg (where
+    the ``GRAND TOTAL`` divider already provides closure).
+    """
+
+    from app.models import Quote, SCQuoteSession, SCQuoteSessionLeg
+    import json
+
+    user = _make_user(
+        "sc-multi-leg-sep@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session = SCQuoteSession(
+        user_id=user.id,
+        grand_total=600.0,
+        payload_json=json.dumps({"multi_reference": "SCMQ0700"}),
+        multi_reference="SCMQ0700",
+    )
+    db.session.add(session)
+    db.session.flush()
+    for idx in range(1, 4):
+        quote = Quote(
+            user_id=user.id,
+            user_email="sc-buyer@example.com",
+            quote_type="Air",
+            origin=f"7501{idx}",
+            destination="80205",
+            weight=225.0,
+            pieces=1,
+            zone="X",
+            total=200.0,
+            quote_metadata="{}",
+            rate_set=RATE_SET_SCIENCE_CARE,
+        )
+        db.session.add(quote)
+        db.session.flush()
+        db.session.add(
+            SCQuoteSessionLeg(
+                session_id=session.id,
+                leg_index=idx,
+                air_quote_id=quote.id,
+                winner_mode="Air",
+                winner_total=200.0,
+            )
+        )
+    db.session.commit()
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+
+    separator = "-" * 97
+    # Three legs -> exactly two separators between them.
+    assert html.count(separator) == 2
+    # The separator must never appear immediately before "Leg 1:" -
+    # only between consecutive legs.
+    pre_leg1 = html.split("Leg 1:", 1)[0]
+    assert separator not in pre_leg1
+    # The separator carries blank lines on BOTH sides for readability -
+    # a regression that dropped the leading blank line would still pass
+    # the count assertion, so check the surrounding whitespace
+    # explicitly.
+    assert f"\n\n{separator}\n\n" in html
+
+
 def test_sc_email_ops_send_dispatches_via_postmark_and_records_receipt(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

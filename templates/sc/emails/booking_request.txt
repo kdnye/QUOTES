@@ -8,6 +8,11 @@ Email:       {{ user_email }}
 LEG SUMMARY
 ------------------------------------------
 {% for leg in legs -%}
+{% if not loop.first %}
+
+-------------------------------------------------------------------------------------------------
+
+{% endif -%}
 Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} -> {{ leg.destination or '—' }}{% if leg.skip_reason %} [SKIPPED: {{ leg.skip_reason }}]{% else %}
   Weight: {{ '%.1f'|format(leg.weight) }} lb
   Mode:   {{ leg.winner_mode or '—' }}
