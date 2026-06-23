@@ -95,6 +95,40 @@ Key tables:
   path forces `rate_set == "science_care"` and 404s on rows belonging to
   another tenant so cross-tenant edits are impossible by construction.
 
+### Booking-email composer + Postmark dispatch
+- Both booking flows render through a composer-style preview page and ship the
+  email via the existing Postmark SMTP gateway plumbed through
+  `app/services/mail.py::send_email`, which already builds
+  `multipart/alternative` messages and stamps the
+  `X-PM-Message-Stream: quote-tool` header that Postmark routes on.
+- **SC multi-leg**: `GET /sc/quote/<id>/email-ops` renders the composer
+  using two reusable Jinja templates so the body lives in one place:
+  `templates/sc/emails/booking_request.txt` (the plain-text body shown
+  in the preview AND in the `mailto:` fallback) and
+  `templates/sc/emails/booking_request.html` (the formatted HTML
+  alternative for Postmark). `POST /sc/quote/<id>/email-ops/send`
+  re-renders both, calls `send_email(to=BOOKING_EMAIL_OPS_TO,
+  cc=current_user.email, html_body=...)`, and persists a
+  `BookingEmailReceipt` row.
+- **Single-quote**: `GET /quotes/<id>/email` renders the legacy form;
+  the JS builds the plain-text body client-side. The new
+  `POST /quotes/<id>/email/send` accepts `{subject, body}` JSON,
+  enforces `user_has_mail_privileges` + `is_quote_email_smtp_enabled`,
+  then calls `send_email` (the mail service auto-wraps the plaintext in
+  its standard HTML alternative). Persists a `BookingEmailReceipt`
+  keyed by `kind="single_quote"` and the `Quote.quote_id`.
+- The audit table `booking_email_receipts` (model
+  `BookingEmailReceipt`, migration `d9a8b7c6e5f4`) holds one row per
+  attempted send — success OR failure — with sender, To/Cc, subject,
+  status (`sent`/`failed`), error_text, and Postmark message id.
+- Recipient ops address is configurable via `BOOKING_EMAIL_OPS_TO`
+  (Flask config or env), defaulting to `operations@freightservices.net`,
+  so a QA/staging deploy can route booking emails to a shared inbox
+  without code edits.
+- The `mailto:` button is preserved on both composers as an offline
+  fallback. Both paths use the same plain-text body so the recipient
+  sees identical content regardless of which transport ops picked.
+
 ### Pricing Logic (`quote` package)
 - `distance.py` – wraps Google Maps Directions API with retry logic.
 - `logic_hotshot.py` – computes hotshot quotes based on distance, zone, and rate tables.

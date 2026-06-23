@@ -55,8 +55,12 @@ from app.admin import (
     _parse_zipcode,
 )
 from app.models import (
+    BOOKING_EMAIL_KIND_SC_MULTI,
+    BOOKING_EMAIL_STATUS_FAILED,
+    BOOKING_EMAIL_STATUS_SENT,
     RATE_SET_SCIENCE_CARE,
     Accessorial,
+    BookingEmailReceipt,
     Quote,
     SCAccessorialMap,
     SCBoxType,
@@ -71,6 +75,7 @@ from app.models import (
     db,
 )
 from app.policies import sc_admin_required, sc_user_required
+from app.services.mail import MailRateLimitError, send_email
 from app.services.science_care_quote import (
     TissueRow,
     _collect_tissue_rows,
@@ -1541,6 +1546,146 @@ def sc_email_ops_for_booking(session_id: int):
         user_email=getattr(current_user, "email", "") or "",
         user_company=getattr(current_user, "company", "") or "",
     )
+
+
+def _booking_email_ops_to() -> str:
+    """Return the ops recipient address for SC booking emails.
+
+    Configurable via ``BOOKING_EMAIL_OPS_TO`` (Flask config or env), so a
+    QA/staging deploy can route booking emails to a shared inbox without
+    code edits.
+    """
+
+    return (
+        current_app.config.get("BOOKING_EMAIL_OPS_TO")
+        or os.getenv("BOOKING_EMAIL_OPS_TO")
+        or "operations@freightservices.net"
+    )
+
+
+@science_care_bp.post("/quote/<int:session_id>/email-ops/send")
+@login_required
+@sc_user_required
+def sc_email_ops_send(session_id: int):
+    """Send the SC booking email via Postmark (SMTP gateway).
+
+    Renders the same plain-text body shown in the composer plus a
+    formatted HTML alternative, calls
+    :func:`app.services.mail.send_email` with the ops recipient as the
+    ``To`` address and the requesting user as ``Cc``, and persists a
+    :class:`~app.models.BookingEmailReceipt` row regardless of
+    outcome. The composer's mailto link is unaffected and continues to
+    work as an offline fallback even when this endpoint fails.
+
+    Returns a JSON payload describing the outcome so the composer's
+    JS can update the status banner. The HTTP status code mirrors
+    success / failure for non-JS callers and tests.
+    """
+
+    session = _load_sc_session_or_404(session_id)
+    leg_rows = _load_sc_session_legs(session)
+    legs = _hydrate_legs_for_display(leg_rows, session=session)
+
+    ref_display = session.multi_reference or f"Session {session.id}"
+    subject = f"SC Multi-leg Booking Request — {ref_display}"
+    to_addr = _booking_email_ops_to()
+    cc_addr = (getattr(current_user, "email", "") or "").strip() or None
+
+    user_name = getattr(current_user, "name", "") or ""
+    user_email = getattr(current_user, "email", "") or ""
+    user_company = getattr(current_user, "company", "") or ""
+
+    text_body = render_template(
+        "sc/emails/booking_request.txt",
+        sc_session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=user_name,
+        user_email=user_email,
+        user_company=user_company,
+    )
+    html_body = render_template(
+        "sc/emails/booking_request.html",
+        sc_session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=user_name,
+        user_email=user_email,
+        user_company=user_company,
+    )
+
+    headers: dict[str, str] = {}
+    if cc_addr and cc_addr.lower() != to_addr.lower():
+        headers["Cc"] = cc_addr
+    else:
+        # ``Cc`` would duplicate the ``To`` address (e.g. the ops
+        # inbox initiating the send for testing); don't bother
+        # sending a redundant CC envelope. We still record cc_addr
+        # as ``None`` on the receipt so the UI doesn't claim a
+        # second recipient.
+        cc_addr = None
+
+    receipt = BookingEmailReceipt(
+        kind=BOOKING_EMAIL_KIND_SC_MULTI,
+        reference=ref_display,
+        sender_user_id=getattr(current_user, "id", None),
+        to_addr=to_addr,
+        cc_addr=cc_addr,
+        subject=subject,
+        status=BOOKING_EMAIL_STATUS_FAILED,
+    )
+
+    try:
+        send_email(
+            to_addr,
+            subject,
+            text_body,
+            feature="sc_booking_email",
+            user=current_user,
+            headers=headers or None,
+            html_body=html_body,
+        )
+    except MailRateLimitError as exc:
+        receipt.error_text = str(exc)
+        db.session.add(receipt)
+        db.session.commit()
+        return (
+            {
+                "status": "failed",
+                "message": str(exc),
+                "receipt_id": receipt.id,
+            },
+            429,
+        )
+    except Exception as exc:  # pragma: no cover - surfaced via tests
+        current_app.logger.exception(
+            "SC booking email send failed for session %s: %s",
+            session.id,
+            exc,
+        )
+        receipt.error_text = f"{exc.__class__.__name__}: {exc}"
+        db.session.add(receipt)
+        db.session.commit()
+        return (
+            {
+                "status": "failed",
+                "message": "Failed to send via Postmark. Use the mail-client fallback below.",
+                "receipt_id": receipt.id,
+            },
+            502,
+        )
+
+    receipt.status = BOOKING_EMAIL_STATUS_SENT
+    db.session.add(receipt)
+    db.session.commit()
+    return {
+        "status": "sent",
+        "sent_at": receipt.sent_at.isoformat(timespec="seconds") + "Z",
+        "to_addr": receipt.to_addr,
+        "cc_addr": receipt.cc_addr,
+        "subject": receipt.subject,
+        "receipt_id": receipt.id,
+    }
 
 
 @science_care_bp.get("/quote/lookup")

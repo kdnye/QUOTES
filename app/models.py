@@ -48,9 +48,15 @@ SC_QUOTE_SESSIONS_TABLE = "sc_quote_sessions"
 SC_QUOTE_SESSION_LEGS_TABLE = "sc_quote_session_legs"
 SC_USER_LAB_SLOTS_TABLE = "sc_user_lab_slots"
 SC_TISSUE_BOX_CAPACITY_TABLE = "sc_tissue_box_capacity"
+BOOKING_EMAIL_RECEIPTS_TABLE = "booking_email_receipts"
 
 RATE_SET_DEFAULT = "default"
 RATE_SET_SCIENCE_CARE = "science_care"
+
+BOOKING_EMAIL_KIND_SC_MULTI = "sc_multi"
+BOOKING_EMAIL_KIND_SINGLE_QUOTE = "single_quote"
+BOOKING_EMAIL_STATUS_SENT = "sent"
+BOOKING_EMAIL_STATUS_FAILED = "failed"
 
 
 def generate_readable_id():
@@ -886,3 +892,41 @@ class SCUserLabSlot(db.Model):
         server_default=RATE_SET_SCIENCE_CARE,
         index=True,
     )
+
+
+class BookingEmailReceipt(db.Model):
+    """Audit trail for booking emails dispatched via Postmark/SMTP.
+
+    One row per attempted send from the SC multi-leg composer
+    (``/sc/quote/<id>/email-ops``) or the single-quote composer
+    (``/quotes/<id>/email``). Stores who sent it, where it went, the
+    subject line, and either the Postmark message id (on success) or
+    the failure reason (on error). The lookup page and admin tooling
+    can join against ``kind`` + ``reference`` to surface "last sent at
+    X by Y" without re-querying the upstream SC session or Quote row.
+    """
+
+    __tablename__ = BOOKING_EMAIL_RECEIPTS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    kind = db.Column(db.String(20), nullable=False, index=True)
+    reference = db.Column(db.String(120), nullable=False, index=True)
+    sender_user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{USERS_TABLE}.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    sent_at = db.Column(
+        db.DateTime,
+        default=datetime.utcnow,
+        server_default=db.func.now(),
+        nullable=False,
+        index=True,
+    )
+    to_addr = db.Column(db.String(255), nullable=False)
+    cc_addr = db.Column(db.String(255), nullable=True)
+    subject = db.Column(db.String(255), nullable=False)
+    status = db.Column(db.String(20), nullable=False, index=True)
+    error_text = db.Column(db.Text, nullable=True)
+    postmark_message_id = db.Column(db.String(120), nullable=True)

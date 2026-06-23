@@ -193,6 +193,7 @@ required to read secrets and reach dependencies:
 | `RATELIMIT_STORAGE_URI` | No | Storage backend for Flask-Limiter counters. Defaults to `memory://` unless you set it to a Redis instance. |
 | `MAIL_*` | No | Configure outbound email (SMTP host, credentials, TLS/SSL flags). Needed for password resets. Super admins can also supply these values through the **Admin → Mail Settings** page at runtime. For Postmark SMTP, set `MAIL_USERNAME` and `MAIL_PASSWORD` to the same server API token, `MAIL_PORT=587`, `MAIL_USE_TLS=true`, and `MAIL_USE_SSL=false`. |
 | `MAIL_RATE_LIMIT_PER_*` | No | Tune per-user, per-feature, and per-recipient rate limits for outbound email traffic. |
+| `BOOKING_EMAIL_OPS_TO` | No | Recipient address for the booking-email composers (`POST /sc/quote/<id>/email-ops/send` and `POST /quotes/<id>/email/send`). Defaults to `operations@freightservices.net`. Override on QA / staging deploys to route booking emails to a shared inbox without code edits. |
 | `RATE_DATA_DIR` | No | Directory containing the rate CSV files consumed by `init_db.py`. Defaults to the repository root. |
 | `ADMIN_EMAIL`, `ADMIN_PASSWORD` | No | When set, `init_db.py` bootstraps an administrator account with these credentials. |
 | `HEALTHCHECK_REQUIRE_DB` | No | Set to a truthy value to require database connectivity for the `/healthz` probe endpoint. |
