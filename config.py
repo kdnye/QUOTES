@@ -687,7 +687,9 @@ class Config:
         "y",
     }
     WTF_CSRF_ENABLED = True
-    RATELIMIT_DEFAULT = os.getenv("RATELIMIT_DEFAULT", "200 per day;50 per hour")
+    RATELIMIT_DEFAULT = os.getenv(
+        "RATELIMIT_DEFAULT", "600 per day;100 per hour;30 per minute"
+    )
     RATELIMIT_STORAGE_URI = _resolve_ratelimit_storage_uri()
     RATELIMIT_HEADERS_ENABLED = os.getenv(
         "RATELIMIT_HEADERS_ENABLED", "true"

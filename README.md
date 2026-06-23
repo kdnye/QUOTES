@@ -261,14 +261,15 @@ should continue to install only `requirements.txt`.
 ### Rate limiting
 
 The application uses [Flask-Limiter](https://flask-limiter.readthedocs.io/) to
-throttle abusive traffic. By default each client IP may perform up to 200
-requests per day and 50 per hour, while the `/login` and `/reset` endpoints are
-restricted to five POST attempts per minute for a given IP and email
-combination. Override the defaults with environment variables as needed:
+throttle abusive traffic. By default each client IP may perform up to 600
+requests per day, 100 per hour, and 30 per minute, while the `/login` and
+`/reset` endpoints are restricted to five POST attempts per minute for a given
+IP and email combination. Override the defaults with environment variables as
+needed:
 
 | Variable | Purpose | Default |
 | --- | --- | --- |
-| `RATELIMIT_DEFAULT` | Global limits applied to all routes | `200 per day;50 per hour` |
+| `RATELIMIT_DEFAULT` | Global limits applied to all routes | `600 per day;100 per hour;30 per minute` |
 | `RATELIMIT_STORAGE_URI` | Backend storage for counters | `memory://` |
 | `AUTH_LOGIN_RATE_LIMIT` | Per-user/IP throttle for `/login` | `5 per minute` |
 | `AUTH_RESET_RATE_LIMIT` | Per-user/IP throttle for `/reset` | `5 per minute` |
