@@ -44,8 +44,8 @@
         {% for column in columns %}
         <th>{{ column.header }}</th>
         {% endfor %}
-        {% if table == 'sc_tissue_codes' %}
-        <th>Box Capacities</th>
+        {% if extra_capacities_by_row_id %}
+        <th>Other Boxes</th>
         {% endif %}
         <th>Edit</th>
         <th>Delete</th>
@@ -66,15 +66,15 @@
           {% endif %}
         </td>
         {% endfor %}
-        {% if table == 'sc_tissue_codes' %}
+        {% if extra_capacities_by_row_id %}
         <td>
-          {% set caps = capacities_by_tissue.get(row.tissue_code, {}) %}
-          {% if caps %}
-            {% for box_code, qty in caps.items() %}
+          {% set extras = extra_capacities_by_row_id.get(row.id) %}
+          {% if extras %}
+            {% for box_code, qty in extras.items() %}
               <span class="badge bg-secondary me-1">{{ box_code }}: {{ qty }}</span>
             {% endfor %}
           {% else %}
-            <span class="text-body-secondary">none</span>
+            <span class="text-body-secondary">—</span>
           {% endif %}
         </td>
         {% endif %}
@@ -95,7 +95,7 @@
       </tr>
       {% else %}
       <tr>
-        <td colspan="{{ columns|length + (3 if table == 'sc_tissue_codes' else 2) }}"
+        <td colspan="{{ columns|length + 2 + (1 if extra_capacities_by_row_id else 0) }}"
             class="text-body-secondary">
           No rows yet. Use <strong>Add Row</strong> or <strong>Upload CSV</strong> to populate this table.
         </td>

@@ -106,6 +106,20 @@ _FALLBACK_ACCESSORIAL_LABELS = {
 SC_LEG_COUNT = 7
 
 
+# Maps the sc_tissue_codes TableSpec's virtual per-box column attrs to
+# the SCBoxType.code they refer to. Used by ``sc_reference_list`` to
+# project SCTissueBoxCapacity rows back into the dedicated Medium /
+# Large / X-Large / Small Airtray / Airtray columns the list view
+# advertises. Order mirrors :data:`csv_admin.TISSUE_BOX_CAPACITY_HEADERS`.
+_TISSUE_BOX_COLUMN_TO_CODE: dict[str, str] = {
+    "_pieces_med": "MED",
+    "_pieces_lrg": "LRG",
+    "_pieces_xlg": "XLG",
+    "_pieces_small_airtray": "SMALL_AIRTRAY",
+    "_pieces_airtray": "AIRTRAY",
+}
+
+
 def _accessorial_labels() -> list[tuple[str, str]]:
     """Return ``(form_field, display_label)`` pairs for the form.
 
@@ -1224,14 +1238,38 @@ def sc_reference_list(table: str) -> str:
         for col in spec.columns
     ]
 
-    capacities_by_tissue: dict[str, dict[str, int]] = {}
+    extra_capacities_by_row_id: dict[int, dict[str, int]] = {}
     if table == "sc_tissue_codes":
+        # The TableSpec's per-box columns (Medium / Large / X-Large /
+        # Small Airtray / Airtray) use virtual `_pieces_*` attrs that
+        # only exist for CSV header bookkeeping - they aren't mapped on
+        # SCTissueCode, so the list template would render the dedicated
+        # columns blank. Hydrate them from SCTissueBoxCapacity so each
+        # capacity lands in its own column. Capacities tied to box codes
+        # outside the five CSV-template columns (e.g. a tenant-specific
+        # SCBoxType saved via the per-row edit form) are collected into
+        # extra_capacities_by_row_id so the template can surface them in
+        # a trailing fallback column - otherwise they'd silently
+        # disappear from the page now that the badge column is gone.
+        canonical_codes = set(_TISSUE_BOX_COLUMN_TO_CODE.values())
+        capacities_by_tissue: dict[str, dict[str, int]] = {}
         for cap in SCTissueBoxCapacity.query.filter_by(
             rate_set=RATE_SET_SCIENCE_CARE
         ).all():
             capacities_by_tissue.setdefault(cap.tissue_code, {})[
                 cap.box_code
             ] = int(cap.pieces_per_box)
+        for row in rows:
+            caps = capacities_by_tissue.get(row.tissue_code, {})
+            for attr, box_code in _TISSUE_BOX_COLUMN_TO_CODE.items():
+                setattr(row, attr, caps.get(box_code))
+            extras = {
+                code: qty
+                for code, qty in caps.items()
+                if code not in canonical_codes
+            }
+            if extras:
+                extra_capacities_by_row_id[row.id] = extras
 
     return render_template(
         "sc/reference_list.html",
@@ -1239,7 +1277,7 @@ def sc_reference_list(table: str) -> str:
         table_label=spec.label,
         columns=columns,
         rows=rows,
-        capacities_by_tissue=capacities_by_tissue,
+        extra_capacities_by_row_id=extra_capacities_by_row_id,
     )
 
 
