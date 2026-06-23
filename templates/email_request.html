@@ -261,7 +261,17 @@
     </div>
   </div>
 
-  <button type="submit" class="btn btn-primary mt-3">Compose Email</button>
+  <div id="quote-send-status" class="alert d-none mt-3" role="status" aria-live="polite"></div>
+  <div class="d-flex flex-wrap gap-2 mt-3">
+    <button type="submit" class="btn btn-primary"
+            id="quote-send-postmark-btn"
+            data-send-url="{{ url_for('quotes.email_request_send', quote_id=quote.quote_id) }}">
+      Email to Book
+    </button>
+    <button type="button" class="btn btn-outline-secondary" id="quote-mailto-fallback-btn">
+      Open in mail client (fallback)
+    </button>
+  </div>
 </form>
 {% set base_total = quote.total - metadata.accessorial_total %}
 {% if maps_api_key %}
@@ -385,9 +395,8 @@ function normalizeFreeformNotes(value) {
     .trimEnd();
 }
 
-document.getElementById('emailForm').addEventListener('submit', function(e) {
-  e.preventDefault();
-  const f = e.target;
+function buildEmailPayload(form) {
+  const f = form;
   const pickupDate = f.pickup_date.value;
   const deliveryDate = f.delivery_date.value || 'Not specified';
   const returnQuoteRequested = f.return_quote_requested.checked;
@@ -504,10 +513,67 @@ document.getElementById('emailForm').addEventListener('submit', function(e) {
     body += `\n`;
   }
 
-  // Final Link Generation
   const subject = `${data.subject_prefix}: ${data.origin} to ${data.destination} - Quote ${data.quote_id}`;
+  return { subject, body };
+}
+
+const csrfToken = {{ csrf_token() | tojson }};
+const emailForm = document.getElementById('emailForm');
+const sendBtn = document.getElementById('quote-send-postmark-btn');
+const mailtoFallbackBtn = document.getElementById('quote-mailto-fallback-btn');
+const sendStatus = document.getElementById('quote-send-status');
+const userEmail = {{ (user_email or '') | tojson }};
+
+function setSendStatus(level, message) {
+  sendStatus.classList.remove('d-none', 'alert-info', 'alert-success', 'alert-danger', 'alert-warning');
+  sendStatus.classList.add(`alert-${level}`);
+  sendStatus.textContent = message;
+}
+
+function openInMailClient() {
+  if (!emailForm.reportValidity()) return;
+  const { subject, body } = buildEmailPayload(emailForm);
   const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailto;
+}
+
+mailtoFallbackBtn.addEventListener('click', openInMailClient);
+
+emailForm.addEventListener('submit', async function(e) {
+  e.preventDefault();
+  if (!emailForm.reportValidity()) return;
+  const { subject, body } = buildEmailPayload(emailForm);
+  const url = sendBtn.dataset.sendUrl;
+  sendBtn.disabled = true;
+  const originalLabel = sendBtn.textContent;
+  sendBtn.textContent = 'Sending…';
+  setSendStatus('info', `Sending to operations@freightservices.net${userEmail ? `, cc ${userEmail}` : ''}…`);
+  try {
+    const resp = await fetch(url, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json',
+        'X-CSRFToken': csrfToken,
+      },
+      body: JSON.stringify({ subject, body }),
+    });
+    const payload = await resp.json().catch(() => ({}));
+    if (resp.ok && payload.status === 'sent') {
+      setSendStatus('success', `Sent at ${payload.sent_at} to ${payload.to_addr}${payload.cc_addr ? `, copied to ${payload.cc_addr}` : ''}. Ops will reply on quote ${data.quote_id}.`);
+      sendBtn.textContent = 'Sent';
+    } else {
+      const reason = payload.message || `HTTP ${resp.status}`;
+      setSendStatus('danger', `Failed to send via Postmark: ${reason}. Use "Open in mail client" as a fallback.`);
+      sendBtn.textContent = originalLabel;
+      sendBtn.disabled = false;
+    }
+  } catch (err) {
+    setSendStatus('danger', `Network error while sending: ${err}. Use "Open in mail client" as a fallback.`);
+    sendBtn.textContent = originalLabel;
+    sendBtn.disabled = false;
+  }
 });
 </script>
 {% endblock %}

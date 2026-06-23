@@ -1633,6 +1633,176 @@ def test_sc_email_ops_omits_tare_breakdown_for_unknown_box(
     assert "Boxes weight subtotal: 0.00 lb" in html
 
 
+def _seed_sc_session_with_legs(user_id: int):
+    """Seed a minimal SC session + one leg so the composer-send route
+    has something to render. Returns ``(session, leg)``.
+
+    Kept inline rather than reusing ``_seed_sc_session`` because the
+    Postmark send route also re-hydrates the leg (origin/destination
+    weight) and we want the receipt's ``reference`` field assertion to
+    have a stable value to compare against.
+    """
+
+    from app.models import (
+        Quote,
+        SCQuoteSession,
+        SCQuoteSessionLeg,
+    )
+    import json
+
+    session = SCQuoteSession(
+        user_id=user_id,
+        grand_total=250.0,
+        payload_json=json.dumps({"multi_reference": "SCMQ0500"}),
+        multi_reference="SCMQ0500",
+    )
+    db.session.add(session)
+    db.session.flush()
+    hot = Quote(
+        user_id=user_id,
+        user_email="sc-buyer@example.com",
+        quote_type="Hotshot",
+        origin="85705",
+        destination="98101",
+        weight=10.0,
+        pieces=1,
+        zone="X",
+        total=250.0,
+        quote_metadata="{}",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(hot)
+    db.session.flush()
+    leg = SCQuoteSessionLeg(
+        session_id=session.id,
+        leg_index=1,
+        hotshot_quote_id=hot.id,
+        winner_mode="Hotshot",
+        winner_total=250.0,
+    )
+    db.session.add(leg)
+    db.session.commit()
+    return session, leg
+
+
+def test_sc_email_ops_send_dispatches_via_postmark_and_records_receipt(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The composer's ``Email to Book`` POST must call send_email with
+    the ops To address + the logged-in user's CC, render both an HTML
+    and a plain-text body, persist a ``sent`` BookingEmailReceipt
+    row, and return the receipt fields as JSON for the composer UI.
+    """
+
+    from app.models import BookingEmailReceipt
+
+    user = _make_user(
+        "sc-postmark@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        # Mirror the positional + keyword shape of the call site so the
+        # assertions document the contract instead of the call style.
+        captured["to"] = args[0] if args else kwargs.get("to")
+        captured["subject"] = args[1] if len(args) > 1 else kwargs.get("subject")
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    payload = response.get_json()
+    assert payload["status"] == "sent"
+    assert payload["to_addr"] == "operations@freightservices.net"
+    assert payload["cc_addr"] == "sc-postmark@example.com"
+    assert payload["subject"].startswith("SC Multi-leg Booking Request")
+    assert "SCMQ0500" in payload["subject"]
+
+    # send_email contract: To is ops, body is the rendered plain-text
+    # body, html_body is the rendered HTML template, Cc rides on the
+    # headers mapping so the SMTP envelope picks it up.
+    assert captured["to"] == "operations@freightservices.net"
+    assert "SCIENCE CARE MULTI-LEG BOOKING REQUEST" in captured["body"]
+    assert "Shipment weight summary" in captured["body"]
+    assert captured["feature"] == "sc_booking_email"
+    assert captured["html_body"]
+    assert "<table" in captured["html_body"]
+    assert "Shipment weight summary" in captured["html_body"]
+    assert captured["headers"] == {"Cc": "sc-postmark@example.com"}
+
+    receipt = BookingEmailReceipt.query.filter_by(
+        sender_user_id=user.id
+    ).one()
+    assert receipt.kind == "sc_multi"
+    assert receipt.reference == "SCMQ0500"
+    assert receipt.status == "sent"
+    assert receipt.to_addr == "operations@freightservices.net"
+    assert receipt.cc_addr == "sc-postmark@example.com"
+    assert receipt.error_text is None
+
+
+def test_sc_email_ops_send_persists_failed_receipt_on_smtp_error(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When the underlying SMTP send raises, the route must persist a
+    ``failed`` receipt (so ops have a paper trail of the attempt) and
+    return a JSON error so the composer banner can surface a fallback
+    instruction.
+    """
+
+    from app.models import BookingEmailReceipt
+
+    user = _make_user(
+        "sc-postmark-fail@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        raise RuntimeError("Postmark 500: server unreachable")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+
+    assert response.status_code == 502
+    payload = response.get_json()
+    assert payload["status"] == "failed"
+    assert "fallback" in payload["message"].lower()
+
+    receipt = BookingEmailReceipt.query.filter_by(
+        sender_user_id=user.id
+    ).one()
+    assert receipt.status == "failed"
+    assert "Postmark 500" in (receipt.error_text or "")
+
+
+def test_sc_email_ops_send_blocks_non_sc_user(app: Flask) -> None:
+    """A logged-in non-SC user must be rejected by sc_user_required."""
+
+    sc_user = _make_user(
+        "sc-owner-send@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(sc_user.id)
+    non_sc = _make_user("not-sc-send@example.com", rate_set="default")
+    client = app.test_client()
+    _login(client, non_sc.id)
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 403
+
+
 def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
     sc_user = _make_user(
         "sc-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE

@@ -433,3 +433,129 @@ def test_quote_result_template_contains_email_self_form(app: Flask) -> None:
         "Disclaimer: All quotes are subject to final evaluation and approval by Freight Services."
         in html
     )
+
+
+def _make_staff(email: str) -> User:
+    """Create an employee user with mail-send privileges + approved status.
+
+    ``user_has_mail_privileges`` requires either ``can_send_mail`` or an
+    approved employee role, so the booking-email POST tests need a user
+    that satisfies both flags.
+    """
+
+    staff = User(
+        email=email,
+        role="employee",
+        can_send_mail=True,
+        employee_approved=True,
+    )
+    staff.set_password("password123")
+    db.session.add(staff)
+    db.session.commit()
+    return staff
+
+
+def test_email_request_send_dispatches_via_postmark_and_records_receipt(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The booking composer's Postmark POST must hit send_email with
+    ops as ``To``, current user as ``Cc`` via headers, and persist a
+    ``sent`` BookingEmailReceipt row referencing the Quote.quote_id.
+    """
+
+    from app.models import BookingEmailReceipt
+
+    staff = _make_staff("staff-postmark@example.com")
+    quote = _create_quote_for_user(staff)
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["to"] = args[0] if args else kwargs.get("to")
+        captured["subject"] = args[1] if len(args) > 1 else kwargs.get("subject")
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+        captured.update(kwargs)
+
+    monkeypatch.setattr("app.quotes.routes.send_email", _fake_send_email)
+
+    client = app.test_client()
+    _login_client(client, staff.id)
+    response = client.post(
+        f"/quotes/{quote.quote_id}/email/send",
+        json={
+            "subject": "New Booking request: 64101 to 90210",
+            "body": "Booking details here.\nWeight 150 lbs.",
+        },
+    )
+
+    assert response.status_code == 200, response.get_data(as_text=True)
+    payload = response.get_json()
+    assert payload["status"] == "sent"
+    assert payload["to_addr"] == "operations@freightservices.net"
+    assert payload["cc_addr"] == "staff-postmark@example.com"
+
+    assert captured["to"] == "operations@freightservices.net"
+    assert captured["body"] == "Booking details here.\nWeight 150 lbs."
+    assert captured["feature"] == "single_quote_booking_email"
+    assert captured["headers"] == {"Cc": "staff-postmark@example.com"}
+
+    receipt = BookingEmailReceipt.query.filter_by(
+        sender_user_id=staff.id
+    ).one()
+    assert receipt.kind == "single_quote"
+    assert receipt.reference == quote.quote_id
+    assert receipt.status == "sent"
+
+
+def test_email_request_send_blocks_customer_without_mail_privileges(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A customer (no can_send_mail / employee_approved) must be
+    rejected with a clean JSON 403 - the route must not even attempt
+    the send_email call.
+    """
+
+    customer = User(email="cust-no-priv@example.com", role="customer")
+    customer.set_password("password123")
+    db.session.add(customer)
+    db.session.commit()
+    quote = _create_quote_for_user(customer)
+
+    def _explode(*args, **kwargs) -> None:
+        raise AssertionError("send_email should not be called without mail privileges")
+
+    monkeypatch.setattr("app.quotes.routes.send_email", _explode)
+
+    client = app.test_client()
+    _login_client(client, customer.id)
+    response = client.post(
+        f"/quotes/{quote.quote_id}/email/send",
+        json={"subject": "x", "body": "y"},
+    )
+    assert response.status_code == 403
+    assert response.get_json()["status"] == "failed"
+
+
+def test_email_request_send_400s_on_missing_body_or_subject(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The composer's JS always builds both subject + body; an empty
+    POST is a programming error from another caller and gets a clean
+    400 instead of silently emailing a blank message.
+    """
+
+    staff = _make_staff("staff-blank@example.com")
+    quote = _create_quote_for_user(staff)
+
+    def _explode(*args, **kwargs) -> None:
+        raise AssertionError("send_email should not be called for an empty payload")
+
+    monkeypatch.setattr("app.quotes.routes.send_email", _explode)
+
+    client = app.test_client()
+    _login_client(client, staff.id)
+    response = client.post(
+        f"/quotes/{quote.quote_id}/email/send",
+        json={"subject": "", "body": ""},
+    )
+    assert response.status_code == 400

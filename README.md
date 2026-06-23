@@ -32,8 +32,8 @@ Services portal.
 | Feature | Status | Notes |
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Accepts form and JSON submissions and persists quotes. |
-| Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. |
-| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Aggregates every leg of a Science Care multi-leg quote into one ops booking email. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Uses the unified `SCMQNNNN` (or customer-supplied) reference in the subject so ops can match the email to the in-flight job. |
+| Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. The composer's **Email to Book** button dispatches via Postmark (`POST /quotes/<id>/email/send`) with the requesting user as `Cc`; the **Open in mail client (fallback)** button keeps the legacy `mailto:` path for offline use. Every Postmark attempt persists an audit row in `booking_email_receipts` (`kind="single_quote"`). |
+| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Composer-style preview with three actions: **Email to Book** (`POST /sc/quote/<id>/email-ops/send`) sends via Postmark with ops on `To` and the requester on `Cc`, **Copy body** clones the plain-text body to the clipboard, **Open in mail client (fallback)** keeps the `mailto:` link. Both the Postmark and `mailto:` paths render the same plain-text body; Postmark also attaches a multipart HTML alternative. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Audit row per attempt in `booking_email_receipts` (`kind="sc_multi"`). |
 | SC multi-leg lookup (`/sc/quote/lookup`) | ✅ Stable | Any SC user can resolve a multi-leg reference (`SCMQ0042` or a customer string) to the full persisted summary so they can re-send the ops booking email or pull a quote for a customer service call. |
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
@@ -598,11 +598,31 @@ be tied together by one identifier.
   carries `client_reference=<multi_reference>-L<leg>-<AIR|HOT>` so a customer
   can still look up a single leg by its suffixed string.
 
-**Email Ops for Booking** (`GET /sc/quote/<session_id>/email-ops`) renders a
-preview of the aggregated booking message and a `mailto:` link to
-`operations@freightservices.net`. The view intentionally adds **no** admin /
-booking fee — that $15 fee is specific to the single-quote `/quotes/<id>/email`
-workflow. Multi-leg jobs bill off the raw cheapest-of total.
+**Email Ops for Booking** (`GET /sc/quote/<session_id>/email-ops`) is a
+composer-style preview page that renders both a plain-text body and an HTML
+preview of the aggregated booking message. The view intentionally adds **no**
+admin / booking fee — that $15 fee is specific to the single-quote
+`/quotes/<id>/email` workflow. Multi-leg jobs bill off the raw cheapest-of
+total.
+
+The composer exposes three actions:
+
+* **Email to Book** — `POST /sc/quote/<session_id>/email-ops/send`. Dispatches
+  the message via the existing Postmark SMTP path (`app/services/mail.py`
+  `send_email()`) as a `multipart/alternative` email: the plain-text body
+  shown in the preview plus a richly formatted HTML rendering. Recipient is
+  configurable via `BOOKING_EMAIL_OPS_TO` (default
+  `operations@freightservices.net`); the requesting user is added as `Cc`
+  so they keep a copy in their inbox. Every attempt — successful or not —
+  persists a row in the `booking_email_receipts` audit table (see
+  `kind="sc_multi"`) with the Postmark message id, recipient list, and any
+  error text.
+* **Copy body** — copies the plain-text body to the clipboard for ops who
+  prefer to paste into their own template.
+* **Open in mail client (fallback)** — the legacy `mailto:` link, kept
+  intentionally so ops can still send from their own desktop client when
+  Postmark is unreachable or rate-limited. Uses the same plain-text body the
+  Postmark send uses, so both paths render identical content.
 
 The email body groups every leg's items by shipment segment and prints a
 **weight summary** so ops can sanity-check the billable weight without

@@ -24,7 +24,11 @@ from flask import redirect
 
 from . import quotes_bp
 from ..models import (
+    BOOKING_EMAIL_KIND_SINGLE_QUOTE,
+    BOOKING_EMAIL_STATUS_FAILED,
+    BOOKING_EMAIL_STATUS_SENT,
     db,
+    BookingEmailReceipt,
     Quote,
     Accessorial,
     ZipZone,
@@ -37,7 +41,11 @@ from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.quote.zip_validation import validate_us_zip
 from app.services.constants import DIM_DIVISOR
-from app.services.mail import send_email, user_has_mail_privileges
+from app.services.mail import (
+    MailRateLimitError,
+    send_email,
+    user_has_mail_privileges,
+)
 from app.services.quote import get_zip_notes
 from app.services.settings import is_quote_email_smtp_enabled
 from app.services.rate_sets import (
@@ -1234,6 +1242,7 @@ def _render_email_request(
         accessorial_names=accessorial_names,
         total_with_fee=total_with_fee,
         user_name=current_user.name or "",
+        user_email=getattr(current_user, "email", "") or "",
         user_company=getattr(current_user, "company", "") or "",
         page_heading=heading_text,
         email_intro_line=intro_line,
@@ -1258,6 +1267,140 @@ def email_request_form(quote_id: str):
         intro_line="I'd like to go ahead and book the following quote",
         subject_prefix="New Booking request",
     )
+
+
+def _booking_email_ops_to() -> str:
+    """Return the configurable ops recipient address for booking emails.
+
+    Mirrors the SC composer helper - configurable via
+    ``BOOKING_EMAIL_OPS_TO`` so QA / staging deployments can re-route
+    booking emails to a shared inbox without code edits.
+    """
+
+    return (
+        current_app.config.get("BOOKING_EMAIL_OPS_TO")
+        or os.getenv("BOOKING_EMAIL_OPS_TO")
+        or "operations@freightservices.net"
+    )
+
+
+@quotes_bp.route("/<quote_id>/email/send", methods=["POST"])
+@login_required
+def email_request_send(quote_id: str):
+    """Send a single-quote booking email via Postmark.
+
+    Takes the composer-rendered plain-text body + subject (built
+    client-side from the form fields the user filled in) and dispatches
+    it through :func:`app.services.mail.send_email`. ``To`` is the
+    configurable ops recipient, ``Cc`` is the requesting user so they
+    keep a copy in their inbox. The mail service auto-wraps the body in
+    its standard professional HTML alternative when ``html_body`` is
+    omitted, so the recipient sees both a plaintext and an HTML view.
+
+    Persists a :class:`~app.models.BookingEmailReceipt` row for every
+    attempt (success or failure). Returns JSON so the composer's JS can
+    update the inline status banner; the mailto link remains the
+    offline fallback for environments where Postmark is unavailable.
+    """
+
+    if not user_has_mail_privileges(current_user):
+        return (
+            {
+                "status": "failed",
+                "message": "Quote booking emails are limited to approved staff accounts.",
+            },
+            403,
+        )
+    if not is_quote_email_smtp_enabled():
+        return (
+            {
+                "status": "failed",
+                "message": "Quote emails are currently disabled by an administrator.",
+            },
+            503,
+        )
+
+    quote = Quote.query.filter_by(quote_id=quote_id).first_or_404()
+    payload = request.get_json(silent=True) or {}
+    subject = (payload.get("subject") or "").strip()
+    body = payload.get("body") or ""
+    if not subject or not body.strip():
+        return (
+            {
+                "status": "failed",
+                "message": "subject and body are required.",
+            },
+            400,
+        )
+
+    to_addr = _booking_email_ops_to()
+    cc_addr = (getattr(current_user, "email", "") or "").strip() or None
+    headers: dict[str, str] = {}
+    if cc_addr and cc_addr.lower() != to_addr.lower():
+        headers["Cc"] = cc_addr
+    else:
+        cc_addr = None
+
+    receipt = BookingEmailReceipt(
+        kind=BOOKING_EMAIL_KIND_SINGLE_QUOTE,
+        reference=quote.quote_id,
+        sender_user_id=getattr(current_user, "id", None),
+        to_addr=to_addr,
+        cc_addr=cc_addr,
+        subject=subject[:255],
+        status=BOOKING_EMAIL_STATUS_FAILED,
+    )
+
+    try:
+        send_email(
+            to_addr,
+            subject,
+            body,
+            feature="single_quote_booking_email",
+            user=current_user,
+            headers=headers or None,
+        )
+    except MailRateLimitError as exc:
+        receipt.error_text = str(exc)
+        db.session.add(receipt)
+        db.session.commit()
+        return (
+            {
+                "status": "failed",
+                "message": str(exc),
+                "receipt_id": receipt.id,
+            },
+            429,
+        )
+    except Exception as exc:  # pragma: no cover - surfaced via tests
+        logger.exception(
+            "Single-quote booking email send failed for quote %s: %s",
+            quote.quote_id,
+            exc,
+        )
+        receipt.error_text = f"{exc.__class__.__name__}: {exc}"
+        db.session.add(receipt)
+        db.session.commit()
+        return (
+            {
+                "status": "failed",
+                "message": "Failed to send via Postmark. Use the mail-client fallback below.",
+                "receipt_id": receipt.id,
+            },
+            502,
+        )
+
+    receipt.status = BOOKING_EMAIL_STATUS_SENT
+    db.session.add(receipt)
+    db.session.commit()
+    return {
+        "status": "sent",
+        "sent_at": receipt.sent_at.isoformat(timespec="seconds") + "Z",
+        "to_addr": receipt.to_addr,
+        "cc_addr": receipt.cc_addr,
+        "subject": receipt.subject,
+        "receipt_id": receipt.id,
+    }
 
 
 @quotes_bp.route("/<quote_id>/email-volume", methods=["GET"])

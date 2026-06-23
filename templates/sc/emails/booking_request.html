@@ -1,0 +1,122 @@
+{%- set ref_display = sc_session.multi_reference or ('Session ' ~ sc_session.id) -%}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Science Care Multi-Leg Booking Request — {{ ref_display }}</title>
+</head>
+<body style="font-family:Arial,Helvetica,sans-serif;color:#212529;margin:0;padding:24px;background:#f8f9fa;">
+  <div style="max-width:760px;margin:0 auto;background:#ffffff;border:1px solid #dee2e6;border-radius:8px;padding:24px;">
+    <h1 style="margin:0 0 4px 0;font-size:20px;">Science Care Multi-Leg Booking Request</h1>
+    <p style="margin:0 0 16px 0;color:#6c757d;font-size:14px;">
+      Reference <strong style="color:#212529;">{{ ref_display }}</strong>
+      &middot; Requested by <strong style="color:#212529;">{{ user_name or user_email }}</strong>{% if user_company %} ({{ user_company }}){% endif %}
+      &middot; <a href="mailto:{{ user_email }}" style="color:#0d6efd;text-decoration:none;">{{ user_email }}</a>
+    </p>
+    <p style="margin:0 0 16px 0;font-size:14px;">No booking fee is applied to SC multi-leg quotes.</p>
+
+    <h2 style="font-size:16px;margin:24px 0 8px 0;">Leg summary</h2>
+    <table cellpadding="6" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;">
+      <thead>
+        <tr style="background:#f1f3f5;">
+          <th align="left" style="border:1px solid #dee2e6;">Leg</th>
+          <th align="left" style="border:1px solid #dee2e6;">Origin → Destination</th>
+          <th align="right" style="border:1px solid #dee2e6;">Weight (lb)</th>
+          <th align="left" style="border:1px solid #dee2e6;">Mode</th>
+          <th align="right" style="border:1px solid #dee2e6;">Subtotal</th>
+          <th align="left" style="border:1px solid #dee2e6;">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for leg in legs %}
+        <tr>
+          <td style="border:1px solid #dee2e6;">{{ leg.leg_index }}</td>
+          <td style="border:1px solid #dee2e6;">{{ leg.origin or '—' }} → {{ leg.destination or '—' }}</td>
+          <td align="right" style="border:1px solid #dee2e6;">{% if leg.weight %}{{ '%.1f'|format(leg.weight) }}{% else %}—{% endif %}</td>
+          <td style="border:1px solid #dee2e6;">{{ leg.winner_mode or '—' }}</td>
+          <td align="right" style="border:1px solid #dee2e6;">{{ leg.winner_total | currency if leg.winner_total else '$0.00' }}</td>
+          <td style="border:1px solid #dee2e6;">{% if leg.skip_reason %}<span style="color:#fd7e14;">Skipped — {{ leg.skip_reason }}</span>{% else %}<span style="color:#198754;">Ready to book</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr style="background:#cfe2ff;font-weight:bold;">
+          <td colspan="4" align="right" style="border:1px solid #dee2e6;">Total S&amp;H</td>
+          <td align="right" style="border:1px solid #dee2e6;">{{ grand_total | currency }}</td>
+          <td style="border:1px solid #dee2e6;"></td>
+        </tr>
+      </tfoot>
+    </table>
+
+    {% for leg in legs %}
+    <h2 style="font-size:15px;margin:24px 0 4px 0;border-bottom:1px solid #dee2e6;padding-bottom:4px;">
+      Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} → {{ leg.destination or '—' }}
+      {% if leg.skip_reason %}<span style="color:#fd7e14;font-weight:normal;font-size:13px;">[SKIPPED: {{ leg.skip_reason }}]</span>{% endif %}
+    </h2>
+    <table cellpadding="3" cellspacing="0" style="width:100%;border-collapse:collapse;font-size:13px;margin-bottom:8px;">
+      <tr><td style="width:160px;color:#6c757d;">Origin lab</td><td>{% if leg.lab_code %}{{ leg.lab_code }}{% if leg.lab_name %} — {{ leg.lab_name }}{% endif %}{% else %}—{% endif %}</td></tr>
+      <tr><td style="color:#6c757d;">Origin city</td><td>{% if leg.lab_city %}{{ leg.lab_city }}{% if leg.lab_state %}, {{ leg.lab_state }}{% endif %}{% else %}—{% endif %}</td></tr>
+      {% if leg.lab_address %}<tr><td style="color:#6c757d;">Origin addr</td><td>{{ leg.lab_address }}</td></tr>{% endif %}
+      <tr><td style="color:#6c757d;">Destination</td><td>{{ leg.destination or '—' }}{% if leg.dest_city %} ({{ leg.dest_city }}{% if leg.dest_state %}, {{ leg.dest_state }}{% endif %}){% endif %}</td></tr>
+      <tr><td style="color:#6c757d;">Mode / weight</td><td>{{ leg.winner_mode or '—' }} &middot; {{ '%.1f'|format(leg.weight) }} lb &middot; {{ leg.winner_total | currency }}</td></tr>
+    </table>
+
+    {% if leg.accessorials %}
+    <p style="margin:8px 0 4px 0;font-weight:bold;font-size:13px;">Accessorials</p>
+    <ul style="margin:0 0 8px 18px;font-size:13px;">
+      {% for acc in leg.accessorials %}<li>{{ acc }}</li>{% endfor %}
+    </ul>
+    {% endif %}
+
+    <p style="margin:8px 0 4px 0;font-weight:bold;font-size:13px;">Tissue items</p>
+    {% if leg.tissue_items %}
+    <ul style="margin:0 0 4px 18px;font-size:13px;">
+      {% for item in leg.tissue_items %}
+      <li>{{ item.code }} &times; {{ item.qty }}{% if item.description %} — {{ item.description }}{% endif %}{% if item.unit_weight_lb is not none %} <span style="color:#6c757d;">({{ '%.2f'|format(item.unit_weight_lb) }} lb/ea = {{ '%.2f'|format(item.line_weight_lb) }} lb)</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="margin:0 0 4px 18px;font-size:13px;color:#6c757d;">(none)</p>
+    {% endif %}
+    <p style="margin:0 0 8px 18px;font-size:13px;"><em>Tissue weight subtotal: {{ '%.2f'|format(leg.tissue_weight_lb) }} lb</em></p>
+
+    <p style="margin:8px 0 4px 0;font-weight:bold;font-size:13px;">Boxes used</p>
+    {% if leg.boxes %}
+    <ul style="margin:0 0 4px 18px;font-size:13px;">
+      {% for box in leg.boxes %}
+      <li>{{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} &times; {{ box.count }}{% if box.tare_weight_lb is not none %} <span style="color:#6c757d;">({{ '%.2f'|format(box.tare_weight_lb) }} lb/ea = {{ '%.2f'|format(box.line_weight_lb) }} lb)</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="margin:0 0 4px 18px;font-size:13px;color:#6c757d;">(none)</p>
+    {% endif %}
+    <p style="margin:0 0 8px 18px;font-size:13px;"><em>Boxes weight subtotal: {{ '%.2f'|format(leg.boxes_weight_lb) }} lb</em></p>
+
+    <p style="margin:8px 0 4px 0;font-weight:bold;font-size:13px;">Consumables used</p>
+    {% if leg.consumables %}
+    <ul style="margin:0 0 4px 18px;font-size:13px;">
+      {% for c in leg.consumables %}
+      <li>{{ c.name or '—' }}{% if c.temp_mode or c.scope %} <span style="color:#6c757d;">[{% if c.temp_mode %}{{ c.temp_mode }}{% endif %}{% if c.temp_mode and c.scope %}/{% endif %}{% if c.scope %}{{ c.scope }}{% endif %}]</span>{% endif %} &times; {{ c.qty }}{% if c.weight_lb %} <span style="color:#6c757d;">({{ '%.2f'|format(c.weight_lb) }} lb)</span>{% endif %}</li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p style="margin:0 0 4px 18px;font-size:13px;color:#6c757d;">(none)</p>
+    {% endif %}
+    <p style="margin:0 0 8px 18px;font-size:13px;"><em>Consumable weight subtotal: {{ '%.2f'|format(leg.consumables_weight_lb) }} lb</em></p>
+
+    <p style="margin:8px 0 0 18px;font-size:13px;font-weight:bold;background:#e7f5ff;padding:6px 8px;border-radius:4px;">
+      Shipment weight summary: {{ '%.2f'|format(leg.shipment_weight_lb) }} lb
+      <span style="font-weight:normal;color:#495057;">(tissue {{ '%.2f'|format(leg.tissue_weight_lb) }} + boxes {{ '%.2f'|format(leg.boxes_weight_lb) }} + consumables {{ '%.2f'|format(leg.consumables_weight_lb) }})</span>
+    </p>
+    {% endfor %}
+
+    <hr style="margin:24px 0;border:none;border-top:1px solid #dee2e6;">
+    <p style="font-size:15px;font-weight:bold;margin:0 0 8px 0;">
+      Grand total (no booking fee): {{ grand_total | currency }}
+    </p>
+    <p style="font-size:13px;margin:0;">
+      Please book the above shipment(s). Reference <strong>{{ ref_display }}</strong> on all paperwork.
+    </p>
+  </div>
+</body>
+</html>
