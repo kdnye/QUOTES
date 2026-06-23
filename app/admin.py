@@ -416,6 +416,7 @@ class TableSpec:
     list_endpoint: str
     unique_attr: Sequence[str] | str | None = None
     order_by: Any | None = None
+    row_validator: Callable[[Dict[str, Any]], str | None] | None = None
 
 
 def _is_missing(value: Any) -> bool:
@@ -550,6 +551,21 @@ def _parse_zipcode(value: Any) -> str:
     raise ValueError("enter a ZIP code")
 
 
+def _validate_hotshot_rate_row(data: Dict[str, Any]) -> str | None:
+    """Cross-column validation for an uploaded HotshotRate CSV row.
+
+    Zone X charges ``miles * per_mile`` as its minimum, so a NULL per_mile
+    on a Zone X row would make every long-haul quote raise at runtime.
+    Mirrors the same check in :class:`HotshotRateForm.validate`.
+    """
+
+    zone = (data.get("zone") or "").strip().upper()
+    per_mile = data.get("per_mile")
+    if zone == "X" and (per_mile is None or per_mile <= 0):
+        return "Per Mile is required for Zone X (used as the per-mile minimum multiplier)."
+    return None
+
+
 TABLE_SPECS: Dict[str, TableSpec] = {
     "accessorials": TableSpec(
         name="accessorials",
@@ -611,6 +627,7 @@ TABLE_SPECS: Dict[str, TableSpec] = {
         ),
         list_endpoint="admin.list_hotshot_rates",
         order_by=(HotshotRate.rate_set, HotshotRate.miles),
+        row_validator=_validate_hotshot_rate_row,
     ),
     "zip_zones": TableSpec(
         name="zip_zones",
@@ -703,6 +720,11 @@ def _parse_csv_rows(file_storage: Any, spec: TableSpec) -> List[db.Model]:
         if row_errors:
             errors.append(f"Row {row_index}: {'; '.join(row_errors)}")
             continue
+        if spec.row_validator is not None:
+            row_error = spec.row_validator(data)
+            if row_error:
+                errors.append(f"Row {row_index}: {row_error}")
+                continue
         rows.append(spec.model(**data))
 
     if errors:
