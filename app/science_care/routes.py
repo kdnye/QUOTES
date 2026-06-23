@@ -1343,6 +1343,16 @@ def _hydrate_legs_for_display(
             "tissue_items": [],
             "boxes": [],
             "consumables": [],
+            # Per-segment weight subtotals so the booking email body can
+            # group tissue / boxes / consumables under their own
+            # subtotal lines and finish with an overall shipment weight
+            # summary. Always sums to ``shipment_weight_lb`` and matches
+            # the LegResult breakdown documented in docs/equations.md
+            # (EQ-013).
+            "tissue_weight_lb": 0.0,
+            "boxes_weight_lb": 0.0,
+            "consumables_weight_lb": 0.0,
+            "shipment_weight_lb": 0.0,
         }
 
         if session is None:
@@ -1398,6 +1408,15 @@ def _hydrate_legs_for_display(
             if not tr.tissue_code:
                 continue
             tissue = tissue_index.get(tr.tissue_code)
+            unit_weight_lb = (
+                float(tissue.unit_weight_lb)
+                if tissue is not None
+                and tissue.unit_weight_lb is not None
+                else None
+            )
+            line_weight_lb = (
+                (unit_weight_lb or 0.0) * float(tr.qty or 0)
+            )
             row["tissue_items"].append(
                 {
                     "code": tr.tissue_code,
@@ -1405,14 +1424,11 @@ def _hydrate_legs_for_display(
                         tissue.description if tissue is not None else ""
                     ) or "",
                     "qty": tr.qty,
-                    "unit_weight_lb": (
-                        float(tissue.unit_weight_lb)
-                        if tissue is not None
-                        and tissue.unit_weight_lb is not None
-                        else None
-                    ),
+                    "unit_weight_lb": unit_weight_lb,
+                    "line_weight_lb": line_weight_lb,
                 }
             )
+            row["tissue_weight_lb"] += line_weight_lb
 
         boxes_map = _safe_json_load(leg.boxes_json)
         if isinstance(boxes_map, dict):
@@ -1424,13 +1440,22 @@ def _hydrate_legs_for_display(
                 if qty <= 0:
                     continue
                 box = box_index_by_code.get(str(code).upper())
+                tare_weight_lb = (
+                    float(box.tare_weight_lb or 0.0)
+                    if box is not None
+                    else 0.0
+                )
+                line_weight_lb = tare_weight_lb * qty
                 row["boxes"].append(
                     {
                         "code": str(code),
                         "label": (box.label if box is not None else "") or "",
                         "count": qty,
+                        "tare_weight_lb": tare_weight_lb,
+                        "line_weight_lb": line_weight_lb,
                     }
                 )
+                row["boxes_weight_lb"] += line_weight_lb
 
         consumables_map = _safe_json_load(leg.consumables_json)
         if isinstance(consumables_map, dict):
@@ -1466,6 +1491,13 @@ def _hydrate_legs_for_display(
                         "weight_lb": weight_lb,
                     }
                 )
+                row["consumables_weight_lb"] += weight_lb
+
+        row["shipment_weight_lb"] = (
+            row["tissue_weight_lb"]
+            + row["boxes_weight_lb"]
+            + row["consumables_weight_lb"]
+        )
 
         out.append(row)
     return out

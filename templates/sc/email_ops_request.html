@@ -141,22 +141,24 @@ Leg {{ leg.leg_index }}: {{ leg.origin or '—' }} -> {{ leg.destination or '—
 {% endif %}
   Tissue items:
 {% if leg.tissue_items -%}
-{% for item in leg.tissue_items %}    - {{ item.code }} x {{ item.qty }}{% if item.description %} — {{ item.description }}{% endif %}{% if item.unit_weight_lb is not none %} ({{ '%.2f'|format(item.unit_weight_lb) }} lb/ea){% endif %}
+{% for item in leg.tissue_items %}    - {{ item.code }} x {{ item.qty }}{% if item.description %} — {{ item.description }}{% endif %}{% if item.unit_weight_lb is not none %} ({{ '%.2f'|format(item.unit_weight_lb) }} lb/ea = {{ '%.2f'|format(item.line_weight_lb) }} lb){% endif %}
 {% endfor -%}
 {% else %}    (none)
-{% endif %}
-  Boxes:
+{% endif %}    Tissue weight subtotal: {{ '%.2f'|format(leg.tissue_weight_lb) }} lb
+  Boxes used:
 {% if leg.boxes -%}
-{% for box in leg.boxes %}    - {{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} x {{ box.count }}
+{% for box in leg.boxes %}    - {{ box.code }}{% if box.label %} ({{ box.label }}){% endif %} x {{ box.count }}{% if box.tare_weight_lb %} ({{ '%.2f'|format(box.tare_weight_lb) }} lb/ea = {{ '%.2f'|format(box.line_weight_lb) }} lb){% endif %}
 {% endfor -%}
 {% else %}    (none)
-{% endif %}
-  Consumables:
+{% endif %}    Boxes weight subtotal: {{ '%.2f'|format(leg.boxes_weight_lb) }} lb
+  Consumables used:
 {% if leg.consumables -%}
 {% for c in leg.consumables %}    - {{ c.name or '—' }}{% if c.temp_mode or c.scope %} [{% if c.temp_mode %}{{ c.temp_mode }}{% endif %}{% if c.temp_mode and c.scope %}/{% endif %}{% if c.scope %}{{ c.scope }}{% endif %}]{% endif %} x {{ c.qty }}{% if c.weight_lb %} ({{ '%.2f'|format(c.weight_lb) }} lb){% endif %}
 {% endfor -%}
 {% else %}    (none)
-{% endif %}
+{% endif %}    Consumable weight subtotal: {{ '%.2f'|format(leg.consumables_weight_lb) }} lb
+
+  Shipment weight summary: {{ '%.2f'|format(leg.shipment_weight_lb) }} lb (tissue {{ '%.2f'|format(leg.tissue_weight_lb) }} + boxes {{ '%.2f'|format(leg.boxes_weight_lb) }} + consumables {{ '%.2f'|format(leg.consumables_weight_lb) }})
 {% endfor -%}
 ==========================================
 GRAND TOTAL (no booking fee): {{ grand_total | currency }}

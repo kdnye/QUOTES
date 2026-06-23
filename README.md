@@ -604,6 +604,15 @@ preview of the aggregated booking message and a `mailto:` link to
 booking fee — that $15 fee is specific to the single-quote `/quotes/<id>/email`
 workflow. Multi-leg jobs bill off the raw cheapest-of total.
 
+The email body groups every leg's items by shipment segment and prints a
+**weight summary** so ops can sanity-check the billable weight without
+re-keying the form. Each leg lists its tissue rows (with unit + line weight),
+boxes used (count × tare = line weight), and consumables used (qty × per-box
+weight), each followed by a per-segment subtotal. A final
+`Shipment weight summary` line per leg sums the three subtotals; this matches
+the `LegResult.tissue_weight_lb + box_tare_weight_lb + consumable_weight_lb`
+breakdown documented as **EQ-013** in `docs/equations.md`.
+
 **Lookup** (`/sc/quote/lookup`) is SC-scoped across users: any SC user can
 resolve any `SCMQNNNN` (or customer-supplied reference) to the persisted
 multi-leg summary. This is intentional — customer service uses it to help
