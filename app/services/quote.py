@@ -6,17 +6,43 @@ retrieve quote records for the application.
 """
 
 import json
+from contextlib import contextmanager
 from dataclasses import dataclass
 from threading import Lock
 from time import time
+from typing import Generator
+
+from flask import has_app_context
+from sqlalchemy.orm import Session as SASession
 
 from app.database import Session, Quote, EmailQuoteRequest, ZipZone
-from app.models import Accessorial
+from app.models import Accessorial, db
 from app.quote.logic_hotshot import calculate_hotshot_quote
 from app.quote.logic_air import calculate_air_quote
 from app.quote.thresholds import check_thresholds, check_air_piece_limit
 from app.services.constants import DIM_DIVISOR
 from app.services.rate_sets import DEFAULT_RATE_SET, normalize_rate_set
+
+
+@contextmanager
+def _session_scope() -> Generator[SASession, None, None]:
+    """Yield ``db.session`` under a Flask app context, else a standalone Session.
+
+    Mirrors :func:`app.services.hotshot_rates._session_scope`. Reading
+    through ``db.session`` when an app context exists keeps tests that
+    override ``SQLALCHEMY_DATABASE_URI`` honest — the standalone
+    :class:`app.database.Session` is bound to its own engine and would
+    otherwise read past Flask-SQLAlchemy's app-bound session.
+    """
+
+    if has_app_context():
+        yield db.session  # type: ignore[generator-type]
+    else:
+        session = Session()
+        try:
+            yield session
+        finally:
+            session.close()
 
 
 @dataclass(frozen=True)
@@ -53,11 +79,10 @@ def _get_accessorial_rows() -> list[_AccessorialRow]:
         loading session so they survive its commit.
 
     External dependencies:
-        * Opens a standalone :class:`app.database.Session` and runs
-          ``db.query(Accessorial).all()``. The standalone session keeps
-          the loader callable from background paths that don't have a
-          Flask application context, matching ``get_zip_notes``'s
-          fallback behaviour.
+        * Uses :func:`_session_scope` so the read happens against
+          Flask-SQLAlchemy's ``db.session`` when a Flask app context is
+          active and falls back to a standalone
+          :class:`app.database.Session` for background callers.
         * Uses :func:`time.time` to enforce a 24-hour time-to-live cache.
     """
 
@@ -73,14 +98,14 @@ def _get_accessorial_rows() -> list[_AccessorialRow]:
         if _accessorial_cache_rows is not None and now < _accessorial_cache_expires_at:
             return _accessorial_cache_rows
 
-        with Session() as db:
+        with _session_scope() as session:
             rows = [
                 _AccessorialRow(
                     name=str(a.name),
                     amount=float(a.amount or 0.0),
                     is_percentage=bool(a.is_percentage),
                 )
-                for a in db.query(Accessorial).all()
+                for a in session.query(Accessorial).all()
             ]
         _accessorial_cache_rows = rows
         _accessorial_cache_expires_at = now + _ACCESSORIAL_CACHE_TTL_SECONDS
