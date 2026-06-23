@@ -613,8 +613,8 @@ string used to pick a rate row from `AirCostZone`.
     dest_dest_zone = int(ZipZone.dest_zone for destination_zip)
     concat         = f"{orig_dest_zone}{dest_dest_zone}"
 
-    cost_zone_row = CostZone where concat == concat
-                    OR (fallback) CostZone where concat == f"{dest_dest_zone}{orig_dest_zone}"
+    cost_zone_row = CostZone where CostZone.concat == concat
+                    OR (fallback) CostZone where CostZone.concat == f"{dest_dest_zone}{orig_dest_zone}"
 
     cost_zone     = cost_zone_row.cost_zone
 
@@ -842,8 +842,10 @@ is exclusive.
 
 **Zone-to-PADD resolution (`resolve_padd_region`):** `vsc_zones` is a JSON
 dict like `{"1": "PADD1", "7": "PADD4"}`. The lookup tries the raw zone
-string first and then its integer-stripped form (so `"09"` and `"9"` both
-resolve). Any zone absent from the dict falls back to `"NATIONAL"`.
+string first; if the raw string is all digits, it also tries the
+leading-zero-stripped form (`str(int(raw_zone))`, so `"09"` is retried as
+`"9"`). Either form resolves to the same PADD region. Any zone absent from
+both forms falls back to `"NATIONAL"`.
 
 **Failure-mode policy (all return `0.0`):**
 
@@ -930,28 +932,40 @@ Guarantee is therefore 25% of the surcharged freight, NOT just the
 pre-surcharge linehaul. The comment in `new_quote()` calls it "linehaul and
 beyond" — that wording is imprecise; the fuel surcharge is included.
 
-**Two implementations:** there are two code paths that apply accessorials.
-They are intentionally similar but differ in how they treat the `Accessorial`
-model's `is_percentage` column:
+**`is_percentage` is NOT honored by either pricing path.** The
+`Accessorial.is_percentage` column exists on the model and is loaded into the
+in-memory `_AccessorialRow` snapshot (`app/services/quote.py`, line ~61), but
+**neither `app/quotes/routes.py:new_quote()` nor
+`app/services/quote.py:create_quote()` ever inspects the flag when computing
+the dollar total.** The percentage branch in both paths is triggered solely by
+a case-insensitive substring match on `"guarantee"` in the accessorial's
+display name. The only consumer of `is_percentage` today is the SC display
+helper `app/science_care/routes.py:_format_accessorial_cost()`, which uses
+it to render the label as `"25%"` vs. `"$25.00"` in the form UI — it does not
+affect pricing.
 
-| Path | Where | `is_percentage` honored? | Guarantee handling |
+**Two implementations:** the two code paths that apply accessorials are
+intentionally similar but differ in how the Guarantee percentage value is
+sourced:
+
+| Path | Where | Fixed-accessorial handling | Guarantee handling |
 | --- | --- | --- | --- |
-| Web form | `app/quotes/routes.py`, `new_quote()` (~lines 460-540) | **No** — `amount` is always treated as USD | Hardcoded 25% (Air only); name-matched on `"guarantee"` substring |
-| Canonical service | `app/services/quote.py`, `create_quote()` (~lines 230-278) | **Yes**, via name-match on `"guarantee"` | `Accessorial.amount` is interpreted as the percentage value (e.g. `25.0` -> 25%); defaults to 25.0 if zero; applied to BOTH Air and Hotshot |
+| Web form | `app/quotes/routes.py`, `new_quote()` (~lines 460-540) | `amount` treated as USD; `is_percentage` ignored | Hardcoded 25% (Air only); name-matched on `"guarantee"` substring; `amount` ignored |
+| Canonical service | `app/services/quote.py`, `create_quote()` (~lines 230-278) | `amount` treated as USD; `is_percentage` ignored | Name-matched on `"guarantee"` substring; `Accessorial.amount` interpreted as the percentage value (e.g. `25.0` -> 25%); defaults to 25.0 if zero; applied to BOTH Air and Hotshot |
 
 The web-form path is what hits the database for interactive submissions; the
 service path is invoked by the JSON API and the Science Care multi-leg flow.
 Both produce the same Guarantee = 25% behavior for Air today, because the
-seeded `Accessorial("Guarantee")` row stores `amount = 25.0` and
-`is_percentage = True`.
+seeded `Accessorial("Guarantee")` row stores `amount = 25.0` (which the
+service path uses) and the web-form path hardcodes the same `0.25` constant.
 
 **Variables:**
 
 | Variable | Type | Unit | Source | Description |
 | --- | --- | --- | --- | --- |
 | `selected_names` | list[str] | — | Form `accessorials` field / JSON `accessorials` array | Display names of selected accessorials |
-| `Accessorial.amount` | float | USD or % | `Accessorial` row | Flat dollar amount (default) or percentage value (when `is_percentage=True`) |
-| `Accessorial.is_percentage` | bool | — | `Accessorial` row | Honored by service path; ignored by web-form path |
+| `Accessorial.amount` | float | USD or % | `Accessorial` row | Flat dollar amount for non-Guarantee accessorials; for the Guarantee row the service path reinterprets it as a percentage value (e.g. `25.0` -> 25%) |
+| `Accessorial.is_percentage` | bool | — | `Accessorial` row | Display-only today; ignored by both pricing paths (see note above). Used only by `app/science_care/routes.py:_format_accessorial_cost()` to render `"25%"` vs `"$25.00"` |
 | `quote_total` | float | USD | `calculate_air_quote()` / `calculate_hotshot_quote()` | Pre-guarantee quote total returned by pricing |
 | `accessorial_total` | float | USD | running sum | Accumulated across fixed accessorials + Guarantee |
 
@@ -973,14 +987,16 @@ seeded `Accessorial("Guarantee")` row stores `amount = 25.0` and
   `clear_accessorial_cache()` for the web path; the service path picks up
   changes on the next TTL refresh.
 
-**Known wart:** the web-form path ignores `is_percentage` entirely. If an
-admin adds a new percentage-type accessorial (other than Guarantee) via
-`/admin/accessorials`, the web form will charge its `amount` as flat USD
-instead of as a percentage. The service path (JSON API, SC flow) handles it
-correctly only when the name contains "guarantee" — any other percentage
-accessorial there also falls back to flat-USD treatment. A unified policy
-that honors `is_percentage` for arbitrary accessorial names is filed as a
-follow-up.
+**Known wart:** `Accessorial.is_percentage` is admin-editable via
+`/admin/accessorials` and exposed on the model, but neither pricing path
+reads it. Both paths use a hardcoded `"guarantee"` substring test to decide
+whether to apply percentage semantics. If an admin adds a new
+percentage-type accessorial whose name does not contain `"guarantee"`, both
+the web form and the service path will charge its `amount` as flat USD —
+the `is_percentage=True` flag has no effect on the bill. The flag only
+changes how the SC form labels the accessorial in the UI (`"5%"` vs
+`"$5.00"`). A unified policy that honors `is_percentage` for arbitrary
+accessorial names is filed as a follow-up.
 
 **Code location:** `app/quotes/routes.py`, `new_quote()` lines ~460-540
 (fixed sum + Air-only Guarantee post-processing); `app/services/quote.py`,
