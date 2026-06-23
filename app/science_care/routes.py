@@ -1685,6 +1685,30 @@ def sc_email_ops_for_booking(session_id: int):
     leg_rows = _load_sc_session_legs(session)
     legs = _hydrate_legs_for_display(leg_rows, session=session)
     intake = _load_booking_intake(session)
+    intake_has_content = _booking_intake_has_content(intake)
+    # Render the plain-text body server-side and pass it through to
+    # the composer template instead of `{% include %}`-ing the ``.txt``
+    # template directly. Jinja resolves autoescape per template by
+    # name, so a `{% include "...txt" %}` inside an HTML page renders
+    # without autoescape regardless of an enclosing
+    # ``{% autoescape true %}`` block - i.e. user-controlled intake
+    # text would otherwise become stored XSS for the next viewer of
+    # ``/sc/quote/<id>/email-ops``. Rendering once here and passing
+    # the result to the .html template forces autoescape via the
+    # parent's filename. The Postmark send route re-renders the same
+    # template standalone (which keeps autoescape OFF), so the
+    # outbound email body still ships as literal text.
+    text_preview = render_template(
+        "sc/emails/booking_request.txt",
+        sc_session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=getattr(current_user, "name", "") or "",
+        user_email=getattr(current_user, "email", "") or "",
+        user_company=getattr(current_user, "company_name", "") or "",
+        intake=intake,
+        intake_has_content=intake_has_content,
+    )
     return render_template(
         "sc/email_ops_request.html",
         sc_session=session,
@@ -1694,7 +1718,8 @@ def sc_email_ops_for_booking(session_id: int):
         user_email=getattr(current_user, "email", "") or "",
         user_company=getattr(current_user, "company_name", "") or "",
         intake=intake,
-        intake_has_content=_booking_intake_has_content(intake),
+        intake_has_content=intake_has_content,
+        text_preview=text_preview,
     )
 
 

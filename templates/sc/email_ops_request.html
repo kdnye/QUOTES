@@ -210,7 +210,14 @@
     </small>
   </summary>
   <div class="card-body p-0">
-    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{% include "sc/emails/booking_request.txt" %}</pre>
+    {# ``text_preview`` is the rendered ``booking_request.txt`` body,
+       pre-rendered by the route. Because this template is a ``.html``
+       file Jinja autoescape is ON, so an intake field containing
+       ``<script>...`` lands as the escaped string and can't execute
+       in the viewer's browser. A naive ``{% include "...txt" %}`` here
+       would NOT autoescape because Jinja resolves autoescape by the
+       included template's filename, not the parent's. #}
+    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{{ text_preview }}</pre>
   </div>
 </details>
 

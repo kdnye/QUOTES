@@ -1997,6 +1997,63 @@ def test_sc_email_ops_text_body_skips_empty_address_continuation(
     assert "456 Mystery Lane\n           \n" not in body
 
 
+def test_sc_email_ops_composer_escapes_intake_for_xss(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stored intake values rendered into the composer page must be
+    HTML-escaped so a malicious shipper-notes string can't become
+    stored XSS for the next user who opens
+    ``/sc/quote/<id>/email-ops``.
+
+    The Postmark plain-text body, by contrast, must NOT be escaped -
+    the email body is literal text and ops should see the original
+    characters in their inbox.
+    """
+
+    user = _make_user(
+        "sc-intake-xss@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    payload = "<script>alert('xss')</script>"
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Acme",
+            "shipper_notes": payload,
+            "consignee_name": "Recipient",
+        },
+    )
+
+    composer_html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    # The raw payload must NOT survive on the composer page - it would
+    # execute in the next viewer's browser.
+    assert payload not in composer_html
+    # ...but the escaped form must be present so ops still sees the
+    # literal text rendered in the preview.
+    assert "&lt;script&gt;alert" in composer_html
+
+    # The Postmark plain-text body, in contrast, must keep the raw
+    # characters - the body is literal text the mail client never
+    # interprets as HTML.
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    assert payload in captured["body"]
+
+
 def test_sc_results_partial_links_to_intake_form() -> None:
     """The 'Email Ops for Booking' button in the SC results card
     routes through the new intake form rather than jumping straight
