@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Email Ops for Booking — {{ session.multi_reference or ('Session ' ~ session.id) }}{% endblock %}
+{% block title %}Email Ops for Booking — {{ sc_session.multi_reference or ('Session ' ~ sc_session.id) }}{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-wrap justify-content-between align-items-end mb-3">
@@ -8,8 +8,8 @@
     <h1 class="h3 mb-1">Email Ops for Booking</h1>
     <p class="text-body-secondary mb-0">
       Aggregated booking request for the Science Care multi-leg quote.
-      {% if session.multi_reference %}
-        Reference <strong>{{ session.multi_reference }}</strong>.
+      {% if sc_session.multi_reference %}
+        Reference <strong>{{ sc_session.multi_reference }}</strong>.
       {% endif %}
       <span class="text-success">No booking fee is applied to SC multi-leg quotes.</span>
     </p>
@@ -38,10 +38,10 @@
     <dl class="row mb-3">
       <dt class="col-sm-3">Multi-leg reference</dt>
       <dd class="col-sm-9">
-        <code>{{ session.multi_reference or '—' }}</code>
+        <code>{{ sc_session.multi_reference or '—' }}</code>
       </dd>
       <dt class="col-sm-3">Session ID</dt>
-      <dd class="col-sm-9">{{ session.id }}</dd>
+      <dd class="col-sm-9">{{ sc_session.id }}</dd>
       <dt class="col-sm-3">Total (no booking fee)</dt>
       <dd class="col-sm-9">
         <strong>{{ grand_total | currency }}</strong>
@@ -113,7 +113,7 @@
 <div class="card mb-3">
   <div class="card-header"><strong>Email body</strong></div>
   <div class="card-body p-0">
-    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{%- set ref_display = session.multi_reference or ('Session ' ~ session.id) -%}
+    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{%- set ref_display = sc_session.multi_reference or ('Session ' ~ sc_session.id) -%}
 SCIENCE CARE MULTI-LEG BOOKING REQUEST
 ==========================================
 Reference:   {{ ref_display }}
@@ -169,7 +169,7 @@ Please book the above shipment(s). Reference {{ ref_display }} on all paperwork.
 <script>
   (function () {
     const body = document.getElementById('sc-email-body').textContent;
-    const ref = {{ (session.multi_reference or ('Session ' ~ session.id)) | tojson }};
+    const ref = {{ (sc_session.multi_reference or ('Session ' ~ sc_session.id)) | tojson }};
     const subject = `SC Multi-leg Booking Request — ${ref}`;
     const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
     document.getElementById('sc-mailto-btn').setAttribute('href', mailto);
