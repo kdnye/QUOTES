@@ -544,8 +544,12 @@ def sc_dest_zip_notes_partial() -> str:
         zip_code = request.args.get(f"dest_zip_{leg}")
     zip_code = (zip_code or "").strip()
 
+    # The dest-ZIP input is `pattern="\d{5}" maxlength="5"`, so any value
+    # shorter than 5 chars is mid-typing and can't possibly match a
+    # ZipZone row. Skip the DB round-trip until the operator has a full
+    # ZIP - HTMX fires this endpoint on every keystroke.
     notes: str | None = None
-    if zip_code:
+    if len(zip_code) == 5:
         notes = get_zip_notes(
             zip_code, RATE_SET_SCIENCE_CARE, session=db.session
         )
