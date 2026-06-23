@@ -25,7 +25,6 @@ from flask import redirect
 from . import quotes_bp
 from ..models import (
     BOOKING_EMAIL_KIND_SINGLE_QUOTE,
-    BOOKING_EMAIL_STATUS_FAILED,
     BOOKING_EMAIL_STATUS_PENDING,
     BOOKING_EMAIL_STATUS_SENT,
     db,
@@ -45,6 +44,7 @@ from app.services.constants import DIM_DIVISOR
 from app.services.mail import (
     MailRateLimitError,
     booking_email_ops_to,
+    record_booking_email_failure,
     send_email,
     user_has_mail_privileges,
 )
@@ -1346,9 +1346,14 @@ def email_request_send(quote_id: str):
     # The final ``sent`` / ``failed`` state is written in a second
     # commit after send_email returns or raises. A stuck ``pending``
     # row therefore unambiguously means "send_email never returned".
+    # Capture identifiers we'll need for logging BEFORE the pending
+    # receipt is committed - SQLAlchemy expires loaded attributes after
+    # commit by default, so a poisoned-transaction failure later would
+    # otherwise force a refresh SELECT through the bad transaction.
+    quote_reference = quote.quote_id
     receipt = BookingEmailReceipt(
         kind=BOOKING_EMAIL_KIND_SINGLE_QUOTE,
-        reference=quote.quote_id,
+        reference=quote_reference,
         sender_user_id=getattr(current_user, "id", None),
         to_addr=to_addr,
         cc_addr=cc_addr,
@@ -1368,9 +1373,7 @@ def email_request_send(quote_id: str):
             headers=headers or None,
         )
     except MailRateLimitError as exc:
-        receipt.status = BOOKING_EMAIL_STATUS_FAILED
-        receipt.error_text = str(exc)
-        db.session.commit()
+        receipt = record_booking_email_failure(receipt, str(exc))
         return (
             {
                 "status": "failed",
@@ -1380,14 +1383,19 @@ def email_request_send(quote_id: str):
             429,
         )
     except Exception as exc:  # pragma: no cover - surfaced via tests
+        # Roll back FIRST so any subsequent attribute access on the
+        # in-memory ``quote`` / ``receipt`` objects doesn't trigger a
+        # lazy refresh through the now-poisoned transaction. The log
+        # uses the captured-local ``quote_reference`` for the same
+        # reason.
+        receipt = record_booking_email_failure(
+            receipt, f"{exc.__class__.__name__}: {exc}"
+        )
         logger.exception(
             "Single-quote booking email send failed for quote %s: %s",
-            quote.quote_id,
+            quote_reference,
             exc,
         )
-        receipt.status = BOOKING_EMAIL_STATUS_FAILED
-        receipt.error_text = f"{exc.__class__.__name__}: {exc}"
-        db.session.commit()
         return (
             {
                 "status": "failed",

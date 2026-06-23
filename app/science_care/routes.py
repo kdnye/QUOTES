@@ -56,7 +56,6 @@ from app.admin import (
 )
 from app.models import (
     BOOKING_EMAIL_KIND_SC_MULTI,
-    BOOKING_EMAIL_STATUS_FAILED,
     BOOKING_EMAIL_STATUS_PENDING,
     BOOKING_EMAIL_STATUS_SENT,
     RATE_SET_SCIENCE_CARE,
@@ -79,6 +78,7 @@ from app.policies import sc_admin_required, sc_user_required
 from app.services.mail import (
     MailRateLimitError,
     booking_email_ops_to,
+    record_booking_email_failure,
     send_email,
 )
 from app.services.science_care_quote import (
@@ -1644,9 +1644,7 @@ def sc_email_ops_send(session_id: int):
             html_body=html_body,
         )
     except MailRateLimitError as exc:
-        receipt.status = BOOKING_EMAIL_STATUS_FAILED
-        receipt.error_text = str(exc)
-        db.session.commit()
+        receipt = record_booking_email_failure(receipt, str(exc))
         return (
             {
                 "status": "failed",
@@ -1656,14 +1654,20 @@ def sc_email_ops_send(session_id: int):
             429,
         )
     except Exception as exc:  # pragma: no cover - surfaced via tests
+        # Roll back FIRST so any subsequent attribute access on the
+        # in-memory ``session`` / ``receipt`` objects doesn't trigger
+        # a lazy refresh through the now-poisoned transaction. The
+        # log message uses the local ``ref_display`` string instead
+        # of ``session.id`` for the same reason - expired-after-commit
+        # SQLAlchemy attributes refresh via SELECT.
+        receipt = record_booking_email_failure(
+            receipt, f"{exc.__class__.__name__}: {exc}"
+        )
         current_app.logger.exception(
-            "SC booking email send failed for session %s: %s",
-            session.id,
+            "SC booking email send failed for ref %s: %s",
+            ref_display,
             exc,
         )
-        receipt.status = BOOKING_EMAIL_STATUS_FAILED
-        receipt.error_text = f"{exc.__class__.__name__}: {exc}"
-        db.session.commit()
         return (
             {
                 "status": "failed",

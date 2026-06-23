@@ -20,6 +20,20 @@
   </a>
 </div>
 
+<div class="alert alert-info mb-3" role="note">
+  <p class="mb-1">
+    <strong>Heads up:</strong> Clicking <strong>Email to Book</strong> sends this
+    booking request to <code>operations@freightservices.net</code> and copies the
+    message to your registered email address
+    (<code>{{ user_email or '—' }}</code>) so you have a record in your inbox.
+  </p>
+  <p class="mb-0 small text-body-secondary">
+    Need to send from your own mail client instead? Use
+    <em>Open in mail client</em> below as an offline fallback — both paths
+    send the same content.
+  </p>
+</div>
+
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Booking summary preview</strong>
@@ -120,20 +134,25 @@
 
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
-    <strong>Email body (plain text)</strong>
+    <strong>Email preview (formatted HTML)</strong>
     <small class="text-body-secondary">
-      Postmark will send both this plain-text body and a formatted HTML version. The mail-client fallback below uses the plain-text body verbatim.
+      This is what the recipient sees. Postmark also includes the plain-text body below as a fallback for clients that block HTML.
     </small>
   </div>
-  <div class="card-body p-0">
-    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{% include "sc/emails/booking_request.txt" %}</pre>
+  <div class="card-body" id="sc-email-html-preview" style="background:#f8f9fa;">
+    {% include "sc/emails/booking_request.html" %}
   </div>
 </div>
 
 <details class="card mb-3">
-  <summary class="card-header"><strong>HTML preview</strong></summary>
-  <div class="card-body" id="sc-email-html-preview" style="background:#f8f9fa;">
-    {% include "sc/emails/booking_request.html" %}
+  <summary class="card-header" style="cursor:pointer;">
+    <strong>Plain-text body</strong>
+    <small class="text-body-secondary ms-2">
+      Shown for transparency; also used verbatim by the mail-client fallback below.
+    </small>
+  </summary>
+  <div class="card-body p-0">
+    <pre id="sc-email-body" class="mb-0 p-3" style="white-space:pre-wrap;font-family:monospace;">{% include "sc/emails/booking_request.txt" %}</pre>
   </div>
 </details>
 
