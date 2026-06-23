@@ -476,6 +476,12 @@ tissue rows and the Boxes section repeats the workbook's box-sizing
 guidance (*"Always quote the larger size if it shows a specimen can ship in
 two different sizes"* and *"If shipping multiple tissue types together and
 it's not intuitive, ask the lab how they would package"*).
+Each leg also exposes a **This is a return** checkbox. When checked, the
+orchestrator swaps the leg's origin and destination so the quote (and the
+Established Lane lookup) prices from the typed customer ZIP **back to the
+lab** instead of from the lab outbound. All other inputs — tissue rows,
+boxes, consumables, accessorials, and the cheapest-of-three rollup — are
+unchanged.
 
 ### Per-tissue box capacities
 

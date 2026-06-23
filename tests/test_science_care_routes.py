@@ -1553,6 +1553,28 @@ def test_sc_email_ops_blocks_non_sc_user(app: Flask) -> None:
     assert response.status_code in {302, 403}
 
 
+def test_sc_lookup_get_renders_empty_form_without_500(app: Flask) -> None:
+    """GET /sc/quote/lookup must render the empty form for any logged-in
+    SC user. Regression for a Jinja shadowing trap where the template's
+    ``{% if session %}`` guard fell through to Flask's global ``session``
+    (always truthy for an authenticated user) and 500'd trying to read
+    ``session.id`` on the lookup-result block.
+    """
+
+    user = _make_user(
+        "sc-lookup-get@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get("/sc/quote/lookup")
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    # Form is present...
+    assert 'name="multi_reference"' in html
+    # ...and the result block is NOT rendered (no card / table headers).
+    assert "Multi-leg quote summary" not in html
+
+
 def test_sc_lookup_resolves_session_across_users(app: Flask) -> None:
     """Any SC user can look up any SCMQ reference.
 
