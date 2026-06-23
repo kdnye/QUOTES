@@ -22,24 +22,12 @@ with a `[REMOVED YYYY-MM-DD]` marker — IDs are never reused.
 | EQ-008 | Hotshot fuel surcharge | `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()` |
 | EQ-009 | Hotshot dynamic VSC application | `app/quote/logic_hotshot.py` (applies); computed in `app/services/fuel_surcharge.py`, `get_vsc_pct_for_zone()` |
 | EQ-010 | Hotshot quote total | `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()` |
-
-## Documentation gaps
-
-CLAUDE.md Section 6 calls out the following hotshot-adjacent formulas as
-required documentation; they are NOT yet covered by an EQ entry and will
-be tackled in follow-up PRs:
-
-- Air freight rate calculation (dimensional weight x per-lb zone rate
-  with weight breaks) — `app/quote/logic_air.py`.
-- Dynamic VSC computation itself (EIA diesel price -> PADD region ->
-  surcharge %) — `app/services/fuel_surcharge.py`,
-  `get_vsc_pct_for_zone()` and the `vsc_matrix` AppSetting.
-- Accessorial charge calculation (fixed vs. percentage; per-quote
-  application) — `app/quotes/routes.py` and the `Accessorial` model.
-- Beyond charge flat fee application — `app/services/beyond_rates.py`.
-- Zone determination logic from ZIP code pairs (origin x destination ->
-  cost zone) — `app/services/cost_zones.py` and the `CostZone` /
-  `ZipZone` tables.
+| EQ-011 | Air cost-zone determination from ZIP pair | `app/quote/logic_air.py`, `calculate_air_quote()` (concat lookup); `get_zip_zone()` / `get_cost_zone()` |
+| EQ-012 | Air freight base rate (per-lb with weight break) | `app/quote/logic_air.py`, `calculate_air_quote()` |
+| EQ-013 | Beyond charge flat fee application | `app/quote/logic_air.py`, `get_beyond_rate()` and `calculate_air_quote()` |
+| EQ-014 | Dynamic VSC computation (EIA diesel -> PADD -> surcharge %) | `app/services/fuel_surcharge.py`, `get_vsc_pct_for_zone()` |
+| EQ-015 | Accessorial charge application | `app/quotes/routes.py`, `new_quote()`; canonical helper in `app/services/quote.py`, `create_quote()` |
+| EQ-016 | Air quote total | `app/quote/logic_air.py`, `calculate_air_quote()` (+ Guarantee post-processing in `app/quotes/routes.py`) |
 
 ---
 
@@ -609,5 +597,489 @@ line ~246.
     quote_total    = 131.50 + 24.3275 + 10 = 165.8275 USD
 
 This matches the assertion at `tests/test_logic_hotshot.py:40-75`.
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-011: Air cost-zone determination from ZIP pair
+
+**Purpose:** Map an origin/destination ZIP pair to the single Air `cost_zone`
+string used to pick a rate row from `AirCostZone`.
+
+**Formula:**
+
+    orig_dest_zone = int(ZipZone.dest_zone for origin_zip)
+    dest_dest_zone = int(ZipZone.dest_zone for destination_zip)
+    concat         = f"{orig_dest_zone}{dest_dest_zone}"
+
+    cost_zone_row = CostZone where concat == concat
+                    OR (fallback) CostZone where concat == f"{dest_dest_zone}{orig_dest_zone}"
+
+    cost_zone     = cost_zone_row.cost_zone
+
+The `ZipZone.dest_zone` integer is the Air-routing zone for that ZIP (NOT the
+VSC zone — VSC zones live in `VscZone`, see EQ-014). The concatenation key is
+the string representation of the two zone integers glued together (e.g. zones
+`3` and `7` produce `"37"`).
+
+**Reverse-pair fallback:** when the forward `concat` has no `CostZone` row,
+the lookup retries with the zones reversed. This lets a CSV that only defines
+one direction of a lane (e.g. `"37"` is mapped but not `"73"`) still resolve.
+The reverse hit is treated as equivalent — both `(o, d)` and `(d, o)` route to
+the same `cost_zone`. If neither direction is mapped, the quote returns an
+error result with `cost_zone` unresolved.
+
+**Rate-set fallback:** `ZipZone`, `CostZone`, and `AirCostZone` lookups all
+flow through `query_with_rate_set_fallback`, which tries the caller's named
+rate set first and falls back to `DEFAULT_RATE_SET` when no row matches —
+same precedence as the hotshot tables (EQ-005).
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `origin_zip` | str | ZIP | quote request | 5-digit origin ZIP code |
+| `destination_zip` | str | ZIP | quote request | 5-digit destination ZIP code |
+| `ZipZone.dest_zone` | int | — | `ZipZone` row for ZIP | Air-routing zone number for that ZIP |
+| `CostZone.concat` | str | — | `CostZone` row keyed by joined zones | Concatenated `"{orig}{dest}"` lookup key |
+| `cost_zone` | str | — | `CostZone.cost_zone` | Resulting Air cost-zone code consumed by EQ-012 |
+| `rate_set` | str | — | `User.rate_set` (via `app/quotes/routes.py`) | Active named rate context |
+
+**Constraints:**
+
+- Origin and destination ZIPs are normalized to 5 digits via
+  `_normalize_zip_lookup_key()`; ZIP+4 inputs (`12345-6789`) are truncated to
+  the leading 5 digits. Malformed inputs return `None`, which surfaces as a
+  ZIP-not-found error.
+- A `ZipZone` row missing `dest_zone` or `beyond` fails the lookup with an
+  explicit error (no silent zero-zoning).
+- A `CostZone` miss in both directions returns
+  `f"Cost zone not found for concatenated zone {concat} or {reverse_concat}"`.
+
+**Code location:** `app/quote/logic_air.py`,
+`calculate_air_quote()` lines ~240-270; ZIP normalization at
+`_normalize_zip_lookup_key()` (~line 38); `ZipZone` model at
+`app/models.py:397`; `CostZone` model at `app/models.py:422`.
+
+**Worked example:** Origin ZIP `30301` resolves to `ZipZone.dest_zone = 3`;
+destination ZIP `90808` resolves to `ZipZone.dest_zone = 7`.
+
+    concat        = "37"
+    cost_zone_row = CostZone(concat="37").first()
+    cost_zone     = cost_zone_row.cost_zone        # e.g. "C"
+
+If `CostZone("37")` is absent but `CostZone("73")` exists, the fallback
+returns the `"73"` row's `cost_zone` value instead.
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-012: Air freight base rate (per-lb with weight break)
+
+**Purpose:** Compute the pre-surcharge linehaul amount for an Air quote from
+the `AirCostZone` row selected by EQ-011.
+
+**Formula:**
+
+    if billable_weight > weight_break:
+        base = min_charge + (billable_weight - weight_break) * per_lb
+    else:
+        base = min_charge
+
+`billable_weight` is `max(actual_weight, dim_weight)` — dim weight comes from
+EQ-001 (`L * W * H * pieces / DIM_DIVISOR`) and the larger of the two wins.
+The route handler does that comparison before invoking `calculate_air_quote`,
+so the air quote always receives the already-resolved billable weight.
+
+The three rate values (`min_charge`, `per_lb`, `weight_break`) are all read
+from the SAME `AirCostZone` row keyed by `(rate_set, cost_zone)` — so changing
+a cost zone's pricing is a single-row admin edit, and per-customer overrides
+work via the rate-set mechanism (same as hotshot, EQ-005/EQ-007).
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `billable_weight` | float | lb | `max(weight_actual, weight_dim)` resolved in `new_quote()` | Larger of actual vs. dimensional weight |
+| `weight_break` | float | lb | `AirCostZone.weight_break` | Pivot weight; `min_charge` covers everything up to here |
+| `per_lb` | float | USD/lb | `AirCostZone.per_lb` | Per-pound rate above the weight break |
+| `min_charge` | float | USD | `AirCostZone.min_charge` | Minimum charge for the zone (covers weight up to and including `weight_break`) |
+
+**Constraints:**
+
+- The break point is **inclusive at the minimum**: `weight == weight_break`
+  resolves to `base = min_charge` (the strict `>` branch fires only above the
+  break).
+- All three values come from the same row; none are hardcoded.
+- A missing `AirCostZone` row for the resolved `cost_zone` raises an explicit
+  error result (no silent zero).
+- Unlike hotshot (EQ-006), the formula DOES use `weight_break` — Air rates
+  legitimately decouple `min_charge` from `weight_break * per_lb`.
+
+**Code location:** `app/quote/logic_air.py`, `calculate_air_quote()`,
+lines ~276-283.
+
+**Worked example:** Cost zone `C` row (`min_charge=85.00`, `per_lb=0.50`,
+`weight_break=200`):
+
+    billable_weight=150 lb -> base = 85.00 USD
+                              (150 <= 200, min_charge alone)
+
+    billable_weight=300 lb -> base = 85.00 + (300 - 200) * 0.50
+                                   = 85.00 + 50.00
+                                   = 135.00 USD
+
+    billable_weight=200 lb -> base = 85.00 USD
+                              (exactly at the break, min_charge wins)
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-013: Beyond charge flat fee application
+
+**Purpose:** Add the flat "beyond" surcharge for origin and/or destination
+ZIPs that sit outside standard delivery areas (e.g. remote / island /
+outlying routes).
+
+**Formula:**
+
+    origin_beyond = parse(ZipZone.beyond for origin_zip)   # token or None
+    dest_beyond   = parse(ZipZone.beyond for destination_zip)
+
+    origin_charge = BeyondRate.rate where zone == origin_beyond   else 0.0
+    dest_charge   = BeyondRate.rate where zone == dest_beyond     else 0.0
+
+    beyond_total  = origin_charge + dest_charge
+
+Both endpoints are scanned independently and their flat fees added — a
+shipment that is beyond at both ends pays both charges. The fee is a flat
+dollar amount per endpoint, NOT a per-pound or per-mile charge.
+
+**`ZipZone.beyond` parsing:** the raw `beyond` column holds an indicator
+string (e.g. `"BEY G"` or `"N/A"`). `_parse_beyond()` rules:
+
+- `None`, empty, `"N/A"`, `"NO"`, `"NONE"`, `"NAN"` → `None` (no charge).
+- Anything else → the last whitespace-separated token, uppercased
+  (e.g. `"BEY G"` → `"G"`). That token is the lookup key for `BeyondRate.zone`.
+
+**Rate-set fallback:** `BeyondRate` rows are scoped by `rate_set`; lookup
+uses `query_with_rate_set_fallback`, so a custom rate set falls back to
+`DEFAULT_RATE_SET` rows that are not overridden.
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `ZipZone.beyond` | str / NULL | — | `ZipZone` row for ZIP | Raw beyond indicator (e.g. `"BEY G"`, `"N/A"`) |
+| `origin_beyond` | str / None | — | `_parse_beyond(origin_row.beyond)` | Normalized lookup key, or `None` if not beyond |
+| `dest_beyond` | str / None | — | `_parse_beyond(dest_row.beyond)` | Normalized lookup key, or `None` if not beyond |
+| `BeyondRate.rate` | float | USD | `BeyondRate` row keyed by `(rate_set, zone)` | Flat dollar surcharge for the beyond code |
+| `beyond_total` | float | USD | `origin_charge + dest_charge` | Sum of both endpoints, fed into EQ-016 |
+
+**Constraints:**
+
+- An unrecognized beyond code OR a missing `BeyondRate` row for the code
+  resolves to `0.0` — beyond fees never fail the quote, they just contribute
+  zero.
+- `BeyondRate.up_to_miles` exists on the model but the air pricing code does
+  NOT consult it (see "Known wart" below).
+- `beyond_total` participates in the fuel surcharge base (EQ-016), so a
+  beyond fee is itself surcharged by the VSC.
+
+**Known wart:** `BeyondRate.up_to_miles` is a column on the model and is
+populated by the CSV importer, but `get_beyond_rate()` ignores it — every
+matching `BeyondRate` row applies its flat `rate` regardless of trip
+distance. If a future beyond schedule needs distance-tiered beyond fees,
+the lookup must change AND this entry must update.
+
+**Code location:** `app/quote/logic_air.py`, `get_beyond_rate()` (~line 143)
+and `calculate_air_quote()` lines ~285-302; `_parse_beyond()` defined inline
+at ~line 285; `BeyondRate` model at `app/models.py:364`.
+
+**Worked example:** Origin ZIP has `ZipZone.beyond = "BEY G"`; destination
+ZIP has `ZipZone.beyond = "N/A"`. `BeyondRate("G").rate = 75.00` in the
+default rate set.
+
+    origin_beyond = "G"
+    dest_beyond   = None
+    origin_charge = 75.00 USD
+    dest_charge   = 0.00 USD
+    beyond_total  = 75.00 USD
+
+Both endpoints beyond (origin `"G"`=75, destination `"H"`=125):
+
+    beyond_total  = 75.00 + 125.00 = 200.00 USD
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-014: Dynamic VSC computation (EIA diesel -> PADD -> surcharge %)
+
+**Purpose:** Derive the live Variable Surcharge percentage from the current
+EIA diesel price for the destination zone's PADD region. This drives Air's
+fuel surcharge (origin's VSC, see EQ-016) and is the same source called by
+the hotshot path (EQ-009 *applies* this value).
+
+**Formula:**
+
+    matrix       = parse(AppSetting["vsc_matrix"])          # list of tier dicts
+    zones        = parse(AppSetting["vsc_zones"])           # dict zone -> region
+    region       = zones.get(dest_zone) or "NATIONAL"
+    fuel_row     = FuelSurcharge where padd_region == region
+                   OR (fallback) FuelSurcharge where padd_region == "NATIONAL"
+    diesel_price = fuel_row.current_rate                    # USD/gallon
+    vsc_pct      = tier.pct for first tier where tier.min <= diesel_price < tier.max
+                   OR 0.0 if no tier matches
+
+The matrix is a JSON array of `{min, max, pct}` objects expressing diesel
+$/gallon ranges that map to a surcharge percentage. The first matching tier
+wins (no interpolation). The match is half-open: `min` is inclusive, `max`
+is exclusive.
+
+**Zone-to-PADD resolution (`resolve_padd_region`):** `vsc_zones` is a JSON
+dict like `{"1": "PADD1", "7": "PADD4"}`. The lookup tries the raw zone
+string first and then its integer-stripped form (so `"09"` and `"9"` both
+resolve). Any zone absent from the dict falls back to `"NATIONAL"`.
+
+**Failure-mode policy (all return `0.0`):**
+
+- `vsc_matrix` AppSetting missing or unparseable.
+- `FuelSurcharge` row missing for both the region AND `NATIONAL`.
+- `diesel_price` falls outside every matrix tier.
+- Any `SQLAlchemyError` during lookup.
+- No active Flask app context (e.g. offline unit tests).
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `dest_zone` | str | — | Caller (e.g. VSC zone from `VscZone`) | Zone identifier to map to a PADD region |
+| `AppSetting["vsc_matrix"]` | JSON | — | `AppSetting` row | Array of `{min, max, pct}` diesel tiers |
+| `AppSetting["vsc_zones"]` | JSON | — | `AppSetting` row | Mapping of zone codes to PADD region names |
+| `FuelSurcharge.current_rate` | float | USD/gal | EIA-sourced row, refreshed by `scripts/sync_eia_rates.py` | Current diesel price for the PADD region |
+| `vsc_pct` | float | fraction | Matrix tier `pct` | Returned surcharge as a decimal (0.185 = 18.5%) |
+
+**Constraints:**
+
+- The matrix interval is `[min, max)` — diesel exactly at `min` matches that
+  tier; diesel exactly at `max` falls through to the next tier (or to 0.0 if
+  it is also above the topmost `max`).
+- "Never blocks a quote" — every failure path returns `0.0` and logs.
+  Operationally that means a misconfigured matrix silently zeros the VSC; the
+  guardrail is the warning log emitted in each branch.
+- `FuelSurcharge` rows are kept current by `scripts/sync_eia_rates.py` (run
+  ad-hoc or via a scheduled job); stale rows continue to return whatever the
+  last sync wrote.
+
+**Code location:** `app/services/fuel_surcharge.py`,
+`get_vsc_pct_for_zone()` (~line 95), `resolve_padd_region()` (~line 40),
+`lookup_matrix_pct()` (~line 72); `FuelSurcharge` model at
+`app/models.py:469`; sync script at `scripts/sync_eia_rates.py`.
+
+**Worked example:** Destination zone `"7"`, `vsc_zones = {"7": "PADD4"}`,
+`FuelSurcharge(padd_region="PADD4").current_rate = 5.123` USD/gal, and
+`vsc_matrix` includes `[{"min": 5.0, "max": 5.5, "pct": 0.185}, ...]`.
+
+    region       = "PADD4"
+    diesel_price = 5.123
+    matched_tier = {"min": 5.0, "max": 5.5, "pct": 0.185}
+    vsc_pct      = 0.185           # 18.5%
+
+Zone `"99"` (not in mapping):
+
+    region       = "NATIONAL"      # fallback
+    -> diesel price comes from the NATIONAL FuelSurcharge row instead
+
+Diesel price `3.40` with matrix tiers all starting at `4.00`:
+
+    matched_tier = None
+    vsc_pct      = 0.0             # logs a warning, quote continues
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-015: Accessorial charge application
+
+**Purpose:** Sum the selected per-quote accessorial charges into the
+`accessorial_total` that EQ-010 (hotshot) and EQ-016 (air) fold into the
+final quote total.
+
+**Formula:**
+
+For each selected accessorial name, look up the `Accessorial` row by name
+(case-insensitive), then accumulate:
+
+    accessorial_total = Σ_selected ( Accessorial.amount )
+
+The "Guarantee" accessorial is special-cased and applied AFTER the freight
+quote computes its base + surcharges. For Air quotes:
+
+    if "guarantee" in selected_names:
+        guarantee_cost     = (quote_total - other_accessorial_total) * 0.25
+        accessorial_total += guarantee_cost
+        quote_total       += guarantee_cost
+
+`quote_total - other_accessorial_total` is the **freight subtotal** for Air:
+linehaul + beyond + fuel surcharge (everything except other accessorials).
+Guarantee is therefore 25% of the surcharged freight, NOT just the
+pre-surcharge linehaul. The comment in `new_quote()` calls it "linehaul and
+beyond" — that wording is imprecise; the fuel surcharge is included.
+
+**Two implementations:** there are two code paths that apply accessorials.
+They are intentionally similar but differ in how they treat the `Accessorial`
+model's `is_percentage` column:
+
+| Path | Where | `is_percentage` honored? | Guarantee handling |
+| --- | --- | --- | --- |
+| Web form | `app/quotes/routes.py`, `new_quote()` (~lines 460-540) | **No** — `amount` is always treated as USD | Hardcoded 25% (Air only); name-matched on `"guarantee"` substring |
+| Canonical service | `app/services/quote.py`, `create_quote()` (~lines 230-278) | **Yes**, via name-match on `"guarantee"` | `Accessorial.amount` is interpreted as the percentage value (e.g. `25.0` -> 25%); defaults to 25.0 if zero; applied to BOTH Air and Hotshot |
+
+The web-form path is what hits the database for interactive submissions; the
+service path is invoked by the JSON API and the Science Care multi-leg flow.
+Both produce the same Guarantee = 25% behavior for Air today, because the
+seeded `Accessorial("Guarantee")` row stores `amount = 25.0` and
+`is_percentage = True`.
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `selected_names` | list[str] | — | Form `accessorials` field / JSON `accessorials` array | Display names of selected accessorials |
+| `Accessorial.amount` | float | USD or % | `Accessorial` row | Flat dollar amount (default) or percentage value (when `is_percentage=True`) |
+| `Accessorial.is_percentage` | bool | — | `Accessorial` row | Honored by service path; ignored by web-form path |
+| `quote_total` | float | USD | `calculate_air_quote()` / `calculate_hotshot_quote()` | Pre-guarantee quote total returned by pricing |
+| `accessorial_total` | float | USD | running sum | Accumulated across fixed accessorials + Guarantee |
+
+**Constraints:**
+
+- Unknown accessorial names (no matching `Accessorial` row, case-insensitive)
+  are silently dropped — they do not contribute to `accessorial_total` and do
+  not error out the quote.
+- Guarantee is applied to Air-only in the web-form path (Hotshot ignores it).
+  The service path applies it to both quote types — a minor divergence;
+  Hotshot guarantees are currently filtered out at the option-list level
+  (`get_accessorial_options("Hotshot")` strips any name containing
+  "guarantee") so this branch is unreachable from the UI today.
+- Accessorial selection is a flat list of names — there is no per-quote
+  override of the amount; the seeded `Accessorial.amount` is authoritative.
+- The cached `Accessorial` rows live in `_accessorial_cache()`
+  (`app/quotes/routes.py`, 1-entry LRU) and `_get_accessorial_rows()`
+  (`app/services/quote.py`, 24-hour TTL). Admin edits must call
+  `clear_accessorial_cache()` for the web path; the service path picks up
+  changes on the next TTL refresh.
+
+**Known wart:** the web-form path ignores `is_percentage` entirely. If an
+admin adds a new percentage-type accessorial (other than Guarantee) via
+`/admin/accessorials`, the web form will charge its `amount` as flat USD
+instead of as a percentage. The service path (JSON API, SC flow) handles it
+correctly only when the name contains "guarantee" — any other percentage
+accessorial there also falls back to flat-USD treatment. A unified policy
+that honors `is_percentage` for arbitrary accessorial names is filed as a
+follow-up.
+
+**Code location:** `app/quotes/routes.py`, `new_quote()` lines ~460-540
+(fixed sum + Air-only Guarantee post-processing); `app/services/quote.py`,
+`create_quote()` lines ~230-278 (alternative path used by JSON/SC);
+accessorial cache in `app/quotes/routes.py:_accessorial_cache()` (~line 146);
+`Accessorial` model at `app/models.py:323`.
+
+**Worked example:** Air quote, `quote_total = 500.00` returned from
+`calculate_air_quote` (which already includes the FSC), other accessorials
+`"4hr Window" = $50` and `"Weekend" = $125` (already inside the 500). The
+user also selected `"Guarantee"`.
+
+    fixed_accessorial_total = 50 + 125 = 175.00 USD
+    accessorial_total       = 175.00 USD
+    quote_total (from air)  = 500.00 USD       # base + beyond + fsc + 175
+
+    linehaul_with_beyond_and_fsc = 500.00 - 175.00 = 325.00 USD
+    guarantee_cost               = 325.00 * 0.25  = 81.25 USD
+
+    accessorial_total = 175.00 + 81.25 = 256.25 USD
+    quote_total       = 500.00 + 81.25 = 581.25 USD
+
+Hotshot quote, same accessorials but no Guarantee (web-form path strips it):
+
+    accessorial_total = 50 + 125 = 175.00 USD
+    # Guarantee never appears in Hotshot's option list, so it is not applied.
+
+**Last verified:** 2026-06-23
+
+---
+
+## EQ-016: Air quote total
+
+**Purpose:** Combine the base linehaul, beyond charges, dynamic VSC, and
+accessorial total into the final customer-facing Air quote.
+
+**Formula:**
+
+    total_base_freight = base + beyond_total
+    fsc_pct            = origin_vsc_pct                # NB: origin, not dest
+    fsc_amount         = total_base_freight * fsc_pct
+    quote_total        = total_base_freight + fsc_amount + accessorial_total
+
+Guarantee is then folded in by the route handler per EQ-015 (Air only).
+
+**Origin vs destination VSC:** Air uses the ORIGIN ZIP's VSC zone to derive
+`fsc_pct`. This is intentional and policy-driven — Air quotes apply "a single
+fuel surcharge from the origin zone's EIA diesel price." (`surcharge_policy
+= "origin_zone_fsc"` in the result dict.) Hotshot, by contrast, applies the
+DESTINATION zone's VSC (EQ-009). The destination's VSC percentage is still
+computed and surfaced in the result as `dest_vsc_pct` for transparency, but
+it does not enter the dollar math.
+
+**VSC base includes beyond:** the fuel surcharge is applied to
+`base + beyond_total`, not to `base` alone — so a beyond-fee endpoint is
+itself surcharged. This is the documented behavior and matches the
+"surcharges total base freight (linehaul plus any beyond charges)" comment
+in `calculate_air_quote`. Accessorials are NOT surcharged.
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `base` | float | USD | EQ-012 | Pre-surcharge linehaul |
+| `beyond_total` | float | USD | EQ-013 | Origin + destination flat beyond fees |
+| `origin_vsc_pct` | float | fraction | EQ-014 with `dest_zone = VscZone(origin).vsc_zone` | Origin's dynamic VSC percentage |
+| `accessorial_total` | float | USD | EQ-015 (pre-Guarantee) | Sum of selected accessorials |
+
+**Constraints:**
+
+- The origin and destination VSC zones come from `VscZone` (not `ZipZone`) —
+  the two tables are intentionally split so Air-routing zones and surcharge
+  zones can evolve independently.
+- A missing `VscZone` row for either endpoint fails the quote with an
+  explicit error ("missing valid vsc_zone"). The Air path does NOT silently
+  apply 0.0 — `dest_vsc_pct` is still resolved for the result dict even
+  though it is not used in the dollar math.
+- `total_fsc_applied` is set to `fsc_pct` (the same value used in the dollar
+  computation); it is purely informational.
+
+**Code location:** `app/quote/logic_air.py`, `calculate_air_quote()`,
+lines ~304-329; Air-only Guarantee post-processing in
+`app/quotes/routes.py:new_quote()` (~lines 534-540).
+
+**Worked example:** Cost zone `C` with `min_charge=85.00`, `per_lb=0.50`,
+`weight_break=200`. Origin beyond `"G"` = $75; destination not beyond.
+`billable_weight = 300 lb`. Origin's `vsc_pct = 0.185`. `accessorial_total =
+50.00` (no Guarantee).
+
+    base               = 85.00 + (300 - 200) * 0.50 = 135.00 USD   (EQ-012)
+    beyond_total       = 75.00 + 0.00               =  75.00 USD   (EQ-013)
+    total_base_freight = 135.00 + 75.00             = 210.00 USD
+    fsc_amount         = 210.00 * 0.185             =  38.85 USD
+    quote_total        = 210.00 + 38.85 + 50.00     = 298.85 USD
+
+Same inputs plus the user selects Guarantee (EQ-015 post-processing):
+
+    linehaul_with_beyond_and_fsc = 298.85 - 50.00     = 248.85 USD
+    guarantee_cost               = 248.85 * 0.25      =  62.2125 USD
+    final_quote_total            = 298.85 + 62.2125   = 361.0625 USD
 
 **Last verified:** 2026-06-23
