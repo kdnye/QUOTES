@@ -172,7 +172,10 @@ def pytest_collection_modifyitems(config, items):
     here so the list is easy to audit, and dropping a node id from the
     set the moment its underlying bug is fixed flips the test from
     xfail back to a hard pass without combing the codebase for inline
-    decorators.
+    decorators. ``strict=True`` turns an unexpected pass (XPASS) into a
+    test failure so a fixed test that's still on the list breaks the
+    build instead of silently sliding through as "passed" - which is
+    what surfaces "this should be removed from the list now".
     """
 
     marker = pytest.mark.xfail(
@@ -180,7 +183,7 @@ def pytest_collection_modifyitems(config, items):
             "Pre-existing failure exposed by tests/conftest.py "
             "_reset_postgres_schema; tracked in _KNOWN_FAILURE_NODEIDS."
         ),
-        strict=False,
+        strict=True,
     )
     for item in items:
         if item.nodeid in _KNOWN_FAILURE_NODEIDS:
