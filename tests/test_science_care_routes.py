@@ -2054,6 +2054,55 @@ def test_sc_email_ops_composer_escapes_intake_for_xss(
     assert payload in captured["body"]
 
 
+def test_sc_email_ops_composer_html_preview_is_sandboxed_in_iframe(
+    app: Flask,
+) -> None:
+    """Regression: the formatted-HTML email preview must be embedded
+    via ``<iframe srcdoc>``, not inlined via ``{% include %}``.
+
+    The email body template starts with ``<!doctype html>...<body
+    style="background:#f8f9fa;...">`` so inlining it makes the
+    browser merge the email's ``<body>`` attributes (including the
+    light background) onto the composer page's single ``<body>``
+    element, which paved over the page's dark-mode theme. The iframe
+    sandboxes the embedded document so its inline styles can't
+    escape into the parent.
+    """
+
+    user = _make_user(
+        "sc-iframe@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+
+    # The iframe carries the rendered email document via srcdoc and
+    # the sandbox attribute keeps any scripts in the embedded body
+    # from running.
+    assert 'id="sc-email-html-preview"' in html
+    assert 'srcdoc=' in html
+    # ``allow-popups`` is required so a ``mailto:`` link inside the
+    # rendered email body (the user's email address surfaces as one
+    # in the preview header) can still open the user's mail client
+    # when clicked from inside the sandboxed iframe.
+    assert 'sandbox="allow-same-origin allow-popups"' in html
+
+    # An inline ``{% include %}`` of the email template would leave
+    # a SECOND raw ``<body`` opening tag in the composer page's
+    # source (the email template starts with ``<!doctype html>`` and
+    # opens its own ``<body style="background:#f8f9fa;...">``). The
+    # outer base.html still contributes the page's own ``<body>``,
+    # so what we want to assert is exactly one occurrence of an
+    # unescaped opening body tag in the document. Anything inside the
+    # iframe's ``srcdoc`` attribute is escaped to ``&lt;body...`` and
+    # not counted.
+    assert html.count("<body") == 1
+
+
 def test_sc_email_ops_composer_buttons_warn_when_intake_missing(
     app: Flask,
 ) -> None:

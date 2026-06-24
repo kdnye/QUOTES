@@ -224,8 +224,21 @@
       This is what the recipient sees. Postmark also includes the plain-text body below as a fallback for clients that block HTML.
     </small>
   </div>
-  <div class="card-body" id="sc-email-html-preview" style="background:#f8f9fa;">
-    {% include "sc/emails/booking_request.html" %}
+  {# The email body is a full ``<!doctype html>...<body style="...">``
+     document. Inlining it with ``{% include %}`` makes the browser
+     merge the email template's ``<body>`` attributes (including its
+     light ``background:#f8f9fa``) onto the composer page's single
+     ``<body>`` element, which paves over our dark theme. ``html_preview``
+     is the pre-rendered body string from the route; an iframe with
+     ``srcdoc`` sandboxes the document so its styles can't escape.
+     ``sandbox="allow-same-origin"`` blocks scripts but keeps CSS
+     variables working in the embed - the email body has no scripts. #}
+  <div class="card-body p-0">
+    <iframe id="sc-email-html-preview"
+            sandbox="allow-same-origin allow-popups"
+            srcdoc="{{ html_preview }}"
+            title="Formatted HTML email preview"
+            style="width:100%;height:600px;border:0;background:#f8f9fa;"></iframe>
   </div>
 </div>
 
