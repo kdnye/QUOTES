@@ -270,13 +270,29 @@
   </div>
 
   <div id="quote-send-status" class="alert d-none mt-3" role="status" aria-live="polite"></div>
+  {# Bootstrap tooltips are auto-initialised in base.html. We attach
+     them here with empty titles; the JS below sets data-bs-original-title
+     dynamically as the form's shipper / consignee fields are filled in,
+     so the warning surfaces (button turns yellow + ⚠ icon + tooltip)
+     until both blocks have a name + address. #}
   <div class="d-flex flex-wrap gap-2 mt-3">
     <button type="submit" class="btn btn-primary"
             id="quote-send-postmark-btn"
-            data-send-url="{{ url_for('quotes.email_request_send', quote_id=quote.quote_id) }}">
+            data-send-url="{{ url_for('quotes.email_request_send', quote_id=quote.quote_id) }}"
+            data-bs-toggle="tooltip"
+            data-bs-placement="bottom"
+            data-bs-html="true"
+            data-default-label="Email to Book"
+            title="">
       Email to Book
     </button>
-    <button type="button" class="btn btn-outline-secondary" id="quote-mailto-fallback-btn">
+    <button type="button" class="btn btn-outline-secondary"
+            id="quote-mailto-fallback-btn"
+            data-bs-toggle="tooltip"
+            data-bs-placement="bottom"
+            data-bs-html="true"
+            data-default-label="Open in mail client (fallback)"
+            title="">
       Open in mail client (fallback)
     </button>
   </div>
@@ -544,6 +560,84 @@ function openInMailClient() {
   const mailto = `mailto:operations@freightservices.net?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
   window.location.href = mailto;
 }
+
+// Show a yellow ⚠ tooltip ("flyover") on both action buttons until the
+// shipper + consignee blocks have at minimum a name and a street
+// address filled in. The full booking flow only requires pickup_date
+// at the HTML form level, so without this nudge a user can submit a
+// booking email with empty shipper / consignee blocks.
+function intakeWarningMessage() {
+  const shipperName = (emailForm.shipper_name.value || '').trim();
+  const shipperStreet = (emailForm.shipper_street.value || '').trim();
+  const consigneeName = (emailForm.consignee_name.value || '').trim();
+  const consigneeStreet = (emailForm.consignee_street.value || '').trim();
+  const missing = [];
+  if (!shipperName) missing.push('shipper name');
+  if (!shipperStreet) missing.push('shipper address');
+  if (!consigneeName) missing.push('consignee name');
+  if (!consigneeStreet) missing.push('consignee address');
+  if (!missing.length) return '';
+  return (
+    '⚠ Missing ' + missing.join(', ') + '. The booking email will '
+    + 'still send, but ops will not have the contact info to schedule the move.'
+  );
+}
+
+function syncIntakeWarning() {
+  const message = intakeWarningMessage();
+  [sendBtn, mailtoFallbackBtn].forEach((btn) => {
+    if (!btn) return;
+    // Bootstrap 5 picks up the initial tooltip text from the ``title``
+    // (or ``data-bs-title``) attribute when the Tooltip instance is
+    // constructed. ``data-bs-original-title`` is an internal cache
+    // and is NOT read by the constructor, so we can't rely on it for
+    // first-paint. When the tooltip instance already exists (after
+    // base.html's auto-init has run), drive the live content via
+    // ``setContent`` and toggle ``enable()`` / ``disable()`` so an
+    // empty message doesn't render as a blank popover bubble.
+    const tip = window.bootstrap ? bootstrap.Tooltip.getInstance(btn) : null;
+    if (message) {
+      btn.classList.add('btn-warning');
+      btn.classList.remove('btn-primary', 'btn-outline-secondary');
+      const label = btn.dataset.defaultLabel || btn.textContent.trim();
+      if (!btn.textContent.includes('⚠')) {
+        btn.textContent = '⚠ ' + label;
+      }
+      if (tip) {
+        tip.enable();
+        tip.setContent({ '.tooltip-inner': message });
+      } else {
+        btn.setAttribute('data-bs-title', message);
+        btn.setAttribute('title', message);
+      }
+    } else {
+      btn.classList.remove('btn-warning');
+      if (btn.id === 'quote-send-postmark-btn') {
+        btn.classList.add('btn-primary');
+      } else {
+        btn.classList.add('btn-outline-secondary');
+      }
+      const label = btn.dataset.defaultLabel || btn.textContent.replace(/^⚠\s*/, '').trim();
+      btn.textContent = label;
+      if (tip) {
+        tip.disable();
+        tip.hide();
+      } else {
+        btn.setAttribute('data-bs-title', '');
+        btn.setAttribute('title', '');
+      }
+    }
+  });
+}
+
+// Re-evaluate as the user types so the warning clears the moment
+// shipper + consignee are filled in.
+['shipper_name', 'shipper_street', 'consignee_name', 'consignee_street'].forEach((name) => {
+  const field = emailForm[name];
+  if (field) field.addEventListener('input', syncIntakeWarning);
+});
+// Initial paint - the tooltip starts empty so set it on page load.
+syncIntakeWarning();
 
 mailtoFallbackBtn.addEventListener('click', openInMailClient);
 
