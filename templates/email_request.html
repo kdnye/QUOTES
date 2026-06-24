@@ -587,6 +587,14 @@ function syncIntakeWarning() {
   const message = intakeWarningMessage();
   [sendBtn, mailtoFallbackBtn].forEach((btn) => {
     if (!btn) return;
+    // Bootstrap 5 picks up the initial tooltip text from the ``title``
+    // (or ``data-bs-title``) attribute when the Tooltip instance is
+    // constructed. ``data-bs-original-title`` is an internal cache
+    // and is NOT read by the constructor, so we can't rely on it for
+    // first-paint. When the tooltip instance already exists (after
+    // base.html's auto-init has run), drive the live content via
+    // ``setContent`` and toggle ``enable()`` / ``disable()`` so an
+    // empty message doesn't render as a blank popover bubble.
     const tip = window.bootstrap ? bootstrap.Tooltip.getInstance(btn) : null;
     if (message) {
       btn.classList.add('btn-warning');
@@ -596,9 +604,11 @@ function syncIntakeWarning() {
         btn.textContent = '⚠ ' + label;
       }
       if (tip) {
+        tip.enable();
         tip.setContent({ '.tooltip-inner': message });
       } else {
-        btn.setAttribute('data-bs-original-title', message);
+        btn.setAttribute('data-bs-title', message);
+        btn.setAttribute('title', message);
       }
     } else {
       btn.classList.remove('btn-warning');
@@ -610,10 +620,11 @@ function syncIntakeWarning() {
       const label = btn.dataset.defaultLabel || btn.textContent.replace(/^⚠\s*/, '').trim();
       btn.textContent = label;
       if (tip) {
-        tip.setContent({ '.tooltip-inner': '' });
+        tip.disable();
         tip.hide();
       } else {
-        btn.setAttribute('data-bs-original-title', '');
+        btn.setAttribute('data-bs-title', '');
+        btn.setAttribute('title', '');
       }
     }
   });
