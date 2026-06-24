@@ -1532,9 +1532,16 @@ _BOOKING_INTAKE_SHIPPER_FIELDS = (
     "city",
     "state",
     "zip",
-    "contact",
-    "reference",
     "phone",
+    "reference",
+    # The contact sub-block lives at the same level as the shipper /
+    # consignee fields so the parser stays a flat ``form -> dict`` map.
+    # ``contact`` is the person's name; ``contact_phone`` and
+    # ``contact_email`` may differ from the shipper's ``phone`` (e.g.
+    # a dispatcher's cell vs. the warehouse front desk).
+    "contact",
+    "contact_phone",
+    "contact_email",
     "notes",
 )
 _BOOKING_INTAKE_CONSIGNEE_FIELDS = _BOOKING_INTAKE_SHIPPER_FIELDS

@@ -56,23 +56,33 @@
 
   {% set shipper = intake.shipper or {} %}
   <h2 class="h5">Shipper info</h2>
-  <div class="row g-3 mb-4">
+  <p class="small text-body-secondary mb-2">
+    The shipper is the pickup business / address. The contact block
+    below captures the specific person ops should reach by phone or
+    email — they may differ from the shipper's main number.
+  </p>
+  <div class="row g-3 mb-3">
     <div class="col-md-6">
       <label class="form-label" for="shipper_name">Name</label>
       <input id="shipper_name" name="shipper_name" type="text"
              class="form-control" value="{{ shipper.name or '' }}">
     </div>
-    <div class="col-md-6">
-      <label class="form-label" for="shipper_contact">Contact</label>
-      <input id="shipper_contact" name="shipper_contact" type="text"
-             class="form-control" value="{{ shipper.contact or '' }}">
+    <div class="col-md-3">
+      <label class="form-label" for="shipper_phone">Phone</label>
+      <input id="shipper_phone" name="shipper_phone" type="tel"
+             class="form-control" value="{{ shipper.phone or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="shipper_reference">Reference</label>
+      <input id="shipper_reference" name="shipper_reference" type="text"
+             class="form-control" value="{{ shipper.reference or '' }}">
     </div>
     <div class="col-12">
       <label class="form-label" for="shipper_street">Street address</label>
       <input id="shipper_street" name="shipper_street" type="text"
              class="form-control" value="{{ shipper.street or '' }}">
     </div>
-    <div class="col-md-4">
+    <div class="col-md-5">
       <label class="form-label" for="shipper_city">City</label>
       <input id="shipper_city" name="shipper_city" type="text"
              class="form-control" value="{{ shipper.city or '' }}">
@@ -88,16 +98,29 @@
       <input id="shipper_zip" name="shipper_zip" type="text"
              class="form-control" value="{{ shipper.zip or '' }}">
     </div>
-    <div class="col-md-3">
-      <label class="form-label" for="shipper_phone">Phone</label>
-      <input id="shipper_phone" name="shipper_phone" type="text"
-             class="form-control" value="{{ shipper.phone or '' }}">
+  </div>
+
+  <h3 class="h6 text-body-secondary">Shipper contact</h3>
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <label class="form-label" for="shipper_contact">Contact name</label>
+      <input id="shipper_contact" name="shipper_contact" type="text"
+             class="form-control" value="{{ shipper.contact or '' }}">
     </div>
-    <div class="col-md-6">
-      <label class="form-label" for="shipper_reference">Shipper reference</label>
-      <input id="shipper_reference" name="shipper_reference" type="text"
-             class="form-control" value="{{ shipper.reference or '' }}">
+    <div class="col-md-4">
+      <label class="form-label" for="shipper_contact_phone">Contact phone</label>
+      <input id="shipper_contact_phone" name="shipper_contact_phone" type="tel"
+             class="form-control" value="{{ shipper.contact_phone or '' }}"
+             placeholder="Different from shipper phone? Use this.">
     </div>
+    <div class="col-md-4">
+      <label class="form-label" for="shipper_contact_email">Contact email</label>
+      <input id="shipper_contact_email" name="shipper_contact_email" type="email"
+             class="form-control" value="{{ shipper.contact_email or '' }}">
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
     <div class="col-12">
       <label class="form-label" for="shipper_notes">
         Shipper notes / pickup instructions
@@ -110,23 +133,33 @@
 
   {% set consignee = intake.consignee or {} %}
   <h2 class="h5">Consignee info</h2>
-  <div class="row g-3 mb-4">
+  <p class="small text-body-secondary mb-2">
+    The consignee is the delivery business / address. The contact
+    block below captures the specific person ops should reach by phone
+    or email — they may differ from the consignee's main number.
+  </p>
+  <div class="row g-3 mb-3">
     <div class="col-md-6">
       <label class="form-label" for="consignee_name">Name</label>
       <input id="consignee_name" name="consignee_name" type="text"
              class="form-control" value="{{ consignee.name or '' }}">
     </div>
-    <div class="col-md-6">
-      <label class="form-label" for="consignee_contact">Contact</label>
-      <input id="consignee_contact" name="consignee_contact" type="text"
-             class="form-control" value="{{ consignee.contact or '' }}">
+    <div class="col-md-3">
+      <label class="form-label" for="consignee_phone">Phone</label>
+      <input id="consignee_phone" name="consignee_phone" type="tel"
+             class="form-control" value="{{ consignee.phone or '' }}">
+    </div>
+    <div class="col-md-3">
+      <label class="form-label" for="consignee_reference">Reference</label>
+      <input id="consignee_reference" name="consignee_reference" type="text"
+             class="form-control" value="{{ consignee.reference or '' }}">
     </div>
     <div class="col-12">
       <label class="form-label" for="consignee_street">Street address</label>
       <input id="consignee_street" name="consignee_street" type="text"
              class="form-control" value="{{ consignee.street or '' }}">
     </div>
-    <div class="col-md-4">
+    <div class="col-md-5">
       <label class="form-label" for="consignee_city">City</label>
       <input id="consignee_city" name="consignee_city" type="text"
              class="form-control" value="{{ consignee.city or '' }}">
@@ -142,16 +175,29 @@
       <input id="consignee_zip" name="consignee_zip" type="text"
              class="form-control" value="{{ consignee.zip or '' }}">
     </div>
-    <div class="col-md-3">
-      <label class="form-label" for="consignee_phone">Phone</label>
-      <input id="consignee_phone" name="consignee_phone" type="text"
-             class="form-control" value="{{ consignee.phone or '' }}">
+  </div>
+
+  <h3 class="h6 text-body-secondary">Consignee contact</h3>
+  <div class="row g-3 mb-3">
+    <div class="col-md-4">
+      <label class="form-label" for="consignee_contact">Contact name</label>
+      <input id="consignee_contact" name="consignee_contact" type="text"
+             class="form-control" value="{{ consignee.contact or '' }}">
     </div>
-    <div class="col-md-6">
-      <label class="form-label" for="consignee_reference">Consignee reference</label>
-      <input id="consignee_reference" name="consignee_reference" type="text"
-             class="form-control" value="{{ consignee.reference or '' }}">
+    <div class="col-md-4">
+      <label class="form-label" for="consignee_contact_phone">Contact phone</label>
+      <input id="consignee_contact_phone" name="consignee_contact_phone" type="tel"
+             class="form-control" value="{{ consignee.contact_phone or '' }}"
+             placeholder="Different from consignee phone? Use this.">
     </div>
+    <div class="col-md-4">
+      <label class="form-label" for="consignee_contact_email">Contact email</label>
+      <input id="consignee_contact_email" name="consignee_contact_email" type="email"
+             class="form-control" value="{{ consignee.contact_email or '' }}">
+    </div>
+  </div>
+
+  <div class="row g-3 mb-4">
     <div class="col-12">
       <label class="form-label" for="consignee_notes">
         Consignee notes / delivery instructions

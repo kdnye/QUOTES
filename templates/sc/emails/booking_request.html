@@ -31,7 +31,7 @@
       <tr>
         <td style="border:1px solid #dee2e6;vertical-align:top;">
           <div style="font-weight:bold;margin-bottom:4px;">Shipper</div>
-          {{ shipper.name or '—' }}{% if shipper.contact %} — {{ shipper.contact }}{% endif %}<br>
+          {{ shipper.name or '—' }}<br>
           {% if shipper.phone %}{{ shipper.phone }}<br>{% endif %}
           {% if shipper.street or shipper.city or shipper.state or shipper.zip %}
           <span style="color:#6c757d;">
@@ -39,11 +39,17 @@
           </span><br>
           {% endif %}
           {% if shipper.reference %}<span style="color:#6c757d;">Ref: {{ shipper.reference }}</span><br>{% endif %}
-          {% if shipper.notes %}<div style="color:#6c757d;margin-top:4px;">Notes: {{ shipper.notes }}</div>{% endif %}
+          {% if shipper.contact or shipper.contact_phone or shipper.contact_email %}
+          <div style="font-weight:bold;margin:8px 0 4px 0;">Shipper contact</div>
+          {% if shipper.contact %}{{ shipper.contact }}<br>{% endif %}
+          {% if shipper.contact_phone %}{{ shipper.contact_phone }}<br>{% endif %}
+          {% if shipper.contact_email %}<a href="mailto:{{ shipper.contact_email }}" style="color:#0d6efd;">{{ shipper.contact_email }}</a><br>{% endif %}
+          {% endif %}
+          {% if shipper.notes %}<div style="color:#6c757d;margin-top:8px;">Notes: {{ shipper.notes }}</div>{% endif %}
         </td>
         <td style="border:1px solid #dee2e6;vertical-align:top;">
           <div style="font-weight:bold;margin-bottom:4px;">Consignee</div>
-          {{ consignee.name or '—' }}{% if consignee.contact %} — {{ consignee.contact }}{% endif %}<br>
+          {{ consignee.name or '—' }}<br>
           {% if consignee.phone %}{{ consignee.phone }}<br>{% endif %}
           {% if consignee.street or consignee.city or consignee.state or consignee.zip %}
           <span style="color:#6c757d;">
@@ -51,7 +57,13 @@
           </span><br>
           {% endif %}
           {% if consignee.reference %}<span style="color:#6c757d;">Ref: {{ consignee.reference }}</span><br>{% endif %}
-          {% if consignee.notes %}<div style="color:#6c757d;margin-top:4px;">Notes: {{ consignee.notes }}</div>{% endif %}
+          {% if consignee.contact or consignee.contact_phone or consignee.contact_email %}
+          <div style="font-weight:bold;margin:8px 0 4px 0;">Consignee contact</div>
+          {% if consignee.contact %}{{ consignee.contact }}<br>{% endif %}
+          {% if consignee.contact_phone %}{{ consignee.contact_phone }}<br>{% endif %}
+          {% if consignee.contact_email %}<a href="mailto:{{ consignee.contact_email }}" style="color:#0d6efd;">{{ consignee.contact_email }}</a><br>{% endif %}
+          {% endif %}
+          {% if consignee.notes %}<div style="color:#6c757d;margin-top:8px;">Notes: {{ consignee.notes }}</div>{% endif %}
         </td>
       </tr>
     </table>

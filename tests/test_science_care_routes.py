@@ -1690,6 +1690,8 @@ _SAMPLE_INTAKE_FORM = {
     "delivery_date": "2026-07-02",
     "shipper_name": "Acme Tissue Bank",
     "shipper_contact": "Jamie Shipper",
+    "shipper_contact_phone": "555-111-9999",
+    "shipper_contact_email": "jamie@acme.example",
     "shipper_street": "123 Donor Way",
     "shipper_city": "Tucson",
     "shipper_state": "AZ",
@@ -1699,6 +1701,8 @@ _SAMPLE_INTAKE_FORM = {
     "shipper_notes": "Use rear dock. Closes at 4pm.",
     "consignee_name": "Recipient Lab",
     "consignee_contact": "Pat Consignee",
+    "consignee_contact_phone": "555-333-8888",
+    "consignee_contact_email": "pat@recipient.example",
     "consignee_street": "789 Receiving Blvd",
     "consignee_city": "Seattle",
     "consignee_state": "WA",
@@ -1736,6 +1740,8 @@ def test_sc_email_ops_intake_renders_form(app: Flask) -> None:
             "state",
             "zip",
             "contact",
+            "contact_phone",
+            "contact_email",
             "reference",
             "phone",
             "notes",
@@ -1780,8 +1786,15 @@ def test_sc_email_ops_intake_post_persists_and_round_trips(
     assert intake["delivery_date"] == "2026-07-02"
     assert intake["shipper"]["name"] == "Acme Tissue Bank"
     assert intake["shipper"]["contact"] == "Jamie Shipper"
+    # Contact phone + email are separate from the shipper / consignee
+    # phone so ops can reach the specific dispatcher even when the
+    # business front desk has a different number.
+    assert intake["shipper"]["contact_phone"] == "555-111-9999"
+    assert intake["shipper"]["contact_email"] == "jamie@acme.example"
     assert intake["consignee"]["zip"] == "98101"
     assert intake["consignee"]["notes"] == "Page on arrival."
+    assert intake["consignee"]["contact_phone"] == "555-333-8888"
+    assert intake["consignee"]["contact_email"] == "pat@recipient.example"
 
     # Re-GET pre-fills the values into the form.
     response = client.get(
@@ -1790,6 +1803,8 @@ def test_sc_email_ops_intake_post_persists_and_round_trips(
     html = response.get_data(as_text=True)
     assert "Acme Tissue Bank" in html
     assert "RL-CASE-42" in html
+    assert "555-111-9999" in html
+    assert "jamie@acme.example" in html
 
 
 def test_sc_email_ops_composer_shows_intake_card_when_populated(
@@ -1876,10 +1891,72 @@ def test_sc_email_ops_email_body_includes_intake_block(
     assert "Pat Consignee" in body
     assert "2026-07-01" in body
     assert "Page on arrival." in body
+    # The contact block must surface as its own labeled section so a
+    # dispatcher's separate phone / email aren't buried next to the
+    # shipper's main number.
+    assert "[ SHIPPER CONTACT ]" in body
+    assert "[ CONSIGNEE CONTACT ]" in body
+    assert "555-111-9999" in body
+    assert "jamie@acme.example" in body
+    assert "555-333-8888" in body
+    assert "pat@recipient.example" in body
 
     html_body = captured["html_body"]
     assert "Acme Tissue Bank" in html_body
     assert "Booking details" in html_body
+    # HTML body labels the contact sub-block as its own header too.
+    assert "Shipper contact" in html_body
+    assert "Consignee contact" in html_body
+    assert "jamie@acme.example" in html_body
+    assert "pat@recipient.example" in html_body
+
+
+def test_sc_email_ops_email_body_omits_contact_block_when_no_contact_fields(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """If the intake captured shipper / consignee addresses but no
+    contact name / phone / email, the email body must omit the
+    contact sub-section entirely - we don't want a header followed
+    by three empty dashes.
+    """
+
+    user = _make_user(
+        "sc-intake-no-contact@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Acme",
+            "shipper_phone": "555-1111",
+            "consignee_name": "Recipient",
+            # No contact / contact_phone / contact_email on either side.
+        },
+    )
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+        captured["html_body"] = kwargs.get("html_body")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    response = client.post(f"/sc/quote/{session.id}/email-ops/send")
+    assert response.status_code == 200
+    body = captured["body"]
+    assert "[ SHIPPER ]" in body
+    assert "[ SHIPPER CONTACT ]" not in body
+    assert "[ CONSIGNEE CONTACT ]" not in body
+    html_body = captured["html_body"]
+    assert "Shipper contact" not in html_body
+    assert "Consignee contact" not in html_body
 
 
 def test_sc_email_ops_email_body_omits_intake_block_when_empty(
