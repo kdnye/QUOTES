@@ -2085,7 +2085,11 @@ def test_sc_email_ops_composer_html_preview_is_sandboxed_in_iframe(
     # from running.
     assert 'id="sc-email-html-preview"' in html
     assert 'srcdoc=' in html
-    assert 'sandbox=' in html
+    # ``allow-popups`` is required so a ``mailto:`` link inside the
+    # rendered email body (the user's email address surfaces as one
+    # in the preview header) can still open the user's mail client
+    # when clicked from inside the sandboxed iframe.
+    assert 'sandbox="allow-same-origin allow-popups"' in html
 
     # An inline ``{% include %}`` of the email template would leave
     # a SECOND raw ``<body`` opening tag in the composer page's
