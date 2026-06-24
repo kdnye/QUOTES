@@ -1710,6 +1710,25 @@ def sc_email_ops_for_booking(session_id: int):
         intake=intake,
         intake_has_content=intake_has_content,
     )
+    # Render the formatted-HTML email body server-side too so the
+    # composer can embed it inside an ``<iframe srcdoc=...>``. Inlining
+    # the rendered ``.html`` directly via ``{% include %}`` makes the
+    # browser merge the email template's ``<body style="background:
+    # #f8f9fa;...">`` attribute onto the composer page's single
+    # ``<body>`` element, which paves over the page's dark-mode
+    # background. An iframe sandboxes the email document so its
+    # inline styles can't escape into the parent page.
+    html_preview = render_template(
+        "sc/emails/booking_request.html",
+        sc_session=session,
+        legs=legs,
+        grand_total=float(session.grand_total or 0.0),
+        user_name=getattr(current_user, "name", "") or "",
+        user_email=getattr(current_user, "email", "") or "",
+        user_company=getattr(current_user, "company_name", "") or "",
+        intake=intake,
+        intake_has_content=intake_has_content,
+    )
     return render_template(
         "sc/email_ops_request.html",
         sc_session=session,
@@ -1721,6 +1740,7 @@ def sc_email_ops_for_booking(session_id: int):
         intake=intake,
         intake_has_content=intake_has_content,
         text_preview=text_preview,
+        html_preview=html_preview,
     )
 
 
