@@ -1644,6 +1644,7 @@ def sc_email_ops_intake(session_id: int):
         "sc/email_ops_intake.html",
         sc_session=session,
         intake=intake,
+        maps_api_key=_resolve_maps_api_key(),
     )
 
 

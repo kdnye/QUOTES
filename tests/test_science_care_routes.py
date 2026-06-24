@@ -1751,6 +1751,75 @@ def test_sc_email_ops_intake_renders_form(app: Flask) -> None:
     assert 'name="delivery_date"' in html
 
 
+def test_sc_email_ops_intake_includes_maps_bootstrap_when_key_present(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When a Google Maps API key is configured, the SC intake page
+    loads the Places library and the autocomplete bootstrap so typing
+    in the shipper / consignee Street Address auto-fills city / state /
+    ZIP.
+
+    Mirrors ``test_email_request_form_includes_maps_bootstrap_when_key_present``
+    on the single-quote workflow - we want the SC users to get the
+    same typing speed-up.
+    """
+
+    monkeypatch.setenv("MAPS_API_KEY", "maps-from-env")
+    user = _make_user(
+        "sc-intake-maps@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        f"/sc/quote/{session.id}/email-ops/intake"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert (
+        "maps.googleapis.com/maps/api/js?key=maps-from-env&libraries=places"
+        in html
+    )
+    assert "callback=initAddressAutocomplete" in html
+    assert "new google.maps.places.Autocomplete" in html
+    # Both shipper + consignee street inputs need feedback divs so
+    # the helper can report when an address part wasn't recognized.
+    assert 'id="shipper_address_feedback"' in html
+    assert 'id="consignee_address_feedback"' in html
+
+
+def test_sc_email_ops_intake_omits_maps_script_when_key_missing(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When no Maps key is configured the page must NOT emit the
+    Google loader, but the helper JS still ships so the page
+    degrades cleanly and manual address entry keeps working.
+    """
+
+    monkeypatch.delenv("GOOGLE_MAPS_API_KEY", raising=False)
+    monkeypatch.delenv("MAPS_API_KEY", raising=False)
+    app.config["GOOGLE_MAPS_API_KEY"] = ""
+
+    user = _make_user(
+        "sc-intake-no-maps@example.com",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.get(
+        f"/sc/quote/{session.id}/email-ops/intake"
+    )
+    assert response.status_code == 200
+    html = response.get_data(as_text=True)
+    assert "maps.googleapis.com/maps/api/js" not in html
+    # Helpers still ship so a key dropped into the runtime later
+    # without a redeploy would Just Work via the Maps callback.
+    assert "function initAddressAutocomplete()" in html
+
+
 def test_sc_email_ops_intake_post_persists_and_round_trips(
     app: Flask,
 ) -> None:

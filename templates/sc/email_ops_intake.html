@@ -80,7 +80,12 @@
     <div class="col-12">
       <label class="form-label" for="shipper_street">Street address</label>
       <input id="shipper_street" name="shipper_street" type="text"
-             class="form-control" value="{{ shipper.street or '' }}">
+             class="form-control" value="{{ shipper.street or '' }}"
+             autocomplete="off"
+             placeholder="{% if maps_api_key %}Start typing and pick a Google suggestion to auto-fill city / state / ZIP{% endif %}">
+      <div id="shipper_address_feedback"
+           class="form-text text-warning d-none"
+           aria-live="polite"></div>
     </div>
     <div class="col-md-5">
       <label class="form-label" for="shipper_city">City</label>
@@ -157,7 +162,12 @@
     <div class="col-12">
       <label class="form-label" for="consignee_street">Street address</label>
       <input id="consignee_street" name="consignee_street" type="text"
-             class="form-control" value="{{ consignee.street or '' }}">
+             class="form-control" value="{{ consignee.street or '' }}"
+             autocomplete="off"
+             placeholder="{% if maps_api_key %}Start typing and pick a Google suggestion to auto-fill city / state / ZIP{% endif %}">
+      <div id="consignee_address_feedback"
+           class="form-text text-warning d-none"
+           aria-live="polite"></div>
     </div>
     <div class="col-md-5">
       <label class="form-label" for="consignee_city">City</label>
@@ -218,4 +228,91 @@
     </a>
   </div>
 </form>
+
+{# Google Places autocomplete on both shipper + consignee street
+   fields. Mirrors the single-quote booking workflow's helper set
+   (see ``templates/email_request.html``). The Maps loader is only
+   emitted when an API key is configured - without one the helpers
+   still ship so the page degrades cleanly and inputs accept manual
+   entry. The helpers expect ``{prefix}_street`` /
+   ``{prefix}_city`` / ``{prefix}_state`` / ``{prefix}_zip`` /
+   ``{prefix}_address_feedback`` ids, which the form above already
+   provides for both shipper and consignee. #}
+{% if maps_api_key %}
+<script
+  src="https://maps.googleapis.com/maps/api/js?key={{ maps_api_key|urlencode }}&libraries=places&callback=initAddressAutocomplete"
+  async
+  defer
+></script>
+{% endif %}
+<script>
+function updateAddressFeedback(feedbackElement, message) {
+  if (!feedbackElement) return;
+  feedbackElement.textContent = message;
+  feedbackElement.classList.toggle('d-none', !message);
+}
+
+function getAddressParts(place) {
+  const parts = { city: '', state: '', zip: '' };
+  if (!place || !Array.isArray(place.address_components)) return parts;
+
+  for (const component of place.address_components) {
+    const types = component.types || [];
+    if (!parts.city && (types.includes('locality') || types.includes('postal_town'))) {
+      parts.city = component.long_name || '';
+    }
+    if (!parts.state && types.includes('administrative_area_level_1')) {
+      parts.state = component.short_name || component.long_name || '';
+    }
+    if (!parts.zip && types.includes('postal_code')) {
+      parts.zip = component.long_name || '';
+    }
+  }
+  return parts;
+}
+
+function bindAddressAutocomplete(prefix) {
+  const streetField = document.getElementById(`${prefix}_street`);
+  const cityField = document.getElementById(`${prefix}_city`);
+  const stateField = document.getElementById(`${prefix}_state`);
+  const zipField = document.getElementById(`${prefix}_zip`);
+  const feedbackElement = document.getElementById(`${prefix}_address_feedback`);
+
+  if (!streetField || !window.google || !google.maps || !google.maps.places) return;
+
+  const autocomplete = new google.maps.places.Autocomplete(streetField, {
+    types: ['address'],
+    componentRestrictions: { country: 'us' }
+  });
+
+  autocomplete.addListener('place_changed', () => {
+    const place = autocomplete.getPlace();
+    const parts = getAddressParts(place);
+    const hasKnownLocation = Boolean(place && Array.isArray(place.address_components) && place.address_components.length);
+
+    if (parts.city && cityField) cityField.value = parts.city;
+    if (parts.state && stateField) stateField.value = parts.state;
+    if (parts.zip && zipField) zipField.value = parts.zip;
+
+    if (!hasKnownLocation) {
+      updateAddressFeedback(feedbackElement, 'Address details could not be verified. Please review manually.');
+      return;
+    }
+    if (!parts.city || !parts.state || !parts.zip) {
+      updateAddressFeedback(feedbackElement, 'Some address details were unavailable. Please confirm city, state, and ZIP.');
+      return;
+    }
+    updateAddressFeedback(feedbackElement, '');
+  });
+}
+
+function initAddressAutocomplete() {
+  bindAddressAutocomplete('shipper');
+  bindAddressAutocomplete('consignee');
+}
+
+if (window.google && google.maps && google.maps.places) {
+  initAddressAutocomplete();
+}
+</script>
 {% endblock %}
