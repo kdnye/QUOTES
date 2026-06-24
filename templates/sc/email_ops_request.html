@@ -95,20 +95,34 @@
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between align-items-center">
     <strong>Booking summary preview</strong>
-    <div class="d-flex gap-2">
+{# When ``intake_has_content`` is false we annotate every action
+   button with a Bootstrap tooltip ("flyover") warning the user that
+   the booking email will NOT contain shipper / consignee details.
+   The page also gets a visible yellow border on each button and a
+   leading ⚠ icon in the label so the warning is noticeable without
+   hovering. Tooltips are auto-initialised by base.html. #}
+{% set intake_warning = (
+  '⚠ Shipper / consignee details have not been entered. '
+  'The booking email will NOT include the Booking Details section. '
+  'Use \"Add booking details\" above to capture them first.'
+) if not intake_has_content else '' %}
+    <div class="d-flex gap-2" id="sc-composer-action-buttons">
       <button type="button"
-              class="btn btn-primary btn-sm"
+              class="btn btn-sm {% if intake_warning %}btn-warning{% else %}btn-primary{% endif %}"
               id="sc-send-postmark-btn"
-              data-send-url="{{ url_for('science_care.sc_email_ops_send', session_id=sc_session.id) }}">
-        Email to Book
+              data-send-url="{{ url_for('science_care.sc_email_ops_send', session_id=sc_session.id) }}"
+              {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
+        {% if intake_warning %}⚠ {% endif %}Email to Book
       </button>
       <button type="button"
-              class="btn btn-outline-secondary btn-sm"
-              id="sc-copy-body-btn">
-        Copy body
+              class="btn btn-sm {% if intake_warning %}btn-outline-warning{% else %}btn-outline-secondary{% endif %}"
+              id="sc-copy-body-btn"
+              {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
+        {% if intake_warning %}⚠ {% endif %}Copy body
       </button>
-      <a class="btn btn-outline-secondary btn-sm" id="sc-mailto-btn" href="#">
-        Open in mail client
+      <a class="btn btn-sm {% if intake_warning %}btn-outline-warning{% else %}btn-outline-secondary{% endif %}" id="sc-mailto-btn" href="#"
+         {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
+        {% if intake_warning %}⚠ {% endif %}Open in mail client
       </a>
     </div>
   </div>

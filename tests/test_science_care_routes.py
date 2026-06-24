@@ -2054,6 +2054,84 @@ def test_sc_email_ops_composer_escapes_intake_for_xss(
     assert payload in captured["body"]
 
 
+def test_sc_email_ops_composer_buttons_warn_when_intake_missing(
+    app: Flask,
+) -> None:
+    """All three composer action buttons must surface a warning
+    (yellow class + ⚠ icon + Bootstrap tooltip) when the SC user has
+    not entered shipper / consignee details. The tooltip text
+    explicitly tells the user the booking email will not include the
+    Booking Details section.
+    """
+
+    user = _make_user(
+        "sc-warn-empty@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+
+    # Every button id appears with the warning class + tooltip
+    # attribute. ``Email to Book`` swaps from ``btn-primary`` to
+    # ``btn-warning`` because the warning is the primary signal.
+    for marker in (
+        'id="sc-send-postmark-btn"',
+        'id="sc-copy-body-btn"',
+        'id="sc-mailto-btn"',
+    ):
+        # Find the start of the matching tag and extract enough
+        # characters to cover the attribute list.
+        idx = html.find(marker)
+        assert idx != -1, f"{marker} not in composer HTML"
+        chunk = html[idx : idx + 600]
+        assert 'data-bs-toggle="tooltip"' in chunk
+        assert "Shipper / consignee details have not been entered" in chunk
+        # The ⚠ prefix appears as part of the button label too.
+    assert "⚠ Email to Book" in html
+    assert "⚠ Copy body" in html
+    assert "⚠ Open in mail client" in html
+
+
+def test_sc_email_ops_composer_buttons_drop_warning_when_intake_populated(
+    app: Flask,
+) -> None:
+    """Once the intake is filled in, the three buttons revert to
+    their normal styling and no tooltip is rendered.
+    """
+
+    user = _make_user(
+        "sc-warn-filled@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    client.post(
+        f"/sc/quote/{session.id}/email-ops/intake",
+        data={
+            "shipper_name": "Acme Tissue Bank",
+            "consignee_name": "Recipient Lab",
+            "pickup_date": "2026-07-01",
+        },
+    )
+
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    # Tooltips and warning labels are gone.
+    assert "Shipper / consignee details have not been entered" not in html
+    assert "⚠ Email to Book" not in html
+    # Default styling restored: send button is ``btn-primary`` again.
+    idx = html.find('id="sc-send-postmark-btn"')
+    chunk = html[idx - 200 : idx + 200]
+    assert "btn-primary" in chunk
+    assert "btn-warning" not in chunk
+
+
 def test_sc_results_partial_links_to_intake_form() -> None:
     """The 'Email Ops for Booking' button in the SC results card
     routes through the new intake form rather than jumping straight
