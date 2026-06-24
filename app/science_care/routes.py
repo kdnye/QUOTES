@@ -56,6 +56,7 @@ from app.admin import (
 )
 from app.models import (
     BOOKING_EMAIL_KIND_SC_MULTI,
+    BOOKING_EMAIL_KIND_SC_MULTI_SELF,
     BOOKING_EMAIL_STATUS_PENDING,
     BOOKING_EMAIL_STATUS_SENT,
     RATE_SET_SCIENCE_CARE,
@@ -1723,23 +1724,30 @@ def sc_email_ops_for_booking(session_id: int):
     )
 
 
-@science_care_bp.post("/quote/<int:session_id>/email-ops/send")
-@login_required
-@sc_user_required
-def sc_email_ops_send(session_id: int):
-    """Send the SC booking email via Postmark (SMTP gateway).
+def _dispatch_sc_booking_email(
+    session_id: int,
+    *,
+    kind: str,
+    feature: str,
+    subject_prefix: str,
+    recipient_mode: str,
+) -> tuple[dict[str, Any], int] | dict[str, Any]:
+    """Shared dispatch helper for both SC booking-email send routes.
 
-    Renders the same plain-text body shown in the composer plus a
-    formatted HTML alternative, calls
-    :func:`app.services.mail.send_email` with the ops recipient as the
-    ``To`` address and the requesting user as ``Cc``, and persists a
-    :class:`~app.models.BookingEmailReceipt` row regardless of
-    outcome. The composer's mailto link is unaffected and continues to
-    work as an offline fallback even when this endpoint fails.
+    ``recipient_mode`` is one of:
 
-    Returns a JSON payload describing the outcome so the composer's
-    JS can update the status banner. The HTTP status code mirrors
-    success / failure for non-JS callers and tests.
+    * ``"ops"`` — ``To`` is the configurable ops inbox and the
+      requesting user is added as ``Cc`` so they keep a copy.
+      This is the default booking flow ops uses to schedule.
+    * ``"self"`` — ``To`` is the requesting user only, no ``Cc``.
+      Used by the "Send to myself" composer button so the user can
+      forward / review the rendered email body without copying ops
+      on what is effectively a draft.
+
+    The body templates, audit-row lifecycle, poisoned-session
+    rollback, and JSON response shape are identical across both
+    modes so they live here. Each route exposes a thin wrapper that
+    just supplies ``kind`` / ``recipient_mode`` / etc.
     """
 
     session = _load_sc_session_or_404(session_id)
@@ -1747,12 +1755,28 @@ def sc_email_ops_send(session_id: int):
     legs = _hydrate_legs_for_display(leg_rows, session=session)
 
     ref_display = session.multi_reference or f"Session {session.id}"
-    subject = f"SC Multi-leg Booking Request — {ref_display}"
-    to_addr = booking_email_ops_to()
-    cc_addr = (getattr(current_user, "email", "") or "").strip() or None
+    subject = f"{subject_prefix} — {ref_display}"
+
+    user_email = (getattr(current_user, "email", "") or "").strip()
+    if recipient_mode == "self":
+        if not user_email:
+            return (
+                {
+                    "status": "failed",
+                    "message": (
+                        "Your account has no email address on file - "
+                        "can't send a copy to yourself."
+                    ),
+                },
+                400,
+            )
+        to_addr = user_email
+        cc_addr = None
+    else:
+        to_addr = booking_email_ops_to()
+        cc_addr = user_email or None
 
     user_name = getattr(current_user, "name", "") or ""
-    user_email = getattr(current_user, "email", "") or ""
     user_company = getattr(current_user, "company_name", "") or ""
     intake = _load_booking_intake(session)
     intake_has_content = _booking_intake_has_content(intake)
@@ -1784,11 +1808,11 @@ def sc_email_ops_send(session_id: int):
     if cc_addr and cc_addr.lower() != to_addr.lower():
         headers["Cc"] = cc_addr
     else:
-        # ``Cc`` would duplicate the ``To`` address (e.g. the ops
-        # inbox initiating the send for testing); don't bother
-        # sending a redundant CC envelope. We still record cc_addr
-        # as ``None`` on the receipt so the UI doesn't claim a
-        # second recipient.
+        # ``Cc`` would duplicate the ``To`` address (self-send, or
+        # ops inbox initiating the send for testing); skip the
+        # redundant envelope. We still record cc_addr as ``None``
+        # on the receipt so the UI doesn't claim a second
+        # recipient.
         cc_addr = None
 
     # Persist a ``pending`` receipt BEFORE the external send_email call
@@ -1798,7 +1822,7 @@ def sc_email_ops_send(session_id: int):
     # ``pending`` row therefore unambiguously means "send_email never
     # returned" - useful when reconciling against the ops inbox.
     receipt = BookingEmailReceipt(
-        kind=BOOKING_EMAIL_KIND_SC_MULTI,
+        kind=kind,
         reference=ref_display,
         sender_user_id=getattr(current_user, "id", None),
         to_addr=to_addr,
@@ -1814,7 +1838,7 @@ def sc_email_ops_send(session_id: int):
             to_addr,
             subject,
             text_body,
-            feature="sc_booking_email",
+            feature=feature,
             user=current_user,
             headers=headers or None,
             html_body=html_body,
@@ -1840,8 +1864,9 @@ def sc_email_ops_send(session_id: int):
             receipt, f"{exc.__class__.__name__}: {exc}"
         )
         current_app.logger.exception(
-            "SC booking email send failed for ref %s: %s",
+            "SC booking email send failed for ref %s (kind=%s): %s",
             ref_display,
+            kind,
             exc,
         )
         return (
@@ -1863,6 +1888,54 @@ def sc_email_ops_send(session_id: int):
         "subject": receipt.subject,
         "receipt_id": receipt.id,
     }
+
+
+@science_care_bp.post("/quote/<int:session_id>/email-ops/send")
+@login_required
+@sc_user_required
+def sc_email_ops_send(session_id: int):
+    """Send the SC booking email to ops via Postmark.
+
+    Renders the same plain-text body shown in the composer plus a
+    formatted HTML alternative, calls
+    :func:`app.services.mail.send_email` with the configurable ops
+    recipient as the ``To`` address and the requesting user as
+    ``Cc``, and persists a :class:`~app.models.BookingEmailReceipt`
+    row regardless of outcome. The composer's mailto link is
+    unaffected and continues to work as an offline fallback even
+    when this endpoint fails.
+    """
+
+    return _dispatch_sc_booking_email(
+        session_id,
+        kind=BOOKING_EMAIL_KIND_SC_MULTI,
+        feature="sc_booking_email",
+        subject_prefix="SC Multi-leg Booking Request",
+        recipient_mode="ops",
+    )
+
+
+@science_care_bp.post("/quote/<int:session_id>/email-ops/send-to-self")
+@login_required
+@sc_user_required
+def sc_email_ops_send_to_self(session_id: int):
+    """Send the rendered SC booking email to the requesting user only.
+
+    Same body + intake + audit-row plumbing as
+    :func:`sc_email_ops_send`, but the recipient is the logged-in
+    user's email address with no ``Cc``. Lets the user review or
+    forward the composed message without copying ops on a draft.
+    The audit row is tagged ``kind="sc_multi_self"`` so the booking
+    pipeline can distinguish self-sends from the real ops send.
+    """
+
+    return _dispatch_sc_booking_email(
+        session_id,
+        kind=BOOKING_EMAIL_KIND_SC_MULTI_SELF,
+        feature="sc_booking_email_self",
+        subject_prefix="SC Multi-leg Booking Preview",
+        recipient_mode="self",
+    )
 
 
 @science_care_bp.get("/quote/lookup")
