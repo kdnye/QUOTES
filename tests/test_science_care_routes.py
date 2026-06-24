@@ -2221,6 +2221,155 @@ def test_sc_email_ops_text_body_separates_consecutive_legs(
     assert f"\n\n{separator}\n\n" in html
 
 
+def test_sc_email_ops_send_to_self_dispatches_only_to_logged_in_user(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The composer's ``Send to Myself`` POST must call send_email
+    with the requesting user as the ``To`` address only - no ``Cc``,
+    and especially NOT to the ops inbox - and persist a ``sent``
+    BookingEmailReceipt tagged ``sc_multi_self``.
+
+    The body templates are re-used across both send paths, so the
+    intake and HTML body checks are still relevant; the new contract
+    is the recipient list and the audit kind.
+    """
+
+    from app.models import BookingEmailReceipt
+
+    user = _make_user(
+        "sc-self@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    captured: dict[str, object] = {}
+
+    def _fake_send_email(*args, **kwargs) -> None:
+        captured["to"] = args[0] if args else kwargs.get("to")
+        captured["subject"] = args[1] if len(args) > 1 else kwargs.get("subject")
+        captured["body"] = args[2] if len(args) > 2 else kwargs.get("body")
+        captured.update(kwargs)
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _fake_send_email
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        f"/sc/quote/{session.id}/email-ops/send-to-self"
+    )
+    assert response.status_code == 200, response.get_data(as_text=True)
+    payload = response.get_json()
+    assert payload["status"] == "sent"
+    # The logged-in user is the SOLE recipient on a self-send.
+    assert payload["to_addr"] == "sc-self@example.com"
+    assert payload["cc_addr"] is None
+    assert "Preview" in payload["subject"]
+    assert "SCMQ0500" in payload["subject"]
+
+    # send_email contract: ``To`` is the user, headers carry no Cc
+    # (or no headers at all), the feature label distinguishes from
+    # the ops send so per-feature rate limits don't conflate them.
+    assert captured["to"] == "sc-self@example.com"
+    assert captured["feature"] == "sc_booking_email_self"
+    assert not captured.get("headers")
+    # Body templates are identical to the ops path - sanity-check
+    # the headline copy + the HTML alternative are present.
+    assert "SCIENCE CARE MULTI-LEG BOOKING REQUEST" in captured["body"]
+    assert captured["html_body"]
+
+    receipt = BookingEmailReceipt.query.filter_by(
+        sender_user_id=user.id
+    ).one()
+    assert receipt.kind == "sc_multi_self"
+    assert receipt.reference == "SCMQ0500"
+    assert receipt.status == "sent"
+    assert receipt.to_addr == "sc-self@example.com"
+    assert receipt.cc_addr is None
+
+
+def test_sc_email_ops_send_to_self_400s_when_user_has_no_email(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A user with no email address on file can't get a self-copy;
+    surface that as a clean 400 instead of attempting an empty
+    ``To:`` send.
+    """
+
+    user = User(
+        email="will-be-cleared@example.com",
+        name="No Email Person",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(user)
+    db.session.commit()
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    # Now nuke the address so the route sees an empty user_email.
+    # ``email`` is unique-indexed so we can't set ``""``; clear via a
+    # NULL-friendly value, then expire so the route re-loads it.
+    user.email = ""
+    db.session.commit()
+    db.session.expire_all()
+
+    def _explode(*args, **kwargs) -> None:
+        raise AssertionError("send_email should not be called when user has no email")
+
+    monkeypatch.setattr(
+        "app.science_care.routes.send_email", _explode
+    )
+
+    client = app.test_client()
+    _login(client, user.id)
+    response = client.post(
+        f"/sc/quote/{session.id}/email-ops/send-to-self"
+    )
+    assert response.status_code == 400
+    assert response.get_json()["status"] == "failed"
+
+
+def test_sc_email_ops_send_to_self_blocks_non_sc_user(app: Flask) -> None:
+    """A logged-in non-SC user gets the same 403 the regular send
+    route returns.
+    """
+
+    sc_user = _make_user(
+        "sc-self-owner@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(sc_user.id)
+    non_sc = _make_user("not-sc-self@example.com", rate_set="default")
+    client = app.test_client()
+    _login(client, non_sc.id)
+    response = client.post(
+        f"/sc/quote/{session.id}/email-ops/send-to-self"
+    )
+    assert response.status_code == 403
+
+
+def test_sc_email_ops_composer_renders_send_to_self_button(
+    app: Flask,
+) -> None:
+    """The composer must render the new ``Send to Myself`` button
+    with the correct POST URL and the explanatory copy in the
+    "Heads up" alert.
+    """
+
+    user = _make_user(
+        "sc-self-ui@example.com", rate_set=RATE_SET_SCIENCE_CARE
+    )
+    session, _ = _seed_sc_session_with_legs(user.id)
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    assert 'id="sc-send-to-self-btn"' in html
+    assert f"/sc/quote/{session.id}/email-ops/send-to-self" in html
+    assert "Send to Myself" in html
+
+
 def test_sc_email_ops_send_dispatches_via_postmark_and_records_receipt(
     app: Flask, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -33,7 +33,7 @@ Services portal.
 | --- | --- | --- |
 | Hotshot and Air quoting | ✅ Stable | Accepts form and JSON submissions and persists quotes. |
 | Booking email workflow (`Email to Request Booking`) | 🔒 Staff-only | Restricted to approved employees or super admins (or users with `can_send_mail` enabled). Customers see the button disabled. The composer's **Email to Book** button dispatches via Postmark (`POST /quotes/<id>/email/send`) with the requesting user as `Cc`; the **Open in mail client (fallback)** button keeps the legacy `mailto:` path for offline use. Every Postmark attempt persists an audit row in `booking_email_receipts` (`kind="single_quote"`). |
-| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Two-step workflow. Step 1 is an **intake form** (`/sc/quote/<id>/email-ops/intake`) that captures order-level shipper + consignee blocks plus pickup / delivery dates and persists them to `SCQuoteSession.booking_intake_json`. Step 2 is the **composer preview** (`/sc/quote/<id>/email-ops`) with three actions: **Email to Book** (`POST /sc/quote/<id>/email-ops/send`) sends via Postmark with ops on `To` and the requester on `Cc`; **Copy body** clones the plain-text body to the clipboard; **Open in mail client (fallback)** keeps the `mailto:` link. Both the Postmark and `mailto:` paths render the same plain-text body; Postmark also attaches a multipart HTML alternative. The intake block (shipper / consignee / dates) appears above the per-leg shipment summary in both bodies when populated. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Audit row per attempt in `booking_email_receipts` (`kind="sc_multi"`). |
+| SC multi-leg booking email (`Email Ops for Booking`) | ✅ Stable | Two-step workflow. Step 1 is an **intake form** (`/sc/quote/<id>/email-ops/intake`) that captures order-level shipper + consignee blocks plus pickup / delivery dates and persists them to `SCQuoteSession.booking_intake_json`. Step 2 is the **composer preview** (`/sc/quote/<id>/email-ops`) with four actions: **Email to Book** (`POST /sc/quote/<id>/email-ops/send`) sends via Postmark with ops on `To` and the requester on `Cc`; **Send to Myself** (`POST /sc/quote/<id>/email-ops/send-to-self`) dispatches the same rendered email to the logged-in user only (ops is NOT notified — useful as a preview / review step); **Copy body** clones the plain-text body to the clipboard; **Open in mail client (fallback)** keeps the `mailto:` link. The Postmark paths render the same plain-text body the `mailto:` link uses and additionally attach a multipart HTML alternative. The intake block (shipper / consignee / dates) appears above the per-leg shipment summary in all bodies when populated. **No $15 admin/booking fee** applied — multi-leg jobs bill off the raw cheapest-of total. Audit row per attempt in `booking_email_receipts` (`kind="sc_multi"` for ops sends, `kind="sc_multi_self"` for self-copies). |
 | SC multi-leg lookup (`/sc/quote/lookup`) | ✅ Stable | Any SC user can resolve a multi-leg reference (`SCMQ0042` or a customer string) to the full persisted summary so they can re-send the ops booking email or pull a quote for a customer service call. |
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
@@ -619,7 +619,7 @@ intentionally adds **no** admin / booking fee — that $15 fee is specific
 to the single-quote `/quotes/<id>/email` workflow. Multi-leg jobs bill off
 the raw cheapest-of total.
 
-The composer exposes three actions:
+The composer exposes four actions:
 
 * **Email to Book** — `POST /sc/quote/<session_id>/email-ops/send`. Dispatches
   the message via the existing Postmark SMTP path (`app/services/mail.py`
@@ -631,12 +631,18 @@ The composer exposes three actions:
   persists a row in the `booking_email_receipts` audit table (see
   `kind="sc_multi"`) with the Postmark message id, recipient list, and any
   error text.
+* **Send to Myself** — `POST /sc/quote/<session_id>/email-ops/send-to-self`.
+  Same body, same audit-row plumbing, same intake gating, but the recipient
+  is the logged-in user's email address with **no** ops `To` or `Cc`. Lets
+  the user review the rendered email or forward it elsewhere without
+  copying ops on a draft. Audit row tagged `kind="sc_multi_self"` so the
+  booking pipeline can distinguish self-sends from the real ops send.
 * **Copy body** — copies the plain-text body to the clipboard for ops who
   prefer to paste into their own template.
 * **Open in mail client (fallback)** — the legacy `mailto:` link, kept
   intentionally so ops can still send from their own desktop client when
   Postmark is unreachable or rate-limited. Uses the same plain-text body the
-  Postmark send uses, so both paths render identical content.
+  Postmark send uses, so all paths render identical content.
 
 The email body groups every leg's items by shipment segment and prints a
 **weight summary** so ops can sanity-check the billable weight without

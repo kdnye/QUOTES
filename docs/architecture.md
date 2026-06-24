@@ -119,10 +119,16 @@ Key tables:
      block above the per-leg shipment summary when populated; an
      unfilled intake is silently omitted via a single
      `intake_has_content` guard.
-  3. **Send** (`POST /sc/quote/<id>/email-ops/send`) re-renders both
-     bodies, calls `send_email(to=BOOKING_EMAIL_OPS_TO,
-     cc=current_user.email, html_body=...)`, and persists a
-     `BookingEmailReceipt` row.
+  3. **Send** has two POST endpoints that share a `_dispatch_sc_booking_email`
+     helper for body rendering, audit-row lifecycle, and poisoned-session
+     rollback. The endpoints differ only in recipient mode + audit kind:
+     `POST /sc/quote/<id>/email-ops/send` calls `send_email(to=BOOKING_EMAIL_OPS_TO,
+     cc=current_user.email, html_body=...)` and writes a
+     `BookingEmailReceipt` with `kind="sc_multi"`;
+     `POST /sc/quote/<id>/email-ops/send-to-self` calls
+     `send_email(to=current_user.email, html_body=...)` with no `Cc`
+     and writes a receipt with `kind="sc_multi_self"`. The self-send is
+     a preview-only path: ops is never copied.
 - **Single-quote**: `GET /quotes/<id>/email` renders the legacy form;
   the JS builds the plain-text body client-side. The new
   `POST /quotes/<id>/email/send` accepts `{subject, body}` JSON,

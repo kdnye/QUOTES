@@ -85,10 +85,16 @@
     message to your registered email address
     (<code>{{ user_email or '—' }}</code>) so you have a record in your inbox.
   </p>
+  <p class="mb-1">
+    Want to review the message before booking? <strong>Send to Myself</strong>
+    delivers the rendered email to <code>{{ user_email or '—' }}</code> only —
+    ops is NOT notified, so this is a safe way to preview the body or forward
+    it elsewhere.
+  </p>
   <p class="mb-0 small text-body-secondary">
     Need to send from your own mail client instead? Use
-    <em>Open in mail client</em> below as an offline fallback — both paths
-    send the same content.
+    <em>Open in mail client</em> below as an offline fallback — every Postmark
+    path sends the same content.
   </p>
 </div>
 
@@ -106,13 +112,20 @@
   'The booking email will NOT include the Booking Details section. '
   'Use \"Add booking details\" above to capture them first.'
 ) if not intake_has_content else '' %}
-    <div class="d-flex gap-2" id="sc-composer-action-buttons">
+    <div class="d-flex gap-2 flex-wrap" id="sc-composer-action-buttons">
       <button type="button"
               class="btn btn-sm {% if intake_warning %}btn-warning{% else %}btn-primary{% endif %}"
               id="sc-send-postmark-btn"
               data-send-url="{{ url_for('science_care.sc_email_ops_send', session_id=sc_session.id) }}"
               {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
         {% if intake_warning %}⚠ {% endif %}Email to Book
+      </button>
+      <button type="button"
+              class="btn btn-sm {% if intake_warning %}btn-warning{% else %}btn-outline-primary{% endif %}"
+              id="sc-send-to-self-btn"
+              data-send-url="{{ url_for('science_care.sc_email_ops_send_to_self', session_id=sc_session.id) }}"
+              {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
+        {% if intake_warning %}⚠ {% endif %}Send to Myself
       </button>
       <button type="button"
               class="btn btn-sm {% if intake_warning %}btn-outline-warning{% else %}btn-outline-secondary{% endif %}"
@@ -257,6 +270,7 @@
     });
 
     const sendBtn = document.getElementById('sc-send-postmark-btn');
+    const sendToSelfBtn = document.getElementById('sc-send-to-self-btn');
     const status = document.getElementById('sc-send-status');
     const csrfToken = {{ csrf_token() | tojson }};
 
@@ -266,37 +280,52 @@
       status.textContent = message;
     }
 
-    sendBtn.addEventListener('click', async () => {
-      const url = sendBtn.dataset.sendUrl;
-      sendBtn.disabled = true;
-      const original = sendBtn.textContent;
-      sendBtn.textContent = 'Sending…';
-      setStatus('info', `Sending to operations@freightservices.net, cc ${userEmail}…`);
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          credentials: 'same-origin',
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json',
-            'X-CSRFToken': csrfToken,
-          },
-        });
-        const payload = await resp.json().catch(() => ({}));
-        if (resp.ok && payload.status === 'sent') {
-          setStatus('success', `Sent at ${payload.sent_at} to ${payload.to_addr}${payload.cc_addr ? `, copied to ${payload.cc_addr}` : ''}. Ops will reply on reference ${ref}.`);
-          sendBtn.textContent = 'Sent';
-        } else {
-          const reason = payload.message || `HTTP ${resp.status}`;
-          setStatus('danger', `Failed to send via Postmark: ${reason}. Use "Open in mail client" as a fallback.`);
-          sendBtn.textContent = original;
-          sendBtn.disabled = false;
+    // Shared dispatcher for both the "Email to Book" (ops) and
+    // "Send to Myself" buttons - same POST shape, just a different
+    // target URL and a different set of status messages.
+    function bindSendButton(btn, { sendingLabel, sentSuccessFn }) {
+      btn.addEventListener('click', async () => {
+        const url = btn.dataset.sendUrl;
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Sending…';
+        setStatus('info', sendingLabel);
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'X-CSRFToken': csrfToken,
+            },
+          });
+          const payload = await resp.json().catch(() => ({}));
+          if (resp.ok && payload.status === 'sent') {
+            setStatus('success', sentSuccessFn(payload));
+            btn.textContent = 'Sent';
+          } else {
+            const reason = payload.message || `HTTP ${resp.status}`;
+            setStatus('danger', `Failed to send via Postmark: ${reason}. Use "Open in mail client" as a fallback.`);
+            btn.textContent = original;
+            btn.disabled = false;
+          }
+        } catch (err) {
+          setStatus('danger', `Network error while sending: ${err}. Use "Open in mail client" as a fallback.`);
+          btn.textContent = original;
+          btn.disabled = false;
         }
-      } catch (err) {
-        setStatus('danger', `Network error while sending: ${err}. Use "Open in mail client" as a fallback.`);
-        sendBtn.textContent = original;
-        sendBtn.disabled = false;
-      }
+      });
+    }
+
+    bindSendButton(sendBtn, {
+      sendingLabel: `Sending to operations@freightservices.net${userEmail ? `, cc ${userEmail}` : ''}…`,
+      sentSuccessFn: (payload) => `Sent at ${payload.sent_at} to ${payload.to_addr}${payload.cc_addr ? `, copied to ${payload.cc_addr}` : ''}. Ops will reply on reference ${ref}.`,
+    });
+
+    bindSendButton(sendToSelfBtn, {
+      sendingLabel: `Sending a copy to ${userEmail}…`,
+      sentSuccessFn: (payload) => `Sent at ${payload.sent_at} to ${payload.to_addr}. Check your inbox for reference ${ref}.`,
     });
   })();
 </script>
