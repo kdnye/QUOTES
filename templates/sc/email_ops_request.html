@@ -121,10 +121,10 @@
         {% if intake_warning %}⚠ {% endif %}Email to Book
       </button>
       <button type="button"
-              class="btn btn-sm {% if intake_warning %}btn-warning{% else %}btn-outline-primary{% endif %}"
+              class="btn btn-sm {% if not user_email %}btn-outline-secondary{% elif intake_warning %}btn-warning{% else %}btn-outline-primary{% endif %}"
               id="sc-send-to-self-btn"
               data-send-url="{{ url_for('science_care.sc_email_ops_send_to_self', session_id=sc_session.id) }}"
-              {% if intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
+              {% if not user_email %}disabled data-bs-toggle="tooltip" data-bs-placement="bottom" title="Your account has no email address on file, so we can't send a copy. Add one to your profile to enable this."{% elif intake_warning %}data-bs-toggle="tooltip" data-bs-placement="bottom" data-bs-html="true" title="{{ intake_warning }}"{% endif %}>
         {% if intake_warning %}⚠ {% endif %}Send to Myself
       </button>
       <button type="button"

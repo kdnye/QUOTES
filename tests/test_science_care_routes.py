@@ -2307,8 +2307,9 @@ def test_sc_email_ops_send_to_self_400s_when_user_has_no_email(
     session, _ = _seed_sc_session_with_legs(user.id)
 
     # Now nuke the address so the route sees an empty user_email.
-    # ``email`` is unique-indexed so we can't set ``""``; clear via a
-    # NULL-friendly value, then expire so the route re-loads it.
+    # ``email`` is unique-indexed but accepts a single empty string;
+    # set it directly here, commit, then expire so the route's
+    # ``current_user`` reads the updated value.
     user.email = ""
     db.session.commit()
     db.session.expire_all()
@@ -2368,6 +2369,50 @@ def test_sc_email_ops_composer_renders_send_to_self_button(
     assert 'id="sc-send-to-self-btn"' in html
     assert f"/sc/quote/{session.id}/email-ops/send-to-self" in html
     assert "Send to Myself" in html
+
+
+def test_sc_email_ops_composer_disables_send_to_self_when_user_has_no_email(
+    app: Flask,
+) -> None:
+    """A user with no email on file gets a disabled ``Send to Myself``
+    button with an explanatory tooltip, so they don't trip over the
+    400 the POST route would otherwise return. The ops ``Email to
+    Book`` button stays clickable because it doesn't depend on
+    user_email.
+    """
+
+    user = User(
+        email="will-be-cleared-ui@example.com",
+        name="No Email Person UI",
+        password_hash="x",
+        rate_set=RATE_SET_SCIENCE_CARE,
+    )
+    db.session.add(user)
+    db.session.commit()
+    session, _ = _seed_sc_session_with_legs(user.id)
+    user.email = ""
+    db.session.commit()
+    db.session.expire_all()
+
+    client = app.test_client()
+    _login(client, user.id)
+    html = client.get(
+        f"/sc/quote/{session.id}/email-ops"
+    ).get_data(as_text=True)
+    # Locate the Send-to-Myself button's tag and inspect its
+    # attribute list directly so an unrelated ``disabled`` elsewhere
+    # on the page can't satisfy the assertion.
+    idx = html.find('id="sc-send-to-self-btn"')
+    assert idx != -1
+    chunk = html[idx : idx + 600]
+    assert "disabled" in chunk
+    assert "no email address on file" in chunk
+    # The ops Email-to-Book button doesn't depend on user_email - the
+    # backend just skips the Cc when the user has no address - so it
+    # must NOT be disabled here.
+    idx_ops = html.find('id="sc-send-postmark-btn"')
+    chunk_ops = html[idx_ops : idx_ops + 600]
+    assert "disabled" not in chunk_ops
 
 
 def test_sc_email_ops_send_dispatches_via_postmark_and_records_receipt(
