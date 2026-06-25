@@ -263,6 +263,19 @@ class ZipZoneForm(FlaskForm):
     beyond = StringField("Beyond", validators=[Optional()])
     notes = TextAreaField("Shipment Notes", validators=[Optional()])
 
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Mirror BeyondRateForm / HotshotRateForm / AirCostZoneForm:
+        # populate the SelectField's choices AND default rate_set.data
+        # to DEFAULT_RATE_SET when not supplied. Without this, any POST
+        # that omits the rate_set field (stale admin form, older script,
+        # existing test) fails the DataRequired() validator instead of
+        # falling back to the model's historical default-rate-set
+        # behavior.
+        super().__init__(*args, **kwargs)
+        _populate_rate_set_choices(self)
+        if not self.rate_set.data:
+            self.rate_set.data = DEFAULT_RATE_SET
+
 
 class CostZoneForm(FlaskForm):
     """Form for managing :class:`~app.models.CostZone` records."""
@@ -2067,16 +2080,9 @@ def list_zip_zones() -> str:
 def new_zip_zone() -> Union[str, Response]:
     """Create a new ZIP zone mapping."""
 
+    # ZipZoneForm.__init__ populates rate_set choices + backfills
+    # DEFAULT_RATE_SET when missing, matching the other rate-scoped forms.
     form = ZipZoneForm()
-    _populate_rate_set_choices(form)
-    # Backfill `default` on every request that didn't send a rate_set —
-    # covers both the GET that renders the empty form AND any POST from a
-    # stale admin form / older script / existing test that doesn't yet
-    # know the field exists. Without this, ZipZoneForm.rate_set's
-    # DataRequired() would reject previously-valid submissions instead of
-    # falling back to the model's old default-rate-set behavior.
-    if not form.rate_set.data:
-        form.rate_set.data = DEFAULT_RATE_SET
     if form.validate_on_submit():
         zz = ZipZone(
             rate_set=normalize_rate_set(form.rate_set.data),
@@ -2101,9 +2107,10 @@ def edit_zip_zone(zz_id: int) -> Union[str, Response]:
     if not zz:
         abort(404)
     form = ZipZoneForm(obj=zz)
-    _populate_rate_set_choices(form)
-    # Stale forms that don't yet carry rate_set should preserve the
-    # existing row's rate_set rather than failing DataRequired().
+    # ZipZoneForm.__init__ defaults to DEFAULT_RATE_SET; explicitly fall
+    # back to the existing row's rate_set so a stale form that omits the
+    # field preserves the customer override rather than silently flipping
+    # to default.
     if not form.rate_set.data:
         form.rate_set.data = zz.rate_set or DEFAULT_RATE_SET
     if form.validate_on_submit():
