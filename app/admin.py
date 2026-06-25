@@ -2069,9 +2069,14 @@ def new_zip_zone() -> Union[str, Response]:
 
     form = ZipZoneForm()
     _populate_rate_set_choices(form)
+    # Match the GET-default behavior of new_beyond_rate / new_hotshot_rate /
+    # new_air_cost_zone — pre-populate `default` so the admin doesn't have
+    # to remember to pick a rate set every time.
+    if request.method == "GET" and not form.rate_set.data:
+        form.rate_set.data = DEFAULT_RATE_SET
     if form.validate_on_submit():
         zz = ZipZone(
-            rate_set=form.rate_set.data,
+            rate_set=normalize_rate_set(form.rate_set.data),
             zipcode=form.zipcode.data,
             dest_zone=form.dest_zone.data,
             beyond=form.beyond.data,
@@ -2095,7 +2100,10 @@ def edit_zip_zone(zz_id: int) -> Union[str, Response]:
     form = ZipZoneForm(obj=zz)
     _populate_rate_set_choices(form)
     if form.validate_on_submit():
-        zz.rate_set = form.rate_set.data
+        # Normalize to stay consistent with the other rate-scoped edit
+        # routes — strips whitespace, lowercases, and lets a typo from
+        # the dropdown still land on a known rate set.
+        zz.rate_set = normalize_rate_set(form.rate_set.data)
         zz.zipcode = form.zipcode.data
         zz.dest_zone = form.dest_zone.data
         zz.beyond = form.beyond.data
