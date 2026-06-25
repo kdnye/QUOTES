@@ -12,6 +12,7 @@
     <thead>
       <tr>
         <th>ID</th>
+        <th>Rate Set</th>
         <th>ZIP Code</th>
         <th>Dest Zone</th>
         <th>Beyond</th>
@@ -24,6 +25,7 @@
     {% for z in zip_zones %}
       <tr>
         <td>{{ z.id }}</td>
+        <td>{{ z.rate_set }}</td>
         <td>{{ z.zipcode }}</td>
         <td>{{ z.dest_zone }}</td>
         <td>{{ z.beyond }}</td>
