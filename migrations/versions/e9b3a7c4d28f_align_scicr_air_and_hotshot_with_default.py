@@ -11,16 +11,24 @@ SC tier) needs the same numbers — otherwise SC quotes will continue to
 diverge from the FSI Shipping Quote Tool 2026 VSC-Locked workbook for
 any rows where ``scicr`` already has an explicit override.
 
-This migration UPSERTs the FSI workbook values into ``rate_set = 'scicr'``
-for every zone covered by the prior two migrations. Rows that already
-exist get the new values; missing rows are inserted. The runtime
-fallback (``query_with_rate_set_fallback``) would silently inherit
-``default`` for missing rows, but explicit rows in ``scicr`` are clearer
-to operators reading the admin table and immune to a future fallback
-change.
+Hotshot UPDATE-only (PATCH 2026-06-25): the original revision of this
+file also tried to ``INSERT ... WHERE NOT EXISTS`` for missing scicr
+hotshot rows, but that INSERT omitted the non-nullable ``miles`` column
+and would have inserted one row per zone letter instead of one per mile
+(the schema is one row per mile bucket 1-100). On a fresh DB where
+``scicr`` was empty, Alembic's per-migration transaction would have
+rolled the whole thing back — meaning the broken predecessor blocked
+the downstream repair from ever running. The hotshot INSERTs are
+stripped here so the migration is purely UPDATE — a no-op on rows that
+don't exist, the right answer on rows that do. The follow-up
+``f1d3b8c9e7a5`` then copies missing scicr rows from ``default`` (with
+``miles`` populated) and re-applies the FSI values.
+
+Air-side UPSERT is unchanged — ``air_cost_zones`` has no ``miles``
+column, so the insert path there was always correct.
 
 Same exact numbers as ``f3a8c2b9d1e4`` (Air) and ``c5d7f1e9a2b3``
-(Hotshot) — keep these two lists in sync if either source changes.
+(Hotshot) — keep these lists in sync if either source changes.
 """
 
 from typing import Dict, Sequence, Tuple, Union
@@ -106,9 +114,12 @@ def _upsert_air(zone: str, min_charge: float, per_lb: float, weight_break: float
     )
 
 
-def _upsert_hotshot_a_to_j(
+def _update_hotshot_a_to_j(
     zone: str, per_lb: float, min_charge: float, weight_break: float, fuel_pct: float
 ) -> None:
+    # UPDATE-only — no INSERT here. See module docstring for why.
+    # Missing rows are backfilled from default's per-mile rows by the
+    # follow-up ``f1d3b8c9e7a5`` migration.
     op.execute(
         text(
             "UPDATE hotshot_rates "
@@ -127,26 +138,10 @@ def _upsert_hotshot_a_to_j(
             zone=zone,
         )
     )
-    op.execute(
-        text(
-            "INSERT INTO hotshot_rates "
-            "(rate_set, zone, per_lb, per_mile, min_charge, weight_break, fuel_pct) "
-            "SELECT :rate_set, :zone, :per_lb, NULL, :min_charge, :weight_break, :fuel_pct "
-            "WHERE NOT EXISTS ("
-            "  SELECT 1 FROM hotshot_rates "
-            "  WHERE rate_set = :rate_set AND UPPER(zone) = :zone)"
-        ).bindparams(
-            rate_set=SCICR,
-            zone=zone,
-            per_lb=per_lb,
-            min_charge=min_charge,
-            weight_break=weight_break,
-            fuel_pct=fuel_pct,
-        )
-    )
 
 
-def _upsert_hotshot_zone_x() -> None:
+def _update_hotshot_zone_x() -> None:
+    # UPDATE-only — same reasoning as ``_update_hotshot_a_to_j``.
     op.execute(
         text(
             "UPDATE hotshot_rates "
@@ -165,31 +160,19 @@ def _upsert_hotshot_zone_x() -> None:
             rate_set=SCICR,
         )
     )
-    op.execute(
-        text(
-            "INSERT INTO hotshot_rates "
-            "(rate_set, zone, per_lb, per_mile, min_charge, weight_break, fuel_pct) "
-            "SELECT :rate_set, 'X', :per_lb, :per_mile, :min_charge, :weight_break, :fuel_pct "
-            "WHERE NOT EXISTS ("
-            "  SELECT 1 FROM hotshot_rates "
-            "  WHERE rate_set = :rate_set AND UPPER(zone) = 'X')"
-        ).bindparams(
-            rate_set=SCICR,
-            per_lb=_HOTSHOT_ZONE_X["per_lb"],
-            per_mile=_HOTSHOT_ZONE_X["per_mile"],
-            min_charge=_HOTSHOT_ZONE_X["min_charge"],
-            weight_break=_HOTSHOT_ZONE_X["weight_break"],
-            fuel_pct=_HOTSHOT_ZONE_X["fuel_pct"],
-        )
-    )
+    # Note: an INSERT path that copied missing scicr rows used to live
+    # here, but it omitted the non-nullable ``miles`` column and would
+    # have inserted one row per zone-letter instead of one per mile
+    # (1-100). It now lives correctly in ``f1d3b8c9e7a5`` as a
+    # ``SELECT FROM hotshot_rates WHERE rate_set='default'`` copy.
 
 
 def upgrade() -> None:
     for zone, (min_charge, per_lb, weight_break) in _AIR_RATES.items():
         _upsert_air(zone, min_charge, per_lb, weight_break)
     for zone, (per_lb, min_charge, weight_break, fuel_pct) in _HOTSHOT_RATES_A_TO_J.items():
-        _upsert_hotshot_a_to_j(zone, per_lb, min_charge, weight_break, fuel_pct)
-    _upsert_hotshot_zone_x()
+        _update_hotshot_a_to_j(zone, per_lb, min_charge, weight_break, fuel_pct)
+    _update_hotshot_zone_x()
 
 
 def downgrade() -> None:
