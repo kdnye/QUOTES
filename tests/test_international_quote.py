@@ -107,18 +107,175 @@ def test_door_to_airport_never_applies_hotshot_surcharge():
     assert result.quote_total == pytest.approx(2950.0)
 
 
-def test_missing_km_emits_warning_for_door_to_door():
-    """Door-to-Door + km not supplied -> warning, no surcharge."""
-    lane = _stub_lane()
+def test_missing_km_falls_back_to_warning_when_no_airports():
+    """Door-to-Door + no airport codes -> warning, no surcharge."""
+    lane = _stub_lane(
+        airport_code_1=None, airport_code_2=None, airport_code_3=None
+    )
     result = calculate_international_quote(
         destination=lane.destination,
         lab_code=lane.lab_code,
         weight_lb=100.0,
         km_to_airport=None,
         lane_lookup=lambda **_: lane,
+        distance_lookup=lambda *_a, **_kw: None,  # never called
     )
     assert result.intl_hotshot_surcharge == pytest.approx(0.0)
-    assert any("km" in w.lower() for w in result.warnings)
+    assert any("airport" in w.lower() for w in result.warnings)
+
+
+def test_auto_resolve_picks_nearest_airport_via_distance_lookup():
+    """Multi-airport lane: runtime asks the lookup for each, picks MIN.
+
+    Mirrors the workbook's ``AA8 = MIN(W9:W18)`` pattern. ADL is 95 km
+    from Adelaide; MEL is 730 km (used here as a stand-in to test the
+    MIN). The runtime should pick ADL and surface it as
+    ``picked_airport``, then run the surcharge against 95 km not 730.
+    """
+    lane = _stub_lane(
+        destination="Australia - Adelaide",
+        airport_code_1="ADL",
+        airport_code_2="MEL",
+        airport_code_3=None,
+        cost_per_km_over_80=1.25,
+    )
+    calls = []
+
+    def fake_distance(origin, destination):
+        calls.append((origin, destination))
+        return {"ADL Airport": 95.0, "MEL Airport": 730.0}[origin]
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=fake_distance,
+    )
+
+    # Both airports were queried; ADL won.
+    assert {call[0] for call in calls} == {"ADL Airport", "MEL Airport"}
+    # Both queries hit the same city/country string.
+    assert all(call[1] == "City of Adelaide, Australia" for call in calls)
+    assert result.km_to_airport == pytest.approx(95.0)
+    assert result.picked_airport == "ADL"
+    # Surcharge = (95 - 80) * 1.25 = 18.75
+    assert result.intl_hotshot_surcharge == pytest.approx((95 - 80) * 1.25)
+
+
+def test_auto_resolve_uses_destination_city_override():
+    """``destination_city`` argument wins over the parsed display string."""
+    lane = _stub_lane(
+        destination="Australia - Sydney",  # display says Sydney
+        airport_code_1="MEL",
+    )
+
+    def fake_distance(origin, destination):
+        # Caller passes Melbourne, not Sydney — confirm it gets through.
+        assert destination == "City of Melbourne, Australia"
+        return 25.0
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        destination_city="Melbourne",
+        lane_lookup=lambda **_: lane,
+        distance_lookup=fake_distance,
+    )
+    assert result.km_to_airport == pytest.approx(25.0)
+    assert result.picked_airport == "MEL"
+
+
+def test_auto_resolve_dedupes_duplicate_airport_codes():
+    """Lanes with repeat airport codes (case/whitespace variants) call once.
+
+    A lane carrying ``("ADL", "adl", " ADL ")`` should send one Google
+    request, not three. The helper normalizes + dedups before fetching.
+    """
+    lane = _stub_lane(
+        airport_code_1="ADL",
+        airport_code_2="adl",
+        airport_code_3=" ADL ",
+    )
+    calls = []
+
+    def fake_distance(origin, destination):
+        calls.append((origin, destination))
+        return 95.0
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=fake_distance,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "ADL Airport"
+    assert result.picked_airport == "ADL"
+    assert result.km_to_airport == pytest.approx(95.0)
+
+
+def test_auto_resolve_falls_back_to_warning_when_lookup_fails():
+    """Lookup returns None for every airport -> warning, no surcharge."""
+    lane = _stub_lane(airport_code_1="ADL")
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=lambda *_a, **_kw: None,
+    )
+    assert result.km_to_airport is None
+    assert result.picked_airport is None
+    assert result.intl_hotshot_surcharge == pytest.approx(0.0)
+    assert any("google" in w.lower() for w in result.warnings)
+
+
+def test_caller_supplied_km_skips_auto_resolve():
+    """When ``km_to_airport`` is passed, the distance lookup is never called."""
+    lane = _stub_lane(airport_code_1="ADL", cost_per_km_over_80=1.25)
+    distance_calls = []
+
+    def fake_distance(origin, destination):
+        distance_calls.append((origin, destination))
+        return 999.0  # would dominate the MIN if called
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=100.0,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=fake_distance,
+    )
+    assert distance_calls == []
+    assert result.km_to_airport == pytest.approx(100.0)
+    assert result.picked_airport is None  # caller override -> no pick
+    assert result.intl_hotshot_surcharge == pytest.approx((100 - 80) * 1.25)
+
+
+def test_auto_resolve_skipped_for_door_to_airport_lanes():
+    """Door-to-Airport lanes skip the lookup entirely (no surcharge applies)."""
+    lane = _stub_lane(notes="Door to Airport", airport_code_1="ADL")
+    distance_calls = []
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=lambda *args, **kwargs: distance_calls.append(args) or 1000.0,
+    )
+    assert distance_calls == []
+    assert result.intl_hotshot_surcharge == pytest.approx(0.0)
 
 
 def test_surcharge_over_750_flags_confirmation_threshold():
