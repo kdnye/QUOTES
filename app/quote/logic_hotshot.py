@@ -16,6 +16,25 @@ from app.services.rate_sets import DEFAULT_RATE_SET, _call_with_rate_set
 LOGGER = logging.getLogger(__name__)
 
 
+# NYC ZIP whitelist from the FSI VSC-Locked workbook's
+# `Domestic Hotshot Quotes!P3:P43`. When the destination ZIP is in this set,
+# the workbook's `D18` branch overrides the per-mile / weight-break base
+# with the SCPA->NYC local-delivery flat rate ($1,100) before MAX'ing
+# against the standard zone path. Accessorials and VSC apply normally on
+# top of the override.
+NYC_FLAT_RATE_ZIPS: frozenset[str] = frozenset(
+    {
+        "10001", "10002", "10003", "10004", "10006", "10007", "10010",
+        "10012", "10013", "10014", "10016", "10017", "10018", "10019",
+        "10021", "10022", "10023", "10024", "10025", "10027", "10028",
+        "10029", "10030", "10031", "10032", "10034", "10035", "10036",
+        "10038", "10039", "10049", "10065", "10075", "10128", "10168",
+        "10461", "11215", "11758",
+    }
+)
+NYC_FLAT_RATE_USD: float = 1100.0
+
+
 class VscDestinationZoneLookupError(ValueError):
     """Raised when a VSC destination zone cannot be resolved for a ZIP code."""
 
@@ -192,25 +211,35 @@ def calculate_hotshot_quote(
     Returns:
         A dictionary with keys ``zone``, ``miles``, ``quote_total``,
         ``weight_break``, ``per_lb``, ``per_mile`` and ``min_charge``.
-        ``weight_break`` may be ``None`` when not defined.
 
-        Zones ``A`` through ``J`` charge ``max(min_charge, weight * per_lb)``,
+        Zones ``A`` through ``J`` use the FSI VSC-Locked workbook's
+        weight-break formula
+        ``IF(weight > weight_break, ((weight - weight_break) * per_lb) + min, min)``
         with all three values sourced from the resolved :class:`HotshotRate`
         row.
 
-        Zone ``X`` charges ``max(miles * per_mile, weight * per_lb)``, also
-        sourced from the rate row. The row's ``per_mile`` must be non-NULL for
-        any Zone X record; a NULL value raises :class:`ValueError` because
-        Zone X mileage minimums cannot be computed without it. The admin form
-        at :class:`app.admin.HotshotRateForm` enforces the same constraint at
-        edit time, so customers and admins can change Zone X pricing per
-        rate set without a code deploy.
+        Zone ``X`` charges ``miles * per_mile`` (no weight*per_lb floor and
+        no fuel surcharge — the FSI workbook's ``D18`` Zone-X branch is pure
+        per-mile, and the workbook stores ``Fuel = 0`` for Zone X). The
+        row's ``per_mile`` must be non-NULL; a NULL value raises
+        :class:`ValueError`.
+
+        NYC override: when ``destination`` is in :data:`NYC_FLAT_RATE_ZIPS`,
+        a parallel "NYC base" of :data:`NYC_FLAT_RATE_USD` (no fuel
+        surcharge) is computed and the **higher** of (zone-base + fuel)
+        and (NYC base) becomes the freight subtotal. This mirrors the
+        workbook's ``D20 = MAX(D17, D18)`` line.
 
     Surcharge policy:
-        The rate table ``fuel_pct`` is applied to the base to produce a
-        post-fuel subtotal (equivalent to "Quote A-J" in the spreadsheet).
-        The dynamic EIA-based VSC is then applied to that post-fuel subtotal,
-        not to the raw base.
+        For zones A-J the rate row's ``fuel_pct`` is applied to the base
+        (matches the workbook's hard-coded ``*1.315`` multiplier on
+        ``D17``). Zone X and the NYC flat-rate override do NOT apply a
+        fuel surcharge (workbook's ``D18`` has no ``*1.315``).
+
+        The dynamic EIA-based VSC is then applied to the post-fuel base
+        (excluding accessorials). The VSC zone is the **larger** of the
+        origin and destination VSC zones, matching the workbook's
+        ``K10 = MAX(K8, K9)``.
     """
     miles = math.ceil(get_distance_miles(origin, destination) or 0)
 
@@ -228,30 +257,74 @@ def calculate_hotshot_quote(
                 f"Edit the row in /admin/hotshot_rates and set Per Mile."
             )
         per_mile = float(rate.per_mile)
+        # Workbook D18 Zone-X branch: pure miles * per_mile. No per-lb floor,
+        # no fuel surcharge (D18 has no *1.315 multiplier; FSI stores Fuel=0
+        # for Zone X). Stash the per-mile charge in min_charge for the
+        # downstream payload field; base IS that charge.
         min_charge = miles * per_mile
-        base = max(min_charge, weight * per_lb)
+        base = min_charge
     else:
         per_mile = None
         min_charge = float(rate.min_charge)
-        base = max(min_charge, weight * per_lb)
+        # Workbook D17 Zones A-J: IF(weight > WB, ((weight-WB)*per_lb) + min, min)
+        if weight_break is not None and weight > weight_break:
+            base = ((weight - weight_break) * per_lb) + min_charge
+        else:
+            base = min_charge
 
-    vsc_dest_zone, warning_metadata = _resolve_destination_zone(
+    # Zone X and the NYC override do not get a fuel-surcharge multiplier
+    # (the workbook's *1.315 only fires in D17, the A-J branch).
+    if zone.upper() == "X":
+        fuel_pct = 0.0
+    else:
+        fuel_pct = float(rate.fuel_pct or 0.0)
+    base_surcharge_amount = base * fuel_pct
+    base_with_fuel = base + base_surcharge_amount
+
+    nyc_override_applied = False
+    if str(destination).strip() in NYC_FLAT_RATE_ZIPS:
+        # MAX(D17, D18) — the NYC flat rate wins only if it beats the
+        # standard zone path. The override has no fuel surcharge.
+        if NYC_FLAT_RATE_USD > base_with_fuel:
+            base = NYC_FLAT_RATE_USD
+            base_surcharge_amount = 0.0
+            base_with_fuel = NYC_FLAT_RATE_USD
+            fuel_pct = 0.0
+            nyc_override_applied = True
+
+    # VSC zone = MAX(origin VSC zone, destination VSC zone) to mirror the
+    # workbook's K10 = MAX(K8, K9). Both lookups feed `get_vsc_pct_for_zone`.
+    origin_vsc_zone, origin_warnings = _resolve_destination_zone(
+        origin,
+        rate_set=rate_set,
+        zip_lookup=zip_lookup,
+        vsc_zone_lookup=vsc_zone_lookup,
+    )
+    dest_vsc_zone, dest_warnings = _resolve_destination_zone(
         destination,
         rate_set=rate_set,
         zip_lookup=zip_lookup,
         vsc_zone_lookup=vsc_zone_lookup,
     )
 
+    def _zone_sort_key(z: str) -> tuple[int, str]:
+        # Numeric zones (1-10) compare normally; "NATIONAL" / non-numeric
+        # fall back to a low rank so a real zone beats the fallback.
+        try:
+            return (int(z), z)
+        except (TypeError, ValueError):
+            return (-1, str(z))
+
+    vsc_zone = max(origin_vsc_zone, dest_vsc_zone, key=_zone_sort_key)
+    warning_metadata = origin_warnings + dest_warnings
+
     dynamic_vsc_pct = get_dynamic_vsc_pct(
         base=base,
         miles=miles,
         zone=zone,
-        dest_zone=vsc_dest_zone,
+        dest_zone=vsc_zone,
         rate_set=rate_set,
     )
-    fuel_pct = float(rate.fuel_pct or 0.0)
-    base_surcharge_amount = base * fuel_pct
-    base_with_fuel = base + base_surcharge_amount
     vsc_amount = base_with_fuel * dynamic_vsc_pct
     total_fsc_applied = (base_surcharge_amount + vsc_amount) / base if base else 0.0
     quote_total = base_with_fuel + vsc_amount + accessorial_total
@@ -270,6 +343,9 @@ def calculate_hotshot_quote(
         "per_lb": per_lb,
         "per_mile": per_mile,
         "min_charge": min_charge,
-        "dest_zone": vsc_dest_zone,
+        "dest_zone": dest_vsc_zone,
+        "origin_vsc_zone": origin_vsc_zone,
+        "vsc_zone_used": vsc_zone,
+        "nyc_override_applied": nyc_override_applied,
         "warning_metadata": warning_metadata,
     }
