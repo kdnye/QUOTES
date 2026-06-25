@@ -225,11 +225,9 @@ _KNOWN_FAILURE_NODEIDS: frozenset[str] = frozenset(
         "tests/test_help_routes.py::test_help_index_shows_employee_resources_for_internal_users",
         "tests/test_help_routes.py::test_help_index_treats_company_email_as_internal_even_without_employee_role",
         "tests/test_help_routes.py::test_help_terms_of_use_route_renders_freight_services_content",
-        "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_applies_rate_fuel_pct_then_vsc",
-        "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_rate_fuel_pct_affects_vsc_base",
-        "tests/test_logic_hotshot.py::test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing",
-        "tests/test_logic_hotshot.py::test_get_vsc_zone_for_zip_can_raise_typed_error_when_missing",
-        "tests/test_logic_hotshot.py::test_miles_are_ceiling_rounded",
+        # Hotshot tests pass cleanly after the FSI VSC-Locked alignment
+        # (PR c5d7f1e9a2b3 / branch claude/hotshot-fsi-vsc-locked-align)
+        # so they no longer need the conftest xfail shim.
         "tests/test_mail_privileges.py::test_mail_privileges_allow_approved_employee",
         "tests/test_mail_privileges.py::test_mail_privileges_allow_opt_in",
         "tests/test_mail_privileges.py::test_mail_privileges_allow_super_admin",

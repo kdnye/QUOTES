@@ -48,6 +48,7 @@ SC_QUOTE_SESSIONS_TABLE = "sc_quote_sessions"
 SC_QUOTE_SESSION_LEGS_TABLE = "sc_quote_session_legs"
 SC_USER_LAB_SLOTS_TABLE = "sc_user_lab_slots"
 SC_TISSUE_BOX_CAPACITY_TABLE = "sc_tissue_box_capacity"
+SC_INTERNATIONAL_LANES_TABLE = "sc_international_lanes"
 BOOKING_EMAIL_RECEIPTS_TABLE = "booking_email_receipts"
 
 RATE_SET_DEFAULT = "default"
@@ -743,6 +744,67 @@ class SCEstablishedLane(db.Model):
     rate = db.Column(db.Float, nullable=False)
     effective_from = db.Column(db.Date)
     effective_to = db.Column(db.Date)
+    rate_set = db.Column(
+        db.String(50),
+        nullable=False,
+        default=RATE_SET_SCIENCE_CARE,
+        server_default=RATE_SET_SCIENCE_CARE,
+        index=True,
+    )
+
+
+class SCInternationalLane(db.Model):
+    """One pre-negotiated international air lane keyed by (destination, lab).
+
+    Mirrors the ``International Quotes`` tab of the FSI Shipping Quote Tool
+    2026 VSC-Locked workbook (``B4:O1102``). Each row is one combination of
+    a destination city (display string like ``"Australia - Adelaide"``)
+    and an origin SC lab (``SCAZ`` / ``SCCA`` / ...).
+
+    Quote math (workbook ``R21``):
+        IF(weight > weight_break,
+           ((weight - weight_break) * per_lb) + min_charge,
+           min_charge)
+        + intl_hotshot_surcharge
+
+    Where ``intl_hotshot_surcharge`` is non-zero only when:
+        * notes == "Door to Door"
+        * standard rate (not customer-specific or ground)
+        * distance from destination city to airport > 80 km
+
+    and equals ``(km_to_airport - 80) * cost_per_km_over_80``.
+
+    No VSC, no accessorials, no fuel surcharge — the workbook prices these
+    lanes net (one of the reasons quotes >= $750 require operator
+    confirmation per ``Z11``).
+    """
+
+    __tablename__ = SC_INTERNATIONAL_LANES_TABLE
+    __table_args__ = (
+        UniqueConstraint(
+            "rate_set",
+            "destination",
+            "lab_code",
+            name="uq_sc_intl_lanes_rate_set_dest_lab",
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    destination = db.Column(db.String(120), nullable=False, index=True)
+    country = db.Column(db.String(80), nullable=False)
+    notes = db.Column(db.String(40), nullable=True)  # "Door to Door" / "Door to Airport"
+    rate_class = db.Column(
+        db.String(40), nullable=False, default="Standard", server_default="Standard"
+    )
+    lab_code = db.Column(db.String(8), nullable=False, index=True)
+    airport_code_1 = db.Column(db.String(8), nullable=True)
+    airport_code_2 = db.Column(db.String(8), nullable=True)
+    airport_code_3 = db.Column(db.String(8), nullable=True)
+    min_charge = db.Column(db.Float, nullable=False)
+    per_lb = db.Column(db.Float, nullable=False)
+    weight_break = db.Column(db.Float, nullable=False)
+    cost_per_km_over_80 = db.Column(db.Float, nullable=True)
+    special_notes = db.Column(db.Text, nullable=True)
     rate_set = db.Column(
         db.String(50),
         nullable=False,

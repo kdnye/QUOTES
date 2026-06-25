@@ -28,6 +28,8 @@ with a `[REMOVED YYYY-MM-DD]` marker — IDs are never reused.
 | EQ-014 | Dynamic VSC computation (EIA diesel -> PADD -> surcharge %) | `app/services/fuel_surcharge.py`, `get_vsc_pct_for_zone()` |
 | EQ-015 | Accessorial charge application | `app/quotes/routes.py`, `new_quote()`; canonical helper in `app/services/quote.py`, `create_quote()` |
 | EQ-016 | Air quote total | `app/quote/logic_air.py`, `calculate_air_quote()` (+ Guarantee post-processing in `app/quotes/routes.py`) |
+| EQ-017 | International freight base (workbook `R21`) | `app/services/international_quote.py`, `calculate_international_quote()`; lanes loaded by migration `migrations/versions/d8a4f9c1b2e6_*.py` |
+| EQ-018 | International door-to-door km surcharge | `app/services/international_quote.py`, `calculate_international_quote()` |
 
 ---
 
@@ -346,66 +348,93 @@ returns Zone `X` (any miles >= 100). The HotshotRate row for
 **Purpose:** Compute the pre-surcharge linehaul amount for short-haul
 hotshot quotes (under 100 mi).
 
-**Formula:**
+**Formula** (matches FSI VSC-Locked workbook `Domestic Hotshot Quotes!D17`):
 
-    base = max(min_charge, weight * per_lb)
+    if weight > weight_break:
+        base = ((weight - weight_break) * per_lb) + min_charge
+    else:
+        base = min_charge
 
-All three values come from the `HotshotRate` row selected by EQ-005. The
-formula's `max(...)` form is mathematically equivalent to the Air-freight
-"min_charge + (weight - weight_break) * per_lb" form **whenever**
-`min_charge == weight_break * per_lb`. That invariant holds for every
-row currently in `rates/Hotshot_Rates.csv` (Zone A: 382.5 x 0.208 = 79.56;
-Zone B: 445 x 0.208 = 92.56; ... Zone J: 1975 x 0.208 = 410.8), which is
-why the runtime can ignore `weight_break` without changing answers.
+All three values come from the `HotshotRate` row selected by EQ-005. This
+is the same weight-break shape Air uses (EQ-012). The earlier app
+implementation used `max(min_charge, weight * per_lb)` which silently
+diverged from the workbook whenever a row's `weight_break * per_lb` no
+longer matched its `min_charge`; migration `c5d7f1e9a2b3` replaced the
+rate card with the workbook's exact values and the runtime now uses the
+workbook's formula directly.
 
-**Known wart:** `weight_break` is loaded from the rate row and surfaced
-in the output dict under the `"weight_break"` key, but it does not
-participate in the formula. If a future CSV edit decouples `min_charge`
-from `weight_break * per_lb`, Hotshot will silently diverge from the
-Air-style intent. A guard at CSV-import time is filed as a follow-up.
+**Rate-card source of truth:** the 10 `default`-rate-set rows in
+`HotshotRate` for Zones A-J mirror `Domestic Hotshot Quotes!E45:G54` of
+the FSI VSC-Locked workbook:
+
+| Zone | Min      | Per Lb | Weight Break |
+|------|---------:|-------:|-------------:|
+| A    |  70.0128 | 0.2464 |  284.142857 |
+| B    |  81.4528 | 0.2464 |  330.571429 |
+| C    |  93.3504 | 0.2464 |  378.857143 |
+| D    | 105.2480 | 0.2464 |  427.142857 |
+| E    | 117.1456 | 0.2464 |  475.428571 |
+| F    | 219.6480 | 0.2464 |  891.428571 |
+| G    | 267.2384 | 0.2464 | 1084.571429 |
+| H    | 267.2384 | 0.2464 | 1084.571429 |
+| I    | 297.4400 | 0.2464 | 1207.142857 |
+| J    | 361.5040 | 0.2464 | 1467.142857 |
 
 **Variables:**
 
 | Variable | Type | Unit | Source | Description |
 | --- | --- | --- | --- | --- |
 | `weight` | float | lb | quote request | Billable shipment weight |
-| `per_lb` | float | USD/lb | `HotshotRate.per_lb` | Per-pound rate for the zone |
-| `min_charge` | float | USD | `HotshotRate.min_charge` | Minimum charge for the zone |
-| `weight_break` | float | lb | `HotshotRate.weight_break` | Loaded and surfaced but not used in formula (see "Known wart") |
+| `per_lb` | float | USD/lb | `HotshotRate.per_lb` | Per-pound rate above the break |
+| `min_charge` | float | USD | `HotshotRate.min_charge` | Minimum charge (covers everything up to `weight_break`) |
+| `weight_break` | float | lb | `HotshotRate.weight_break` | Pivot weight (`min_charge / per_lb`) |
 
 **Constraints:**
 
-- All three values come from the same row. None are hardcoded.
+- All three values come from the same row.
 - `per_mile` on the rate row is unused for Zones A-J (NULL in seed data).
+- When `weight_break` is NULL (legacy CSV uploads / admin form leave it
+  optional), the runtime derives an effective break of `min_charge /
+  per_lb` — same convention as the workbook's `G45 = F45/E45`. Without
+  this fallback an A-J quote on such a row would flatten to `min_charge`
+  regardless of weight, under-quoting heavy shipments.
 
 **Code location:** `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()`,
-lines ~222-225.
+lines ~244-252; migration `migrations/versions/c5d7f1e9a2b3_*`.
 
-**Worked example:** Zone A row (`per_lb=0.208`, `min_charge=79.56`,
-`weight_break=382.5`):
+**Worked example:** Zone B row (`per_lb=0.2464`, `min_charge=81.4528`,
+`weight_break=330.571`):
 
-    weight=200 lb -> base = max(79.56, 200 * 0.208) = max(79.56, 41.60) = 79.56 USD
-    weight=500 lb -> base = max(79.56, 500 * 0.208) = max(79.56, 104.00) = 104.00 USD
+    weight=100 lb -> base = min_charge = 81.4528 USD
+                    (100 <= 330.571)
+    weight=612 lb -> base = ((612 - 330.571) * 0.2464) + 81.4528
+                          = 281.429 * 0.2464 + 81.4528
+                          = 69.344 + 81.4528 = 150.80 USD
 
-**Last verified:** 2026-06-23
+**Last verified:** 2026-06-25
 
 ---
 
 ## EQ-007: Hotshot base rate (Zone X)
 
 **Purpose:** Compute the pre-surcharge linehaul amount for long-haul
-hotshot quotes (>= 100 mi), where a per-mile minimum dominates instead
-of a flat per-zone minimum.
+hotshot quotes (>= 100 mi), where the workbook switches to a pure
+per-mile charge with NO weight floor and NO fuel surcharge.
 
-**Formula:**
+**Formula** (matches FSI VSC-Locked workbook
+`Domestic Hotshot Quotes!D18`, Zone X branch):
 
-    min_charge = miles * per_mile
-    base       = max(min_charge, weight * per_lb)
+    base = miles * per_mile
 
-Both `per_lb` and `per_mile` come from the `HotshotRate` row selected by
-EQ-005. The default-rate-set seed values are `per_lb = 5.1` and
-`per_mile = 6.0192` (originally hardcoded in code; backfilled into the
-DB by migration `a1c4d6e8f2b9_backfill_zone_x_per_mile.py`).
+`per_mile` is the only rate field that participates. The earlier app
+implementation took `max(miles * per_mile, weight * per_lb)` (a defensive
+floor that fired for very heavy loads on short long-haul trips) AND
+applied the `fuel_pct` multiplier; both behaviors diverged from the
+workbook. The workbook's `D18` is pure per-mile and the `Fuel` column for
+Zone X is `0`. The runtime now mirrors that: no weight floor, fuel
+multiplier short-circuited to `0` for Zone X. Migration
+`c5d7f1e9a2b3` flips the seeded `HotshotRate('X').fuel_pct` from `0.315`
+to `0.0` so per-customer rate sets aren't silently surcharged either.
 
 **Per-customer / per-rate-set overrides:** an admin can edit any
 Zone X row at `/admin/hotshot_rates` and change `per_lb`, `per_mile`, or
@@ -442,26 +471,30 @@ row remains the fallback.
 lines ~217-225; data-integrity guard at lines ~218-221; admin-side
 validator at `app/admin.py`, `HotshotRateForm.validate()`.
 
-**Worked example:** Default-rate-set Zone X row (`per_lb=5.1`,
-`per_mile=6.0192`):
+**Worked example:** Default-rate-set Zone X row (`per_mile=6.0192`,
+`fuel_pct=0.0`):
 
     miles=150, weight=2000 lb
-    min_charge = 150 * 6.0192 = 902.88 USD
-    weight_cost = 2000 * 5.1 = 10200.00 USD
-    base = max(902.88, 10200.00) = 10200.00 USD
+    base = 150 * 6.0192 = 902.88 USD
+    (heavy load does NOT escalate the base — no per-lb floor)
 
     miles=150, weight=100 lb
-    min_charge = 150 * 6.0192 = 902.88 USD
-    weight_cost = 100 * 5.1 = 510.00 USD
-    base = max(902.88, 510.00) = 902.88 USD
+    base = 150 * 6.0192 = 902.88 USD
 
 Same inputs against a customer-specific rate set with `per_mile = 8.0`:
 
-    miles=150, weight=100 lb
-    min_charge = 150 * 8.0 = 1200.00 USD
-    base = max(1200.00, 510.00) = 1200.00 USD
+    miles=150  ->  base = 150 * 8.0 = 1200.00 USD
 
-**Last verified:** 2026-06-23
+**NYC override:** when the destination ZIP is in
+`logic_hotshot.NYC_FLAT_RATE_ZIPS` (the workbook's `P3:P43` list — 38
+Manhattan and outer-borough ZIPs), the runtime computes a parallel
+`nyc_base = logic_hotshot.NYC_FLAT_RATE_USD` ($1,100) with no fuel
+surcharge and picks `MAX(zone_base + fuel, nyc_base)`. This mirrors
+`D20 = MAX(D17, D18)` in the workbook and applies whether the trip falls
+in Zone X or one of the Zones A-J. Accessorials and VSC layer on top
+either way.
+
+**Last verified:** 2026-06-25
 
 ---
 
@@ -516,42 +549,62 @@ lines ~241-243.
 the post-fuel subtotal so the quote tracks live diesel prices without a
 rate-table edit.
 
-**Formula:**
+**Formula** (matches FSI VSC-Locked workbook
+`Domestic Hotshot Quotes!K10 / K11 / D19`):
 
-    vsc_amount = base_with_fuel * dynamic_vsc_pct
+    vsc_zone   = max(origin_vsc_zone, dest_vsc_zone)        # workbook K10
+    vsc_pct    = get_vsc_pct_for_zone(vsc_zone)             # workbook K11
+    vsc_amount = base_with_fuel * vsc_pct                   # workbook D19
+
+The picked VSC zone is the **larger** of origin and destination zones (an
+integer 1-10 in the seeded `VscZone` table). When one endpoint resolves
+to the non-numeric `"NATIONAL"` fallback, the numeric endpoint wins
+(`_zone_sort_key` ranks `"NATIONAL"` below every real zone). Both
+endpoints' VSC zones are surfaced in the result dict
+(`origin_vsc_zone`, `dest_zone`) plus the picked one (`vsc_zone_used`)
+so operators can audit which side drove the FSC.
 
 `dynamic_vsc_pct` is computed by
-`app.services.fuel_surcharge.get_vsc_pct_for_zone(dest_zone)` from the
+`app.services.fuel_surcharge.get_vsc_pct_for_zone(vsc_zone)` from the
 current `FuelSurcharge` row (EIA diesel price + PADD region) and the
-`vsc_matrix` AppSetting. **This entry documents only the application of
-the VSC to the hotshot total** — the derivation of `dynamic_vsc_pct`
-itself is a separate equation pending its own EQ entry (see
-"Documentation gaps" above).
+`vsc_matrix` AppSetting — see EQ-014.
 
 **Variables:**
 
 | Variable | Type | Unit | Source | Description |
 | --- | --- | --- | --- | --- |
 | `base_with_fuel` | float | USD | EQ-008 | Post-fuel subtotal |
-| `dynamic_vsc_pct` | float | fraction | `get_vsc_pct_for_zone(dest_zone)` | Dynamic surcharge for the destination's VSC zone (e.g. 0.185) |
+| `origin_vsc_zone` | str | — | `VscZone.vsc_zone` for origin ZIP (or `"NATIONAL"` fallback) | Origin VSC zone |
+| `dest_vsc_zone` | str | — | `VscZone.vsc_zone` for destination ZIP (or `"NATIONAL"` fallback) | Destination VSC zone |
+| `vsc_zone` | str | — | `max(origin_vsc_zone, dest_vsc_zone)` | The zone fed to EQ-014 |
+| `dynamic_vsc_pct` | float | fraction | EQ-014 | Surcharge for the picked zone |
 
 **Constraints:**
 
 - VSC compounds onto the post-fuel subtotal, NOT the pre-fuel base.
-- When destination ZIP cannot be resolved to a VSC zone,
-  `_resolve_destination_zone` returns `"NATIONAL"` and emits
-  warning metadata; the matrix lookup still applies if NATIONAL is
-  defined in `vsc_matrix`.
+- A Zone X / NYC quote has `base_with_fuel == base` because the runtime
+  zeroes the fuel multiplier for those branches (EQ-007 / NYC override),
+  so VSC effectively applies straight to the base in those scenarios —
+  same shape as the workbook.
+- When both endpoints fall back to `"NATIONAL"`, `vsc_zone_used` is
+  `"NATIONAL"` and the FSC matrix lookup applies if that key is defined
+  in `vsc_matrix`.
 
 **Code location:** `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()`,
-lines ~234-244; VSC computation in `app/services/fuel_surcharge.py`,
+lines ~265-295; VSC computation in `app/services/fuel_surcharge.py`,
 `get_vsc_pct_for_zone()`.
 
-**Worked example:** `base_with_fuel = 131.50`, `dynamic_vsc_pct = 0.185`:
+**Worked example:** Origin VSC zone = 4 (UT/CO/SC), destination VSC zone
+= 9 (CA/HI), `base_with_fuel = 131.50`, `vsc_pct(9) = 0.22`:
 
-    vsc_amount = 131.50 * 0.185 = 24.3275 USD
+    vsc_zone   = max("4", "9") = "9"
+    vsc_amount = 131.50 * 0.22 = 28.93 USD
 
-**Last verified:** 2026-06-23
+If origin = 9 (CA) and destination = 4 (UT), the same `max` would still
+pick `"9"` and apply 22 % — i.e. CA origins drag every destination's FSC
+up, mirroring the workbook.
+
+**Last verified:** 2026-06-25
 
 ---
 
@@ -586,19 +639,23 @@ order matters only for trace logging; the sum is commutative.
 **Code location:** `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()`,
 line ~246.
 
-**Worked example:** Zone A, weight = 20 lb, miles = 100, `per_lb = 5.0`,
-`min_charge = 50.0`, `fuel_pct = 0.315`, `dynamic_vsc_pct = 0.185`,
-`accessorial_total = 10`:
+**Worked example** (matches the FSI workbook's cached `D20` for the
+default test scenario, origin 85022 → dest 85260, weight 100 lb,
+Specific Time + VSC selected):
 
-    base           = max(50.0, 20 * 5.0) = max(50.0, 100.0) = 100.00 USD
-    fuel_amount    = 100.00 * 0.315      = 31.50 USD
-    base_with_fuel = 100.00 + 31.50      = 131.50 USD
-    vsc_amount     = 131.50 * 0.185      = 24.3275 USD
-    quote_total    = 131.50 + 24.3275 + 10 = 165.8275 USD
+    Zone B: per_lb=0.2464, min=81.4528, WB=330.571, fuel_pct=0.315
+    miles=15.83 -> ceil=16 -> Zone B
+    weight (100) <= WB (330.571) -> base = min = 81.4528
+    fuel_amount    = 81.4528 * 0.315 = 25.6576 USD
+    base_with_fuel = 81.4528 + 25.6576 = 107.1104 USD
+    accessorial    = 95.00 USD       (Specific Time)
+    vsc_zone       = max(8, 8) = 8 -> vsc_pct = 0.195
+    vsc_amount     = 107.1104 * 0.195 = 20.8866 USD
+    quote_total    = 107.1104 + 20.8866 + 95.00 = $222.997
 
-This matches the assertion at `tests/test_logic_hotshot.py:40-75`.
+That is `Domestic Hotshot Quotes!D20` to the penny.
 
-**Last verified:** 2026-06-23
+**Last verified:** 2026-06-25
 
 ---
 
@@ -1131,5 +1188,134 @@ Beyond both endpoints = 0. Destination VSC zone = 7 → `dest_vsc_pct = 0.175`.
 
 That matches the FSI workbook's `Domestic Air Quotes!O22` for the same
 inputs.
+
+**Last verified:** 2026-06-25
+
+---
+
+## EQ-017: International freight base (workbook `R21`)
+
+**Purpose:** Compute the pre-surcharge freight charge for an international
+shipment from one of the seven SC labs to a pre-negotiated destination
+city.
+
+**Formula** (matches FSI VSC-Locked workbook `International Quotes!R21`):
+
+    if weight > weight_break and weight_break > 0:
+        base = ((weight - weight_break) * per_lb) + min_charge
+    else:
+        base = min_charge
+
+All three values come from the resolved `SCInternationalLane` row keyed
+by `(destination_display_string, lab_code, rate_set)`. The lane table
+seeds from `rates/international_lanes.csv` (1,099 rows, all `Standard`
+class today; the workbook supports `Customer Specific` rates but none
+are populated).
+
+**No VSC, no accessorials, no fuel surcharge.** The workbook prices
+these lanes net (one of the reasons quotes above the EQ-018 surcharge
+threshold require operator confirmation per `Z11`).
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `weight` | float | lb | quote request | Billable shipment weight |
+| `per_lb` | float | USD/lb | `SCInternationalLane.per_lb` | Per-pound rate above the break |
+| `min_charge` | float | USD | `SCInternationalLane.min_charge` | Flat minimum covering everything up to the break |
+| `weight_break` | float | lb | `SCInternationalLane.weight_break` | `min_charge / per_lb` (computed by workbook `M = K/L`) |
+
+**Constraints:**
+
+- A missing lane returns an error result; the caller is expected to fall
+  back to "Contact FSI for Quote" (workbook's `R21` error path).
+- `weight_break` is stored as an absolute value so the runtime does not
+  recompute it. When the CSV cell was blank on export, the importer
+  backfills `min_charge / per_lb` to match the workbook formula.
+
+**Code location:** `app/services/international_quote.py`,
+`calculate_international_quote()` lines ~95-115; lane model at
+`app/models.py:SCInternationalLane`; seed migration
+`migrations/versions/d8a4f9c1b2e6_*.py`.
+
+**Worked example:** `Australia - Adelaide` lane for `SCAZ`
+(`min=2950, per_lb=10.5, weight_break=280.95`):
+
+    weight=272 lb -> base = min = 2,950.00 USD       (272 <= 280.95)
+    weight=500 lb -> base = ((500 - 280.95) * 10.5) + 2950.00
+                          = 219.05 * 10.5 + 2950.00
+                          = 2,300.00 + 2,950.00 = 5,250.00 USD
+
+**Last verified:** 2026-06-25
+
+---
+
+## EQ-018: International door-to-door km surcharge
+
+**Purpose:** Apply the workbook's `AA10` "international hotshot" charge
+on top of EQ-017 when a Door-to-Door Standard lane's destination city is
+more than 80 km from the airport.
+
+**Formula** (matches FSI VSC-Locked workbook `International Quotes!AA10`):
+
+    if (notes == "Door to Door"
+            and rate_class == "Standard"
+            and cost_per_km_over_80 is not None
+            and km_to_airport > 80):
+        intl_hotshot_surcharge = (round(km_to_airport) - 80)
+                               * cost_per_km_over_80
+    else:
+        intl_hotshot_surcharge = 0
+
+The km is the distance from the destination city to the lane's airport
+(workbook `AA8 = MIN(W9:W18)` where rows 9-18 are Google Distance Matrix
+lookups for each of the lane's `Airport Code 1/2/3` options). The
+runtime accepts `km_to_airport` as a caller argument today; until the
+quote front-end wires Google Distance Matrix back in for international,
+operators pass it in manually.
+
+**Final international total** = EQ-017 + EQ-018.
+
+**Confirm-with-FSI threshold:** when `intl_hotshot_surcharge > 750`
+USD, the workbook (`Z11`) flags the quote for manual confirmation. The
+runtime surfaces this as `InternationalQuote.requires_confirmation = True`
+plus a warning string.
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+| --- | --- | --- | --- | --- |
+| `notes` | str | — | `SCInternationalLane.notes` | `"Door to Door"` or `"Door to Airport"` |
+| `rate_class` | str | — | `SCInternationalLane.rate_class` | `"Standard"` or `"Customer Specific"` |
+| `cost_per_km_over_80` | float | USD/km | `SCInternationalLane.cost_per_km_over_80` | Per-km surcharge for distance beyond 80 km |
+| `km_to_airport` | float | km | quote request (operator input today) | Distance from destination city to airport |
+
+**Constraints:**
+
+- Door-to-Airport lanes never apply the surcharge (the workbook's
+  `R7 = "Door to Airport"` short-circuits `AA10`).
+- Customer-Specific lanes never apply the surcharge (`R10 = "Customer
+  Specific"` short-circuits `AA10`).
+- A lane without a `cost_per_km_over_80` value never applies the
+  surcharge (Ground / N/A lanes).
+- `km_to_airport == 80` is below the threshold (workbook uses strict
+  `> 80`).
+- The runtime emits a warning when `km_to_airport` is omitted for a
+  Door-to-Door Standard lane — the caller should refine the quote
+  before delivering it to the customer.
+
+**Code location:** `app/services/international_quote.py`,
+`calculate_international_quote()` lines ~117-140.
+
+**Worked example:** `Australia - Adelaide` lane for `SCAZ` (Door to Door,
+`cost_per_km_over_80 = 1.25`):
+
+    km_to_airport=130.4 -> round=130
+    intl_hotshot_surcharge = (130 - 80) * 1.25 = 62.50 USD
+    quote_total            = base + 62.50
+
+    km_to_airport=780.0 -> round=780
+    intl_hotshot_surcharge = (780 - 80) * 1.25 = 875.00 USD
+    quote_total            = base + 875.00 (requires FSI confirmation)
 
 **Last verified:** 2026-06-25
