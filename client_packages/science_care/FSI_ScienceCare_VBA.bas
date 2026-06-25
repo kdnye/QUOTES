@@ -155,6 +155,26 @@ End Sub
 
 
 ' -----------------------------------------------------------------------
+' PUBLIC ENTRY POINT - assign this macro to the Clear button on each tab.
+' Clears the API result cells on the active SHIPMENT sheet so stale output
+' is not mistaken for a fresh quote. Inputs (lab, ZIP, accessorials) are
+' left untouched.
+' -----------------------------------------------------------------------
+Public Sub ClearShipment()
+    Dim ws As Worksheet
+    Set ws = ActiveSheet
+    ws.Range(CELL_OUT_AIR_TOTAL).Value = ""
+    ws.Range(CELL_OUT_AIR_STATUS).Value = ""
+    ws.Range(CELL_OUT_HOT_TOTAL).Value = ""
+    ws.Range(CELL_OUT_HOT_MILES).Value = ""
+    ws.Range(CELL_OUT_HOT_STATUS).Value = ""
+    ws.Range(CELL_OUT_ORIGIN_NOTE).Value = ""
+    ws.Range(CELL_OUT_DEST_NOTE).Value = ""
+    UpdateSummaryTable
+End Sub
+
+
+' -----------------------------------------------------------------------
 ' PUBLIC ENTRY POINT - one-click batch over every SHIPMENT tab.
 ' VBA is single-threaded, so the calls are sequential, but with screen
 ' updates suppressed and one summary popup the whole pass typically
