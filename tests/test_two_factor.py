@@ -114,6 +114,9 @@ def test_password_login_starts_email_challenge(app: Flask, send_mock: Mock) -> N
     args, kwargs = send_mock.call_args
     assert args[0] == user.email
     assert kwargs["feature"] == two_factor.TWO_FACTOR_FEATURE
+    # The user is passed so the mail service can apply per-user throttling and
+    # attribute the dispatch in EmailDispatchLog.
+    assert kwargs["user"] is user
     assert FIXED_CODE in args[2]  # plain-text body carries the code
     # Exactly one active code persisted, stored only as a hash.
     tokens = EmailOtpToken.query.filter_by(user_id=user.id).all()
@@ -300,6 +303,38 @@ def test_mail_failure_during_login_is_handled(
     assert _session_user_id(client) is None
     # Apostrophe is HTML-escaped in the flash, so match the unambiguous tail.
     assert b"send your login code" in response.data
+    # Atomic: a failed send rolls back, leaving no orphan token behind.
+    assert EmailOtpToken.query.count() == 0
+
+
+def test_resend_send_failure_preserves_previous_code(
+    app: Flask, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A failed resend rolls back, keeping the previously emailed code valid."""
+
+    monkeypatch.setattr(two_factor, "_generate_numeric_code", lambda length: FIXED_CODE)
+    sends = {"n": 0}
+
+    def fake_send(*args: object, **kwargs: object) -> None:
+        sends["n"] += 1
+        if sends["n"] >= 2:  # first (login) succeeds; the resend fails
+            raise smtplib.SMTPException("boom")
+
+    monkeypatch.setattr(two_factor, "send_email", fake_send)
+    user = _make_user()
+    client = app.test_client()
+    client.post("/login", data={"email": user.email, "password": "StrongPassw0rd!"})
+
+    # The resend's send fails and must roll back the new code + invalidation.
+    resend = client.post("/login/verify/resend", follow_redirects=True)
+    assert b"send your login code" in resend.data
+
+    # Exactly one active code remains — the original is untouched...
+    active = EmailOtpToken.query.filter_by(user_id=user.id, used=False).all()
+    assert len(active) == 1
+    # ...and it still completes login.
+    client.post("/login/verify", data={"code": FIXED_CODE}, follow_redirects=False)
+    assert _session_user_id(client) == str(user.id)
 
 
 def test_rate_limit_error_during_login_is_handled(
@@ -324,6 +359,8 @@ def test_rate_limit_error_during_login_is_handled(
 
     assert _session_user_id(client) is None
     assert b"slow down" in response.data
+    # Atomic: the rate-limited send rolls back, leaving no orphan token.
+    assert EmailOtpToken.query.count() == 0
 
 
 def test_mask_email_hides_local_part() -> None:
