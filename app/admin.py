@@ -2069,10 +2069,13 @@ def new_zip_zone() -> Union[str, Response]:
 
     form = ZipZoneForm()
     _populate_rate_set_choices(form)
-    # Match the GET-default behavior of new_beyond_rate / new_hotshot_rate /
-    # new_air_cost_zone — pre-populate `default` so the admin doesn't have
-    # to remember to pick a rate set every time.
-    if request.method == "GET" and not form.rate_set.data:
+    # Backfill `default` on every request that didn't send a rate_set —
+    # covers both the GET that renders the empty form AND any POST from a
+    # stale admin form / older script / existing test that doesn't yet
+    # know the field exists. Without this, ZipZoneForm.rate_set's
+    # DataRequired() would reject previously-valid submissions instead of
+    # falling back to the model's old default-rate-set behavior.
+    if not form.rate_set.data:
         form.rate_set.data = DEFAULT_RATE_SET
     if form.validate_on_submit():
         zz = ZipZone(
@@ -2099,6 +2102,10 @@ def edit_zip_zone(zz_id: int) -> Union[str, Response]:
         abort(404)
     form = ZipZoneForm(obj=zz)
     _populate_rate_set_choices(form)
+    # Stale forms that don't yet carry rate_set should preserve the
+    # existing row's rate_set rather than failing DataRequired().
+    if not form.rate_set.data:
+        form.rate_set.data = zz.rate_set or DEFAULT_RATE_SET
     if form.validate_on_submit():
         # Normalize to stay consistent with the other rate-scoped edit
         # routes — strips whitespace, lowercases, and lets a typo from
