@@ -1270,9 +1270,22 @@ more than 80 km from the airport.
 The km is the distance from the destination city to the lane's airport
 (workbook `AA8 = MIN(W9:W18)` where rows 9-18 are Google Distance Matrix
 lookups for each of the lane's `Airport Code 1/2/3` options). The
-runtime accepts `km_to_airport` as a caller argument today; until the
-quote front-end wires Google Distance Matrix back in for international,
-operators pass it in manually.
+runtime resolves this automatically when `km_to_airport` is not passed
+in: `app.quote.distance.get_km_to_nearest_airport()` calls Google
+Directions for each of the lane's 1-3 candidate airports
+(`"{IATA} Airport"` → `"City of {city}, {country}"`) and picks the
+smallest km value. Callers can still override with `km_to_airport=...`
+to skip the network call (useful for tests and for cases where ops
+already knows the right distance). The picked IATA code is surfaced on
+the result as `InternationalQuote.picked_airport`.
+
+Auto-resolve preconditions (skipped otherwise — saves a Google call):
+the lane must be Door-to-Door Standard with a non-NULL
+`cost_per_km_over_80`, the request must carry a destination city
+(supplied via `destination_city=...` or parsed from the
+`"{Country} - {City}"` lane display string), and the lane must have at
+least one `airport_code_*`. Any failure surfaces a warning on the
+result and leaves `intl_hotshot_surcharge = 0`.
 
 **Final international total** = EQ-017 + EQ-018.
 

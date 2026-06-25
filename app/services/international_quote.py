@@ -1,11 +1,8 @@
-"""Stub for FSI International quote math.
+"""FSI International quote math.
 
 Mirrors the ``International Quotes`` tab of the FSI Shipping Quote Tool
-2026 VSC-Locked workbook. This is a **read-only** stub — it computes the
-quote per the workbook's ``R21`` formula and returns the breakdown but
-does NOT persist anything, has no VSC, no accessorials, and no UI yet.
-The intended caller today is the SC multi-leg orchestrator (or a future
-``/sc/international/quote`` endpoint) once we wire it up.
+2026 VSC-Locked workbook. The function is callable from a route /
+orchestrator today; persistence + a dedicated form are still pending.
 
 Quote (from workbook ``R21``):
 
@@ -18,16 +15,25 @@ Where ``intl_hotshot_surcharge`` is non-zero only when:
     * the lane is Door-to-Door (``SCInternationalLane.notes == "Door to Door"``)
     * the lane is a Standard rate (not Customer Specific)
     * ``km_to_airport > 80``
-and equals ``(round(km_to_airport) - 80) * cost_per_km_over_80``.
+and equals ``(int(km_to_airport + 0.5) - 80) * cost_per_km_over_80``.
+
+``km_to_airport`` is resolved automatically against Google Directions
+(mirroring the workbook's ``G_DISTANCE`` VBA + ``AA8 = MIN(W9:W18)``
+pattern) when not supplied by the caller. The lane carries up to three
+candidate airports; the runtime asks Google for the driving distance from
+each ``"{IATA} Airport"`` to ``"City of {city}, {country}"`` and picks
+the smallest. Tests inject a stubbed ``distance_lookup`` so they don't
+hit the live API.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Iterable, Optional
 
 from app.database import Session
 from app.models import SCInternationalLane
+from app.quote.distance import get_km_to_nearest_airport
 
 # Workbook constant — quotes above this need ops confirmation. Surfaced in
 # the return dict so the caller can route the quote into a human review
@@ -46,6 +52,11 @@ class InternationalQuote:
     show ("Quote requires FSI confirmation", "Special Notes from the rate
     row", etc.). ``error`` is non-None only when the lane is missing from
     :class:`SCInternationalLane`.
+
+    ``picked_airport`` is the IATA code Google picked as closest to the
+    destination city, when the runtime resolved ``km_to_airport``
+    automatically. ``None`` when the caller supplied ``km_to_airport``
+    or the lookup couldn't resolve a winner.
     """
 
     destination: str
@@ -57,6 +68,7 @@ class InternationalQuote:
     requires_confirmation: bool = False
     lane: Optional[SCInternationalLane] = None
     km_to_airport: Optional[float] = None
+    picked_airport: Optional[str] = None
     warnings: list[str] = field(default_factory=list)
     error: Optional[str] = None
 
@@ -80,27 +92,68 @@ def lookup_lane(
         )
 
 
+def _parse_city_from_destination(destination: str) -> str:
+    """Pull the city out of a display string like ``"Australia - Adelaide"``.
+
+    The workbook destination dropdown uses ``"{Country} - {City}"``. If
+    the caller doesn't supply ``destination_city`` explicitly, treat the
+    text after the last ``" - "`` as the city. Strings without a `` - ``
+    return as-is — that lets a caller pass a bare city name and still
+    get a lookup.
+    """
+
+    if " - " in destination:
+        return destination.rsplit(" - ", 1)[-1].strip()
+    return destination.strip()
+
+
+def _candidate_airports(lane: SCInternationalLane) -> list[str]:
+    return [
+        code
+        for code in (lane.airport_code_1, lane.airport_code_2, lane.airport_code_3)
+        if code and str(code).strip()
+    ]
+
+
 def calculate_international_quote(
     *,
     destination: str,
     lab_code: str,
     weight_lb: float,
     km_to_airport: Optional[float] = None,
+    destination_city: Optional[str] = None,
+    destination_country: Optional[str] = None,
     rate_set: str = "science_care",
     lane_lookup=lookup_lane,
+    distance_lookup=None,
 ) -> InternationalQuote:
     """Run the workbook's ``R21`` math against a ``SCInternationalLane`` row.
 
-    ``km_to_airport`` is the Google Distance Matrix value from the
-    destination city to the lane's airport (workbook ``AA8``). When the
-    caller doesn't supply it (most do not yet), the int'l hotshot
-    surcharge is left at $0 and a warning is emitted — the door-to-door
-    leg of the calc requires that distance.
+    Parameters
+    ----------
+    destination:
+        Lane display string (``"{Country} - {City}"`` per the workbook).
+    lab_code:
+        SC origin lab (``SCAZ`` / ``SCCA`` / …). Normalized at entry.
+    weight_lb:
+        Billable weight in pounds.
+    km_to_airport:
+        Optional override. When ``None`` (the default) the runtime
+        resolves it via Google Directions against the lane's 1-3 airport
+        codes — mirrors the workbook's ``AA8 = MIN(W9:W18)``. Pass a
+        value here to override or to skip the network call.
+    destination_city / destination_country:
+        Inputs to the Google lookup. When omitted the runtime parses
+        ``destination`` (city) and reads ``lane.country`` (country).
+    rate_set:
+        Lane partition. Defaults to ``science_care``.
+    lane_lookup / distance_lookup:
+        Injectable for tests. ``distance_lookup`` is the low-level
+        ``(origin, destination)`` -> km callable; defaults to the
+        Google Directions wrapper in :mod:`app.quote.distance`.
     """
     # Normalize at the entry point so the error string, the result payload,
-    # and the lane lookup all see the same canonical key. Avoids "lab not
-    # found" misses when a form sends "scaz" or " SCAZ " and matches the
-    # ``lookup_lane`` default that already strips internally.
+    # and the lane lookup all see the same canonical key.
     destination = str(destination or "").strip()
     lab_code = str(lab_code or "").strip().upper()
     lane = lane_lookup(destination=destination, lab_code=lab_code, rate_set=rate_set)
@@ -119,6 +172,49 @@ def calculate_international_quote(
         )
         return result
 
+    # Auto-resolve km_to_airport when the caller didn't pass it explicitly.
+    # Only worth doing for Door-to-Door Standard lanes — the others ignore
+    # the surcharge anyway, and the Google call costs $0.005 per request.
+    auto_resolve_eligible = (
+        km_to_airport is None
+        and (lane.notes or "").strip() == DOOR_TO_DOOR
+        and (lane.rate_class or "").strip() == RATE_CLASS_STANDARD
+        and lane.cost_per_km_over_80 is not None
+    )
+    if auto_resolve_eligible:
+        resolved_city = (destination_city or _parse_city_from_destination(destination))
+        resolved_country = destination_country or lane.country
+        airports = _candidate_airports(lane)
+        if not airports:
+            result.warnings.append(
+                "Door-to-Door lane has no airport codes configured; cannot "
+                "auto-resolve distance to airport — supply km_to_airport "
+                "manually."
+            )
+        elif not resolved_city:
+            result.warnings.append(
+                "Door-to-Door lane requires a destination city to auto-resolve "
+                "the distance to airport; supply destination_city or "
+                "km_to_airport."
+            )
+        else:
+            km, picked = get_km_to_nearest_airport(
+                destination_city=resolved_city,
+                destination_country=resolved_country,
+                airport_codes=airports,
+                distance_lookup=distance_lookup,
+            )
+            if km is None:
+                result.warnings.append(
+                    "Google Distance Matrix lookup failed for "
+                    f"city={resolved_city!r} airports={airports}; "
+                    "supply km_to_airport manually to override."
+                )
+            else:
+                km_to_airport = km
+                result.km_to_airport = km
+                result.picked_airport = picked
+
     weight_break = float(lane.weight_break or 0.0)
     per_lb = float(lane.per_lb or 0.0)
     min_charge = float(lane.min_charge or 0.0)
@@ -135,11 +231,10 @@ def calculate_international_quote(
         and lane.cost_per_km_over_80 is not None
     ):
         if km_to_airport is None:
-            result.warnings.append(
-                "Door-to-Door lane requires distance from destination city to "
-                "airport (in km) to compute the international-hotshot surcharge; "
-                "supply km_to_airport to refine the quote."
-            )
+            # Either the caller didn't supply it AND we couldn't auto-resolve
+            # (warning already on the result), or it was explicitly omitted.
+            # Either way, no surcharge.
+            pass
         elif km_to_airport > 80:
             # Excel's ROUND(x, 0) rounds half away from zero; Python's
             # round() uses banker's rounding (round half to even). Use the

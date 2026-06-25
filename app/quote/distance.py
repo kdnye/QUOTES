@@ -106,6 +106,109 @@ def get_distance_miles(origin_zip, destination_zip):
     return None
 
 
+def _get_distance_km_directions(origin: str, destination: str) -> Optional[float]:
+    """Call Google Directions for a free-text origin/destination, return km.
+
+    Mirrors the workbook's ``G_DISTANCE(origin, destination)`` VBA helper
+    used by the International tab: same Directions endpoint, same
+    ``//leg/distance/value`` field, same divide-by-1000 to get km. Returns
+    ``None`` on any failure (missing API key, non-OK status, network
+    error). The international quote runtime treats ``None`` the same as
+    "airport unreachable" — the lane's other candidate airports still get
+    a chance, and the caller emits a warning if all of them miss.
+    """
+
+    api_key = _get_api_key()
+    if not api_key:
+        return None
+    base = "https://maps.googleapis.com/maps/api/directions/json"
+    url = (
+        f"{base}?origin={urlquote(origin)}"
+        f"&destination={urlquote(destination)}"
+        f"&mode=driving&key={urlquote(api_key)}"
+    )
+    try:
+        r = _session_with_retries().get(url, timeout=20)
+        data = r.json()
+        if data.get("status") != "OK":
+            _log(
+                f"[distance.intl] non-OK status={data.get('status')!r} "
+                f"origin={origin!r} dest={destination!r}"
+            )
+            return None
+        meters = data["routes"][0]["legs"][0]["distance"]["value"]
+        return meters / 1000.0
+    except (KeyError, IndexError, ValueError, requests.RequestException) as exc:
+        _log(f"[distance.intl] failure origin={origin!r} dest={destination!r}: {exc}")
+        return None
+
+
+def get_km_to_nearest_airport(
+    *,
+    destination_city: str,
+    destination_country: str,
+    airport_codes,
+    distance_lookup=None,
+):
+    """Pick the closest airport to a destination city, return ``(km, airport)``.
+
+    Mirrors the workbook's ``International Quotes!AA8 = MIN(W9:W18)``
+    pattern: for each of the 1-3 candidate airport codes the lane carries
+    in ``airport_code_1 / 2 / 3``, ask Google Directions for the driving
+    distance from ``"{IATA} Airport"`` to ``"City of {city}, {country}"``,
+    then return the smallest along with which airport produced it.
+
+    Returns ``(None, None)`` when:
+
+    * ``destination_city`` is empty
+    * ``airport_codes`` is empty / all falsy
+    * Every Google lookup fails (missing API key, non-OK status, network
+      error)
+
+    Inputs:
+        destination_city: City name from the international form
+            (workbook ``R8``).
+        destination_country: Country name from the lane
+            (``SCInternationalLane.country`` / workbook ``R6``).
+        airport_codes: Iterable of IATA codes (e.g. ``["ADL"]`` or
+            ``["MEL", "AVV"]``). ``None`` / blank entries are skipped.
+        distance_lookup: Override for the Google call — receives
+            ``(origin: str, destination: str)`` and must return km (float)
+            or ``None``. Defaults to :func:`_get_distance_km_directions`.
+            Tests pass a stub here to avoid hitting the real API.
+
+    Outputs:
+        Tuple ``(km, airport_code)`` of the winning lookup, or
+        ``(None, None)`` if nothing resolved.
+    """
+
+    city = (destination_city or "").strip()
+    country = (destination_country or "").strip()
+    if not city:
+        return None, None
+    fetch = distance_lookup or _get_distance_km_directions
+
+    dest_query = (
+        f"City of {city}, {country}".strip().rstrip(",")
+        if country
+        else f"City of {city}"
+    )
+
+    best_km = None
+    best_airport = None
+    for code in airport_codes or ():
+        airport = (str(code) if code is not None else "").strip().upper()
+        if not airport:
+            continue
+        km = fetch(f"{airport} Airport", dest_query)
+        if km is None:
+            continue
+        if best_km is None or km < best_km:
+            best_km = km
+            best_airport = airport
+    return best_km, best_airport
+
+
 def get_distance_miles_ex(origin_zip, destination_zip) -> dict:
     """Detailed variant returning diagnostics.
 
