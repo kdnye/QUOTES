@@ -73,8 +73,8 @@ def test_sc_quote_renders_for_sc_user(app: Flask) -> None:
     response = client.get("/sc/quote")
     assert response.status_code == 200
     html = response.get_data(as_text=True)
-    # All seven legs render.
-    for n in range(1, 8):
+    # All eight legs render.
+    for n in range(1, 9):
         assert f"SHIPMENT {n}" in html
     # HTMX script tag from base.html is present. Use the pinned URL so
     # CodeQL doesn't flag a loose "htmx.org" substring as incomplete URL

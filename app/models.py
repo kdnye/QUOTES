@@ -932,7 +932,7 @@ class SCUserLabSlot(db.Model):
     """Per-user default lab assigned to each shipment slot on the SC form.
 
     Stores up to ``SC_LEG_COUNT`` rows per user. When the SC quote page
-    renders, the seven ``lab_code_<n>`` inputs are prefilled from these
+    renders, the ``lab_code_<n>`` inputs are prefilled from these
     rows so the user does not have to retype the same labs on every
     visit. The user can still override any slot per submission - this
     table is the *default*, not a hard constraint.

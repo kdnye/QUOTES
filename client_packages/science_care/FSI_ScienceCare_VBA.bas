@@ -3,7 +3,7 @@
 ' Wires the SHIPMENT tabs in 3_MASTER_TOOL to the FSI Quote API.
 ' For each press, calls the API twice (Air, Hotshot) and writes the totals
 ' into the "FS by Air" and "FS by Hot Shot" cells. Origin ZIP is resolved
-' from the lab code in B4 via the workbook's existing
+' from the lab code in B3 via the workbook's existing
 ' "Drop downs OTH - SC" lookup table.
 '
 ' International shipments (B7 filled) are skipped for now - the API
@@ -44,19 +44,19 @@ Private Const LAB_LOOKUP_RANGE As String = "A2:B100"
 ' ==========================================================================
 
 ' Header inputs - defaults match the SHIPMENT 1 layout in 3_MASTER_TOOL.
-Private Const CELL_LAB_CODE       As String = "B3"   ' SC Lab abbreviation (e.g. "SCCA"). VLOOKUP'd against "Drop downs OTH - SC" to get origin ZIP.
-Private Const CELL_DEST_ZIP       As String = "B4"   ' US destination ZIP (5 digits)
+Private Const CELL_LAB_CODE       As String = "B3"   ' SC Lab abbreviation (e.g. "SCCA"). VLOOKUP'd against "Drop downs OTH - SC" to get the lab ZIP.
+Private Const CELL_DEST_ZIP       As String = "B4"   ' US ZIP (5 digits) for the non-lab end of the lane
 Private Const CELL_INTL_COUNTRY   As String = "B6"   ' International country - if filled, macro skips (API is domestic-only)
 
 ' Accessorial Y/N markers - cell holds "Y" when that service is selected.
 ' VSC (J9) is intentionally not sent: it is computed server-side from the
 ' destination zone, not selected per quote.
-Private Const CELL_ACC_4HR_WINDOW   As String = "J3"  ' 4 Hour Delivery/Pick-Up Window ($50)
-Private Const CELL_ACC_SPECIAL_TIME As String = "J4"  ' Special Pickup or Delivery Time (+$95)
-Private Const CELL_ACC_AFTERHOURS   As String = "J5"  ' Afterhours Delivery/Pickup (+$110)
-Private Const CELL_ACC_WEEKEND      As String = "J6"  ' Weekend Pickup/Delivery (+$125)
-Private Const CELL_ACC_TWO_MAN      As String = "J7"  ' Two-Man Team Required (+$125)
-Private Const CELL_ACC_LIFTGATE     As String = "J8"  ' Liftgate Required (+$75)
+Private Const CELL_ACC_4HR_WINDOW     As String = "J3"  ' 4 Hour Delivery/Pick-Up Window ($50)
+Private Const CELL_ACC_SPECIAL_TIME   As String = "J4"  ' Special Pickup or Delivery Time (+$95)
+Private Const CELL_ACC_AFTERHOURS     As String = "J5"  ' Afterhours Delivery/Pickup (+$110)
+Private Const CELL_ACC_WEEKEND_PICKUP As String = "J6"  ' Weekend Pickup/Delivery (+$125)
+Private Const CELL_ACC_TWO_MAN        As String = "J7"  ' Two-Man Team Required (+$125)
+Private Const CELL_ACC_LIFTGATE       As String = "J8"  ' Liftgate Required (+$75)
 
 ' Box-type quantity cells (one row per box type).
 Private Const CELL_QTY_MEDIUM   As String = "A26"  ' Medium    20"x15"x18"
@@ -79,13 +79,15 @@ Private Const CELL_OUT_HOT_STATUS As String = "B41"  ' Hotshot status: "Success"
 ' and metadata.dest_notes (the same text the FSI web UI surfaces). Both cells
 ' live in row 53 by default so the user can hide the row and expose them via
 ' a concatenated formula elsewhere (e.g. in A43).
-Private Const CELL_OUT_ORIGIN_NOTE As String = "A53"  ' Note for the origin (lab) ZIP
-Private Const CELL_OUT_DEST_NOTE   As String = "B53"  ' Note for the destination ZIP
+Private Const CELL_OUT_ORIGIN_NOTE As String = "A53"  ' Note for the origin ZIP sent to the API
+Private Const CELL_OUT_DEST_NOTE   As String = "B53"  ' Note for the destination ZIP sent to the API
 
 ' Number of SHIPMENT N tabs in the workbook - RunAllShipmentQuotes loops
 ' "SHIPMENT 1" through "SHIPMENT <this>". Tabs that don't exist are
 ' counted as "missing" in the summary; bump this if you add tabs.
-Private Const SHIPMENT_TAB_COUNT As Long = 7
+' Tab 8 covers shipments that originate from all 7 labs and include a
+' return leg (Return is selected per-tab via B9, not a separate tab).
+Private Const SHIPMENT_TAB_COUNT As Long = 8
 
 ' "Total S&H" summary table - lives on SHIPMENT 1. Row N picks the
 ' cheapest of {Air, Hotshot, Established Lane} for SHIPMENT N; the grand
@@ -105,28 +107,32 @@ Private Const SUMMARY_COL       As String = "C"
 Private Const CELL_ESTABLISHED_LANE As String = "C42"
 
 ' Routing-mode cell on each SHIPMENT N tab (rows 2-7 only - SHIPMENT 1
-' leaves this blank). When it reads "SC to SC", the rollup picks that
-' shipment's Established Lane price (C42) instead of cheapest-of-three,
-' mirroring 3_MASTER's pre-API "SC to SC -> pre-negotiated lab lane"
-' branch. Empty / "Outbound" / "Inbound" follow the standard cheapest-of
-' logic.
+' leaves this blank).
+'   - "SC to SC": rollup picks the Established Lane price (C42).
+'   - "Return": the quote runs from the B4 ZIP back to the lab (B3), i.e.
+'     origin and destination are swapped before the API call (B4 -> B3
+'     instead of B3 -> B4).
+' Empty / "Outbound" / "Inbound" follow the standard lab -> destination,
+' cheapest-of logic.
 Private Const CELL_ROUTING_MODE As String = "B9"
 Private Const SC_TO_SC_LABEL    As String = "SC to SC"
+Private Const RETURN_LABEL      As String = "return"
 
 ' ==========================================================================
 ' SECTION 3 - ACCESSORIAL NAME MAPPING
 ' Maps each form label to the FSI API accessorial string. The API ignores
-' names it does not recognise.
+' names it does not recognise; these strings must match Accessorial.name
+' on the server (see rates/accessorial_cost.csv).
 ' ==========================================================================
-Private Function AccName(cellAddr As String) As String
+Public Function AccName(cellAddr As String) As String
     Select Case cellAddr
-        Case CELL_ACC_4HR_WINDOW:   AccName = "4hr Window"
-        Case CELL_ACC_SPECIAL_TIME: AccName = "Less than 4 hrs"
-        Case CELL_ACC_AFTERHOURS:   AccName = "After Hours"
-        Case CELL_ACC_WEEKEND:      AccName = "Weekend"
-        Case CELL_ACC_TWO_MAN:      AccName = "Two Man"
-        Case CELL_ACC_LIFTGATE:     AccName = "Liftgate"
-        Case Else:                  AccName = ""
+        Case CELL_ACC_4HR_WINDOW:     AccName = "4hr Window"
+        Case CELL_ACC_SPECIAL_TIME:   AccName = "Less than 4 hrs"
+        Case CELL_ACC_AFTERHOURS:     AccName = "After Hours"
+        Case CELL_ACC_WEEKEND_PICKUP: AccName = "Weekend"
+        Case CELL_ACC_TWO_MAN:        AccName = "Two Man"
+        Case CELL_ACC_LIFTGATE:       AccName = "Liftgate"
+        Case Else:                    AccName = ""
     End Select
 End Function
 
@@ -249,17 +255,30 @@ End Sub
 ' Returns a short status string: "Success", "Skipped: ...", or "Error: ...".
 ' When silent is True, no MsgBox is shown - results still land in the
 ' sheet's status / total cells. The batch runner uses silent=True so a
-' single summary popup replaces seven per-sheet popups.
+' single summary popup replaces the per-sheet popups.
+'
+' Direction: by default the quote runs lab (B3) -> destination (B4). When
+' the routing-mode cell (B9) reads "Return", origin and destination are
+' swapped so the quote runs destination (B4) -> lab (B3).
 ' -----------------------------------------------------------------------
-Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
-    ' Clear previous outputs
-    ws.Range(CELL_OUT_AIR_TOTAL).ClearContents
-    ws.Range(CELL_OUT_AIR_STATUS).ClearContents
-    ws.Range(CELL_OUT_HOT_TOTAL).ClearContents
-    ws.Range(CELL_OUT_HOT_MILES).ClearContents
-    ws.Range(CELL_OUT_HOT_STATUS).ClearContents
-    ws.Range(CELL_OUT_ORIGIN_NOTE).ClearContents
-    ws.Range(CELL_OUT_DEST_NOTE).ClearContents
+Public Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
+    ' Clear previous outputs. Use .Value = "" rather than ClearContents so
+    ' a merged output cell doesn't raise a 1004.
+    ws.Range(CELL_OUT_AIR_TOTAL).Value = ""
+    ws.Range(CELL_OUT_AIR_STATUS).Value = ""
+    ws.Range(CELL_OUT_HOT_TOTAL).Value = ""
+    ws.Range(CELL_OUT_HOT_MILES).Value = ""
+    ws.Range(CELL_OUT_HOT_STATUS).Value = ""
+    ws.Range(CELL_OUT_ORIGIN_NOTE).Value = ""
+    ws.Range(CELL_OUT_DEST_NOTE).Value = ""
+
+    ' --- Routing mode: Return reverses the lane (B4 -> B3) ---
+    Dim isReturn As Boolean
+    Dim routeVal As Variant
+    routeVal = ws.Range(CELL_ROUTING_MODE).Value
+    If Not IsError(routeVal) Then
+        isReturn = (LCase(Trim(CStr(routeVal))) = RETURN_LABEL)
+    End If
 
     ' --- International guard: API is domestic-only for now ---
     Dim intlCountry As String
@@ -279,7 +298,7 @@ Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
         Exit Function
     End If
 
-    ' --- Origin ZIP: look up B4 (lab code) in "Drop downs OTH - SC" ---
+    ' --- Lab ZIP: look up B3 (lab code) in "Drop downs OTH - SC" ---
     Dim labCode As String
     Dim labVal As Variant
     labVal = ws.Range(CELL_LAB_CODE).Value
@@ -293,9 +312,9 @@ Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
         Exit Function
     End If
 
-    Dim originZip As String
-    originZip = LookupLabZip(labCode)
-    If Len(originZip) = 0 Then
+    Dim labZip As String
+    labZip = LookupLabZip(labCode)
+    If Len(labZip) = 0 Then
         Dim msg As String
         msg = "Lab code """ & labCode & """ not found in '" & LAB_LOOKUP_SHEET & "'!" & LAB_LOOKUP_RANGE & "."
         SetStatus ws, "Air", "Error: " & msg
@@ -305,41 +324,52 @@ Private Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
         Exit Function
     End If
     ' Reject "00000" too: FormatZip pads a blank/zero result up to 5 digits.
-    If Not originZip Like "#####" Or originZip = "00000" Then
+    If Not labZip Like "#####" Or labZip = "00000" Then
         Dim invalidMsg As String
-        invalidMsg = "Resolved origin ZIP """ & originZip & """ for lab """ & labCode & """ is invalid."
+        invalidMsg = "Resolved ZIP """ & labZip & """ for lab """ & labCode & """ is invalid."
         SetStatus ws, "Air", "Error: " & invalidMsg
         SetStatus ws, "Hotshot", "Error: " & invalidMsg
         If Not silent Then MsgBox invalidMsg, vbExclamation, "FSI Quote"
-        QuoteShipment = "Error: invalid origin ZIP"
+        QuoteShipment = "Error: invalid lab ZIP"
         Exit Function
     End If
 
-    ' --- Destination ZIP ---
-    Dim destZip As String
-    Dim destRaw As Variant
-    destRaw = ws.Range(CELL_DEST_ZIP).Value
-    If IsError(destRaw) Then
-        SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " contains a worksheet error."
-        SetStatus ws, "Hotshot", "Error: Destination ZIP contains a worksheet error."
-        If Not silent Then MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
-        QuoteShipment = "Error: destination ZIP cell error"
+    ' --- Other-end ZIP: B4 ---
+    Dim locZip As String
+    Dim locRaw As Variant
+    locRaw = ws.Range(CELL_DEST_ZIP).Value
+    If IsError(locRaw) Then
+        SetStatus ws, "Air", "Error: ZIP cell " & CELL_DEST_ZIP & " contains a worksheet error."
+        SetStatus ws, "Hotshot", "Error: ZIP cell contains a worksheet error."
+        If Not silent Then MsgBox "ZIP cell (" & CELL_DEST_ZIP & ") contains a worksheet error.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: ZIP cell error"
         Exit Function
     End If
-    If IsEmpty(destRaw) Or CStr(destRaw) = "" Then
-        SetStatus ws, "Air", "Error: Destination ZIP " & CELL_DEST_ZIP & " is empty."
-        SetStatus ws, "Hotshot", "Error: Destination ZIP empty."
-        If Not silent Then MsgBox "Destination ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
-        QuoteShipment = "Error: destination ZIP empty"
+    If IsEmpty(locRaw) Or CStr(locRaw) = "" Then
+        SetStatus ws, "Air", "Error: ZIP cell " & CELL_DEST_ZIP & " is empty."
+        SetStatus ws, "Hotshot", "Error: ZIP cell empty."
+        If Not silent Then MsgBox "ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: ZIP empty"
         Exit Function
     End If
-    destZip = FormatZip(destRaw)
-    If Not destZip Like "#####" Then
-        SetStatus ws, "Air", "Error: Destination ZIP invalid (" & destZip & ")"
-        SetStatus ws, "Hotshot", "Error: Destination ZIP invalid"
-        If Not silent Then MsgBox "Destination ZIP """ & destZip & """ must be 5 digits.", vbExclamation, "FSI Quote"
-        QuoteShipment = "Error: invalid destination ZIP"
+    locZip = FormatZip(locRaw)
+    If Not locZip Like "#####" Then
+        SetStatus ws, "Air", "Error: ZIP cell invalid (" & locZip & ")"
+        SetStatus ws, "Hotshot", "Error: ZIP invalid"
+        If Not silent Then MsgBox "ZIP cell """ & locZip & """ must be 5 digits.", vbExclamation, "FSI Quote"
+        QuoteShipment = "Error: invalid ZIP"
         Exit Function
+    End If
+
+    ' --- Assign route direction ---
+    ' Standard: lab -> other end. Return: other end -> lab (swap).
+    Dim originZip As String, destZip As String
+    If isReturn Then
+        originZip = locZip
+        destZip = labZip
+    Else
+        originZip = labZip
+        destZip = locZip
     End If
 
     ' --- Weight and pieces ---
@@ -420,12 +450,12 @@ End Function
 
 
 ' -----------------------------------------------------------------------
-' LookupLabZip - resolves SC Lab code (B4) -> 5-digit origin ZIP using
+' LookupLabZip - resolves SC Lab code (B3) -> 5-digit lab ZIP using
 ' the workbook's existing "Drop downs OTH - SC" sheet so adding new labs
 ' is a sheet edit, never a VBA edit.
 ' Returns "" when the code is not found.
 ' -----------------------------------------------------------------------
-Private Function LookupLabZip(labCode As String) As String
+Public Function LookupLabZip(labCode As String) As String
     Dim lookupSheet As Worksheet
     On Error Resume Next
     Set lookupSheet = ThisWorkbook.Sheets(LAB_LOOKUP_SHEET)
@@ -463,7 +493,7 @@ End Function
 ' box types with a positive quantity. Returns 0 when no boxes are filled
 ' in (API will then use actual weight only).
 ' -----------------------------------------------------------------------
-Private Function CalcTotalDimWeight(ws As Worksheet) As Double
+Public Function CalcTotalDimWeight(ws As Worksheet) As Double
     Dim qtyCells(0 To 3) As String
     Dim L(0 To 3) As Double, H(0 To 3) As Double, W(0 To 3) As Double
 
@@ -474,7 +504,7 @@ Private Function CalcTotalDimWeight(ws As Worksheet) As Double
 
     Dim total As Double, i As Long
     total = 0
-    For i = 0 To 3
+    For i = LBound(qtyCells) To UBound(qtyCells)
         Dim v As Variant
         v = ws.Range(qtyCells(i)).Value
         If Not IsError(v) Then
@@ -495,14 +525,14 @@ End Function
 ' -----------------------------------------------------------------------
 ' BuildAccessorialsJson - JSON string-array body from Y markers in J3-J8.
 ' -----------------------------------------------------------------------
-Private Function BuildAccessorialsJson(ws As Worksheet) As String
+Public Function BuildAccessorialsJson(ws As Worksheet) As String
     ' Note: not named "cells" — that shadows the Cells property on
     ' Worksheet/Range and trips VBA's "Ambiguous name" check on some setups.
     Dim accCells(0 To 5) As String
     accCells(0) = CELL_ACC_4HR_WINDOW
     accCells(1) = CELL_ACC_SPECIAL_TIME
     accCells(2) = CELL_ACC_AFTERHOURS
-    accCells(3) = CELL_ACC_WEEKEND
+    accCells(3) = CELL_ACC_WEEKEND_PICKUP
     accCells(4) = CELL_ACC_TWO_MAN
     accCells(5) = CELL_ACC_LIFTGATE
 
@@ -531,7 +561,7 @@ End Function
 ' -----------------------------------------------------------------------
 ' PostQuote - HTTP POST; returns responseText & "|~|" & HTTP status code.
 ' -----------------------------------------------------------------------
-Private Function PostQuote(payload As String) As String
+Public Function PostQuote(payload As String) As String
     Dim http As Object
     Set http = CreateObject("MSXML2.XMLHTTP")
 
@@ -553,7 +583,7 @@ End Function
 ' -----------------------------------------------------------------------
 ' ParseAndWrite - extract fields from the API response and write to sheet.
 ' -----------------------------------------------------------------------
-Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As String)
+Public Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As String)
     Dim parts() As String
     parts = Split(rawResp, "|~|")
 
@@ -633,7 +663,7 @@ Private Sub ParseAndWrite(ws As Worksheet, rawResp As String, quoteType As Strin
 End Sub
 
 
-Private Sub SetStatus(ws As Worksheet, quoteType As String, msg As String)
+Public Sub SetStatus(ws As Worksheet, quoteType As String, msg As String)
     If quoteType = "Air" Then
         ws.Range(CELL_OUT_AIR_STATUS).Value = msg
     Else
@@ -652,7 +682,7 @@ End Sub
 ' Pricing). Cheap to call from both entry points so the summary stays
 ' in sync after any quote run.
 ' -----------------------------------------------------------------------
-Private Sub UpdateSummaryTable()
+Public Sub UpdateSummaryTable()
     Dim summarySheet As Worksheet
     On Error Resume Next
     Set summarySheet = ThisWorkbook.Sheets(SUMMARY_SHEET)
@@ -707,16 +737,17 @@ End Sub
 
 ' -----------------------------------------------------------------------
 ' CheapestFreight - freight cost for one SHIPMENT tab.
-'   * Standard mode (B9 blank / "Outbound" / "Inbound"): returns the
-'     lowest non-zero value across {Air C40, Hotshot C41, Established
-'     Lane C42}.
+'   * Standard mode (B9 blank / "Outbound" / "Inbound" / "Return"): returns
+'     the lowest non-zero value across {Air C40, Hotshot C41, Established
+'     Lane C42}. (Return only changes which ZIP is origin vs destination
+'     for the API call; the cheapest-of rollup is unchanged.)
 '   * SC-to-SC mode (B9 = "SC to SC"): returns the Established Lane
 '     price - pre-negotiated lab-to-lab rate. Falls back to cheapest of
 '     {Air, Hotshot} if Established Lane is "N/A" so the row isn't 0.
 ' Returns 0 when no usable price is available (skipped international,
 ' all inputs blank, etc.).
 ' -----------------------------------------------------------------------
-Private Function CheapestFreight(ws As Worksheet) As Double
+Public Function CheapestFreight(ws As Worksheet) As Double
     Dim air As Double, hot As Double, est As Double
     air = SafeNum(ws.Range(CELL_OUT_AIR_TOTAL).Value)
     hot = SafeNum(ws.Range(CELL_OUT_HOT_TOTAL).Value)
@@ -747,7 +778,7 @@ End Function
 ' "SC to SC" (case-insensitive, leading/trailing whitespace trimmed).
 ' Errors and blank cells return False without raising.
 ' -----------------------------------------------------------------------
-Private Function IsScToSc(ws As Worksheet) As Boolean
+Public Function IsScToSc(ws As Worksheet) As Boolean
     Dim v As Variant
     v = ws.Range(CELL_ROUTING_MODE).Value
     If IsError(v) Then Exit Function
@@ -763,7 +794,7 @@ End Function
 ' Empty, "", "N/A", #N/A / #VALUE! / #REF! and anything non-numeric as 0
 ' so the cheapest-of calculation can ignore them without a Type Mismatch.
 ' -----------------------------------------------------------------------
-Private Function SafeNum(v As Variant) As Double
+Public Function SafeNum(v As Variant) As Double
     If IsError(v) Then Exit Function
     If IsEmpty(v) Then Exit Function
     If Not IsNumeric(v) Then Exit Function

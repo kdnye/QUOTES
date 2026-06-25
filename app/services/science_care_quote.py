@@ -46,8 +46,9 @@ from app.services.zip_city_lookup import lookup_city_state
 
 # Maximum number of shipment legs surfaced by the form. Mirrors the
 # constant in :mod:`app.science_care.routes` so the orchestrator stays
-# in lock-step with the rendered accordion.
-SC_LEG_COUNT = 7
+# in lock-step with the rendered accordion. Leg 8 covers shipments that
+# originate from all 7 labs and include a return leg.
+SC_LEG_COUNT = 8
 
 # Routing-mode literal that activates the established-lane override.
 ROUTING_SC_TO_SC = "sc to sc"
@@ -1149,7 +1150,7 @@ def compute_sc_multileg(
         grand_total += winner_total
         legs.append(result)
 
-    # Persist the multi-leg session + the seven leg rows so a future
+    # Persist the multi-leg session + the per-leg rows so a future
     # "view past quote" page (out of scope here) can re-render the
     # submission verbatim. The auto-assigned ``multi_reference`` may
     # collide with a concurrent multi-leg submit that grabbed the same
