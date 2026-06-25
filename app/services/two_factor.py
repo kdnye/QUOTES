@@ -166,10 +166,18 @@ def _invalidate_outstanding_codes(user: User) -> None:
 
 
 def create_login_code(user: User) -> str:
-    """Generate, persist, and return a fresh login code for ``user``.
+    """Stage a fresh login code for ``user`` on the current transaction.
 
     Any earlier unused codes are invalidated first so only this code is live.
     The raw code is returned for delivery; only its hash is stored.
+
+    **Does not commit.** The new token and the invalidation of earlier codes are
+    added to the session but left uncommitted so the caller can treat code
+    generation and email delivery as a single atomic unit — see
+    :func:`start_login_challenge`, which commits only after the email is
+    accepted and rolls back on failure. This keeps a failed send from
+    invalidating the user's previous (still-valid) code or leaving an
+    undelivered token behind.
 
     Args:
         user: Account that just passed the password check.
@@ -186,7 +194,6 @@ def create_login_code(user: User) -> str:
         expires_at=datetime.utcnow() + code_ttl(),
     )
     db.session.add(token)
-    db.session.commit()
     return code
 
 
@@ -277,7 +284,7 @@ def send_login_code(user: User, code: str) -> None:
         "Your Freight Services login code",
         body,
         feature=TWO_FACTOR_FEATURE,
-        user=None,
+        user=user,
         html_body=html_body,
     )
 
@@ -298,13 +305,26 @@ def start_login_challenge(user: User) -> Tuple[bool, Optional[str]]:
     Raises:
         MailRateLimitError: Propagated from :func:`send_login_code`.
         smtplib.SMTPException: Propagated from :func:`send_login_code`.
+
+    External dependencies:
+        * Treats code generation and delivery as one transaction: the new
+          token (and the invalidation of earlier codes staged by
+          :func:`create_login_code`) is committed only after
+          :func:`send_login_code` returns. If the send raises, the transaction
+          is rolled back so the user's previous code stays valid and no
+          undelivered token is persisted.
     """
 
     wait_seconds = _seconds_until_resend_allowed(user)
     if wait_seconds > 0:
         return False, ("Please wait a few seconds before requesting another code.")
     code = create_login_code(user)
-    send_login_code(user, code)
+    try:
+        send_login_code(user, code)
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
     return True, None
 
 
@@ -327,9 +347,16 @@ def verify_login_code(user: User, submitted_code: str) -> Tuple[bool, Optional[s
     """
 
     cleaned = (submitted_code or "").strip()
+    # Lock the active token row for the duration of this transaction so two
+    # concurrent verification requests can't both read the same ``attempts``
+    # value and lose an increment — which would let an attacker slip extra
+    # guesses past ``max_attempts``. On Postgres (production/test) this emits
+    # ``SELECT ... FOR UPDATE``; on backends without row locks it degrades to a
+    # plain select.
     token = (
         EmailOtpToken.query.filter_by(user_id=user.id, used=False)
         .order_by(EmailOtpToken.created_at.desc())
+        .with_for_update()
         .first()
     )
     if token is None:
