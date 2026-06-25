@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Callable, Dict, Iterable, List, Optional, Set
 
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 
 from app.database import (
     Session,
@@ -179,8 +179,14 @@ def _call_with_rate_set(
 def _collect_distinct_rate_sets(model) -> Iterable[str]:
     """Yield distinct ``rate_set`` values for ``model``.
 
-    Wraps the query in a ``try`` so environments that have not yet run the
-    migrations still succeed without raising ``OperationalError``.
+    Wraps the query in a ``try`` so environments that have not yet run
+    the migrations still succeed. Catches both ``OperationalError``
+    (SQLite raises this for a missing table) and ``ProgrammingError``
+    (psycopg2 raises ``UndefinedTable`` -- a ``ProgrammingError`` --
+    on Postgres for the same condition). Without the Postgres-side
+    catch, any caller of :func:`get_available_rate_sets` that runs in
+    a context where the rate tables haven't been created (unit tests,
+    fresh DB before ``flask db upgrade``) crashes on Postgres only.
     """
 
     try:
@@ -189,7 +195,7 @@ def _collect_distinct_rate_sets(model) -> Iterable[str]:
             for (value,) in rows:
                 if value:
                     yield str(value)
-    except OperationalError:
+    except (OperationalError, ProgrammingError):
         return []
 
 
