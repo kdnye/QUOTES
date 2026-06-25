@@ -170,6 +170,7 @@ Public Sub ClearShipment()
     ws.Range(CELL_OUT_HOT_STATUS).Value = ""
     ws.Range(CELL_OUT_ORIGIN_NOTE).Value = ""
     ws.Range(CELL_OUT_DEST_NOTE).Value = ""
+    UpdateSummaryTable
 End Sub
 
 
