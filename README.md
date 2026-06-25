@@ -25,7 +25,7 @@ Services portal.
 - Air shipment validation blocks quotes when billable pounds per piece exceeds 300 lbs
 - Threshold warnings appear when Air billable weight exceeds 1200 lbs, or when any quote exceeds 3000 lbs total weight or $6000 total cost
 - Theme now supports dark mode and automatically follows each user's system color-scheme preference
-- Dynamic fuel surcharges (VSC) are calculated per destination zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to Hotshot quotes (Air quotes apply a fixed 31.5% base surcharge; dynamic EIA-based VSC for Air is not yet implemented)
+- Dynamic fuel surcharges (VSC) are calculated per **destination** zone using weekly EIA regional diesel prices; surcharge percentages are looked up from a tiered matrix (16%–28%) and applied automatically to both Hotshot and Air quotes. Air rates and the destination-VSC source mirror the FSI Shipping Quote Tool 2026 VSC-Locked workbook (the company's authoritative rate card).
 
 ## Feature status
 
@@ -38,7 +38,7 @@ Services portal.
 | Volume-pricing email workflow | 🔒 Staff-only | Surfaces when a quote exceeds thresholds; limited to users with mail privileges. |
 | Quote summary emailer | 🔒 Staff-only | Enabled for Freight Services staff only. Requires SMTP credentials and mail privileges. |
 | Redis caching | ⚙️ Optional | Disabled by default. Enable with `COMPOSE_PROFILES=cache` and Redis configuration. |
-| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot) / 🚧 Stub (Air) | EIA-backed dynamic VSC is fully wired for Hotshot quotes. Air quotes apply a fixed 31.5% base surcharge; the dynamic VSC component is a stub (`get_dynamic_vsc_pct` returns `0.0`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
+| Variable Fuel Surcharge (VSC) | ✅ Stable (Hotshot + Air) | EIA-backed dynamic VSC is wired for both Hotshot and Air quotes. Both paths derive `fsc_pct` from the **destination** ZIP's VSC zone via `app.services.fuel_surcharge.get_vsc_pct_for_zone()`, matching the FSI Shipping Quote Tool 2026 VSC-Locked workbook (`Domestic Air Quotes!U5` = `VLOOKUP(dest_zip, 'VSC Zones', 4)`). Requires `setup_vsc_config.py` (run once) and weekly `sync_eia_rates.py`. Admin views at `/admin/settings/vsc-zones` and `/admin/settings/vsc-matrix`. |
 | Microsoft Excel (Power Query) integration | ✅ Stable | POST quotes from Excel via `Web.Contents` with `ManualStatusHandling`. Set data source privacy to **Organizational** or **Public** — the default "Private" level blocks requests to external hosts. Use `&` for string concatenation and `Text.Proper` to normalize `quote_type`. See [FSI Quote Tool API Quick-Start](docs/fsi_quote_tool_api_quick_start.md) for a complete M-code example. |
 | Google Sheets (Apps Script) integration | ✅ Stable | POST quotes via `UrlFetchApp.fetch`. Store the API key in script properties, not worksheet cells. |
 
@@ -230,6 +230,15 @@ bootstrap process. The bundled rate data includes
 CSV files in the `rates` directory next to the executable (or its
 `resources\rates` extraction folder when frozen) to load custom pricing the next
 time you run the launcher.
+
+`rates/air_cost_zone.csv` and the seeded `air_cost_zones` table are kept in
+lock-step with the FSI Shipping Quote Tool 2026 VSC-Locked workbook
+(`Domestic Air Quotes!C4:E11`) — that workbook is the company's authoritative
+rate card. To realign an already-migrated production database with that card
+after the CSV is updated, run `flask db upgrade head`; migration
+`f3a8c2b9d1e4_align_air_cost_zones_with_fsi_vsc_locked.py` rewrites the eight
+zones in the `default` rate set. Per-customer rate sets (anything other than
+`'default'`) are NOT touched and must be reviewed manually.
 
 Security guidance:
 

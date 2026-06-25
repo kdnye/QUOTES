@@ -7,15 +7,15 @@ import pytest
 from app.quote.logic_air import _normalize_zip_lookup_key, calculate_air_quote
 
 
-def test_calculate_air_quote_applies_origin_zone_fsc() -> None:
-    """Validate air quote totals when origin-zone FSC is the only surcharge.
+def test_calculate_air_quote_applies_destination_zone_fsc() -> None:
+    """Validate air quote totals when destination-zone FSC is the only surcharge.
 
     base = (20-10)*2 + 100 = 120
     beyond_total = 3 + 5 = 8
     total_base_freight = 128
-    fsc_pct = origin_vsc_pct = 0.05
-    fsc_amount = 128 * 0.05 = 6.4
-    quote_total = 128 + 6.4 + 7 = 141.4
+    fsc_pct = dest_vsc_pct = 0.1     # matches FSI VSC-Locked workbook
+    fsc_amount = 128 * 0.1 = 12.8
+    quote_total = 128 + 12.8 + 7 = 147.8
     """
 
     zip_lookup = lambda zipcode, rate_set=None: SimpleNamespace(
@@ -47,15 +47,14 @@ def test_calculate_air_quote_applies_origin_zone_fsc() -> None:
     assert result["beyond_total"] == 8.0
     assert result["fuel_surcharge_base_pct"] == 0.0
     assert result["fuel_surcharge_base_amount"] == 0.0
-    assert result["vsc_pct"] == pytest.approx(0.05)
+    assert result["vsc_pct"] == pytest.approx(0.1)
     assert result["origin_vsc_pct"] == pytest.approx(0.05)
     assert result["dest_vsc_pct"] == pytest.approx(0.1)
-    assert result["vsc_amount"] == pytest.approx(6.4)
-    assert result["total_fsc_applied"] == pytest.approx(0.05)
-    assert result["quote_total"] == pytest.approx(141.4)
+    assert result["vsc_amount"] == pytest.approx(12.8)
+    assert result["total_fsc_applied"] == pytest.approx(0.1)
+    assert result["quote_total"] == pytest.approx(147.8)
     assert result["surcharge_applies"] is True
-    assert result["surcharge_policy"] == "origin_zone_fsc"
-    assert "31.5%" not in result["surcharge_reason"]
+    assert result["surcharge_policy"] == "destination_zone_fsc"
 
 
 def test_calculate_air_quote_error_payload_includes_surcharge_metadata() -> None:
@@ -83,7 +82,7 @@ def test_calculate_air_quote_error_payload_includes_surcharge_metadata() -> None
 
     assert result["error"] == "Origin ZIP code 00000 not found"
     assert result["surcharge_applies"] is True
-    assert result["surcharge_policy"] == "origin_zone_fsc"
+    assert result["surcharge_policy"] == "destination_zone_fsc"
     assert result["total_fsc_applied"] == 0.0
 
 
@@ -118,8 +117,9 @@ def test_calculate_air_quote_uses_vsc_zone_not_air_zone_for_90808() -> None:
     )
 
     assert seen["zones"] == ["4", "9"]
-    assert result["vsc_pct"] == pytest.approx(0.05)
+    assert result["vsc_pct"] == pytest.approx(0.22)
     assert result["dest_vsc_pct"] == pytest.approx(0.22)
+    assert result["origin_vsc_pct"] == pytest.approx(0.05)
 
 
 def test_calculate_air_quote_errors_when_destination_vsc_zone_missing() -> None:
@@ -148,7 +148,7 @@ def test_calculate_air_quote_errors_when_destination_vsc_zone_missing() -> None:
     )
 
     assert result["error"] == "Destination ZIP code 90808 missing valid vsc_zone"
-    assert result["surcharge_policy"] == "origin_zone_fsc"
+    assert result["surcharge_policy"] == "destination_zone_fsc"
 
 
 def test_normalize_zip_lookup_key_accepts_zip_plus_four() -> None:

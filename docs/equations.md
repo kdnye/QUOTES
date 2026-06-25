@@ -23,7 +23,7 @@ with a `[REMOVED YYYY-MM-DD]` marker — IDs are never reused.
 | EQ-009 | Hotshot dynamic VSC application | `app/quote/logic_hotshot.py` (applies); computed in `app/services/fuel_surcharge.py`, `get_vsc_pct_for_zone()` |
 | EQ-010 | Hotshot quote total | `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()` |
 | EQ-011 | Air cost-zone determination from ZIP pair | `app/quote/logic_air.py`, `calculate_air_quote()` (concat lookup); `get_zip_zone()` / `get_cost_zone()` |
-| EQ-012 | Air freight base rate (per-lb with weight break) | `app/quote/logic_air.py`, `calculate_air_quote()` |
+| EQ-012 | Air freight base rate (per-lb with weight break) | `app/quote/logic_air.py`, `calculate_air_quote()`; rates seeded from FSI VSC-Locked workbook by `migrations/versions/f3a8c2b9d1e4_*.py` |
 | EQ-013 | Beyond charge flat fee application | `app/quote/logic_air.py`, `get_beyond_rate()` and `calculate_air_quote()` |
 | EQ-014 | Dynamic VSC computation (EIA diesel -> PADD -> surcharge %) | `app/services/fuel_surcharge.py`, `get_vsc_pct_for_zone()` |
 | EQ-015 | Accessorial charge application | `app/quotes/routes.py`, `new_quote()`; canonical helper in `app/services/quote.py`, `create_quote()` |
@@ -721,20 +721,43 @@ work via the rate-set mechanism (same as hotshot, EQ-005/EQ-007).
 **Code location:** `app/quote/logic_air.py`, `calculate_air_quote()`,
 lines ~276-283.
 
-**Worked example:** Cost zone `C` row (`min_charge=85.00`, `per_lb=0.50`,
-`weight_break=200`):
+**Rate-card source of truth:** the eight `default` rate-set rows in
+`AirCostZone` mirror ``Domestic Air Quotes!C4:E11`` of the FSI Shipping
+Quote Tool 2026 VSC-Locked workbook. The rates are reproduced verbatim in
+``rates/air_cost_zone.csv`` and re-applied to the DB by migration
+``f3a8c2b9d1e4``:
 
-    billable_weight=150 lb -> base = 85.00 USD
-                              (150 <= 200, min_charge alone)
+| Zone | Min      | Per Lb     | Weight Break |
+| ---- | -------- | ---------- | ------------ |
+| A    | 235.7555 | 1.4551680  | 162.012579   |
+| B    | 222.9976 | 1.5832960  | 140.843931   |
+| C    | 248.5134 | 1.7571840  | 141.427083   |
+| D    | 286.7779 | 1.9402240  | 147.806604   |
+| E    | 331.4305 | 2.0592000  | 160.951111   |
+| F    | 407.9687 | 2.1873280  | 186.514644   |
+| G    | 427.1055 | 2.2422400  | 190.481633   |
+| H    | 465.3792 | 2.4893440  | 186.948529   |
 
-    billable_weight=300 lb -> base = 85.00 + (300 - 200) * 0.50
-                                   = 85.00 + 50.00
-                                   = 135.00 USD
+`weight_break` is stored as an absolute value (= ``min_charge / per_lb`` per
+the workbook formula at ``E4:E11``) so the runtime does not have to recompute
+it. Per-customer rate sets that need to deviate from this card are stored
+as separate rows under their own ``rate_set`` value.
 
-    billable_weight=200 lb -> base = 85.00 USD
-                              (exactly at the break, min_charge wins)
+**Worked example:** Cost zone `B` row (FSI VSC-Locked values:
+`min_charge=222.997632`, `per_lb=1.5832960`, `weight_break=140.843931`):
 
-**Last verified:** 2026-06-23
+    billable_weight=100 lb -> base = 222.997632 USD
+                              (100 <= 140.843931, min_charge alone)
+
+    billable_weight=612 lb -> base = 222.997632
+                                   + (612 - 140.843931) * 1.5832960
+                                   = 222.997632 + 745.979823
+                                   = 968.977455 USD
+
+    billable_weight=140.843931 lb -> base = 222.997632 USD
+                                     (exactly at the break, min_charge wins)
+
+**Last verified:** 2026-06-25
 
 ---
 
@@ -1036,25 +1059,27 @@ accessorial total into the final customer-facing Air quote.
 **Formula:**
 
     total_base_freight = base + beyond_total
-    fsc_pct            = origin_vsc_pct                # NB: origin, not dest
+    fsc_pct            = dest_vsc_pct                  # destination, per FSI workbook
     fsc_amount         = total_base_freight * fsc_pct
     quote_total        = total_base_freight + fsc_amount + accessorial_total
 
 Guarantee is then folded in by the route handler per EQ-015 (Air only).
 
-**Origin vs destination VSC:** Air uses the ORIGIN ZIP's VSC zone to derive
-`fsc_pct`. This is intentional and policy-driven — Air quotes apply "a single
-fuel surcharge from the origin zone's EIA diesel price." (`surcharge_policy
-= "origin_zone_fsc"` in the result dict.) Hotshot, by contrast, applies the
-DESTINATION zone's VSC (EQ-009). The destination's VSC percentage is still
-computed and surfaced in the result as `dest_vsc_pct` for transparency, but
-it does not enter the dollar math.
+**Origin vs destination VSC:** Air uses the DESTINATION ZIP's VSC zone to
+derive `fsc_pct`. This mirrors the FSI Shipping Quote Tool 2026 VSC-Locked
+workbook, where ``Domestic Air Quotes!U5`` is
+``VLOOKUP($O$4 [destination zip], 'VSC Zones', 4)`` and the resulting zone
+feeds ``U9`` (FSC %). `surcharge_policy = "destination_zone_fsc"` in the
+result dict. Hotshot also uses the destination VSC zone (EQ-009), so both
+quote types are now consistent. The origin's VSC percentage is still computed
+and surfaced in the result as `origin_vsc_pct` for transparency, but it does
+not enter the dollar math.
 
 **VSC base includes beyond:** the fuel surcharge is applied to
 `base + beyond_total`, not to `base` alone — so a beyond-fee endpoint is
-itself surcharged. This is the documented behavior and matches the
-"surcharges total base freight (linehaul plus any beyond charges)" comment
-in `calculate_air_quote`. Accessorials are NOT surcharged.
+itself surcharged. This matches the FSI workbook's
+``VSC = (Subtotal - Σaccessorials) * FSC%`` line at ``O21``. Accessorials are
+NOT surcharged.
 
 **Variables:**
 
@@ -1062,7 +1087,7 @@ in `calculate_air_quote`. Accessorials are NOT surcharged.
 | --- | --- | --- | --- | --- |
 | `base` | float | USD | EQ-012 | Pre-surcharge linehaul |
 | `beyond_total` | float | USD | EQ-013 | Origin + destination flat beyond fees |
-| `origin_vsc_pct` | float | fraction | EQ-014 with `dest_zone = VscZone(origin).vsc_zone` | Origin's dynamic VSC percentage |
+| `dest_vsc_pct` | float | fraction | EQ-014 with `dest_zone = VscZone(destination).vsc_zone` | Destination's dynamic VSC percentage |
 | `accessorial_total` | float | USD | EQ-015 (pre-Guarantee) | Sum of selected accessorials |
 
 **Constraints:**
@@ -1072,30 +1097,39 @@ in `calculate_air_quote`. Accessorials are NOT surcharged.
   zones can evolve independently.
 - A missing `VscZone` row for either endpoint fails the quote with an
   explicit error ("missing valid vsc_zone"). The Air path does NOT silently
-  apply 0.0 — `dest_vsc_pct` is still resolved for the result dict even
-  though it is not used in the dollar math.
+  apply 0.0 — the origin VSC zone is still resolved so the result dict can
+  surface `origin_vsc_pct` for operator reference even though it is not used
+  in the dollar math.
 - `total_fsc_applied` is set to `fsc_pct` (the same value used in the dollar
   computation); it is purely informational.
+- **Rate-card source of truth:** the eight `AirCostZone` rows in the
+  `default` rate set are the FSI Shipping Quote Tool 2026 VSC-Locked
+  workbook's ``Domestic Air Quotes!C4:E11`` rates (zones A-H). The
+  ``f3a8c2b9d1e4`` migration rewrites them on `flask db upgrade head`; any
+  per-customer rate set that needs to track the public card must be reviewed
+  separately.
 
 **Code location:** `app/quote/logic_air.py`, `calculate_air_quote()`,
 lines ~304-329; Air-only Guarantee post-processing in
-`app/quotes/routes.py:new_quote()` (~lines 534-540).
+`app/quotes/routes.py:new_quote()` (~lines 534-540); migration at
+`migrations/versions/f3a8c2b9d1e4_align_air_cost_zones_with_fsi_vsc_locked.py`.
 
-**Worked example:** Cost zone `C` with `min_charge=85.00`, `per_lb=0.50`,
-`weight_break=200`. Origin beyond `"G"` = $75; destination not beyond.
-`billable_weight = 300 lb`. Origin's `vsc_pct = 0.185`. `accessorial_total =
-50.00` (no Guarantee).
+**Worked example (matches the FSI VSC-Locked tool for SCTX → SLC at 612 lb,
+all six accessorials selected, VSC on):** Cost zone `B`
+(`min_charge=222.997632`, `per_lb=1.5832960`, `weight_break=140.843931`).
+Beyond both endpoints = 0. Destination VSC zone = 7 → `dest_vsc_pct = 0.175`.
+`accessorial_total = 50 + 95 + 110 + 125 + 125 + 75 = 580`.
 
-    base               = 85.00 + (300 - 200) * 0.50 = 135.00 USD   (EQ-012)
-    beyond_total       = 75.00 + 0.00               =  75.00 USD   (EQ-013)
-    total_base_freight = 135.00 + 75.00             = 210.00 USD
-    fsc_amount         = 210.00 * 0.185             =  38.85 USD
-    quote_total        = 210.00 + 38.85 + 50.00     = 298.85 USD
+    base               = 222.997632 + (612 - 140.843931) * 1.5832960
+                       = 222.997632 + 471.156069 * 1.5832960
+                       = 222.997632 + 745.979823
+                       = 968.977455 USD                              (EQ-012)
+    beyond_total       = 0.00                                        (EQ-013)
+    total_base_freight = 968.977455 + 0                = 968.977455 USD
+    fsc_amount         = 968.977455 * 0.175            = 169.571055 USD
+    quote_total        = 968.977455 + 169.571055 + 580 = 1,718.55 USD
 
-Same inputs plus the user selects Guarantee (EQ-015 post-processing):
+That matches the FSI workbook's `Domestic Air Quotes!O22` for the same
+inputs.
 
-    linehaul_with_beyond_and_fsc = 298.85 - 50.00     = 248.85 USD
-    guarantee_cost               = 248.85 * 0.25      =  62.2125 USD
-    final_quote_total            = 298.85 + 62.2125   = 361.0625 USD
-
-**Last verified:** 2026-06-23
+**Last verified:** 2026-06-25

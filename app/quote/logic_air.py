@@ -180,9 +180,11 @@ def calculate_air_quote(
     define one direction of a route to still resolve correctly.
 
     Fuel surcharge policy:
-        Air quotes apply a single FSC derived from the origin zone's current
-        EIA diesel price. The FSC is applied to total base freight (linehaul
-        plus any beyond charges). Accessorials are not surcharged.
+        Air quotes apply a single FSC derived from the destination zone's
+        current EIA diesel price (mirrors the FSI VSC-Locked workbook's
+        ``VLOOKUP(dest_zip, 'VSC Zones', 4)`` formula). The FSC is applied
+        to total base freight (linehaul plus any beyond charges).
+        Accessorials are not surcharged.
 
     Parameters
     ----------
@@ -210,8 +212,8 @@ def calculate_air_quote(
     """
 
     normalized_rate_set = normalize_rate_set(rate_set)
-    surcharge_policy = "origin_zone_fsc"
-    surcharge_reason = "Air quotes apply a single fuel surcharge from the origin zone's EIA diesel price."
+    surcharge_policy = "destination_zone_fsc"
+    surcharge_reason = "Air quotes apply a single fuel surcharge from the destination zone's EIA diesel price (matches the FSI VSC-Locked workbook)."
 
     def _error_result(msg: str) -> Dict[str, Any]:
         return {
@@ -323,7 +325,7 @@ def calculate_air_quote(
     )
 
     total_base_freight = base + beyond_total
-    fsc_pct = origin_vsc_pct
+    fsc_pct = dest_vsc_pct
     fsc_amount = total_base_freight * fsc_pct
     total_fsc_applied = fsc_pct
     quote_total = total_base_freight + fsc_amount + accessorial_total
