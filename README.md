@@ -477,10 +477,11 @@ landing on `/sc/quote` are not 403'd by the access gate.
 
 ## Science Care multi-lab quote
 
-The Science Care blueprint at `/sc` adds a 7-leg quote form that mirrors the
+The Science Care blueprint at `/sc` adds an 8-leg quote form that mirrors the
 client's offline workbook. Each leg picks the cheapest of Air, Hotshot, or the
 pre-negotiated Established Lane rate, and weight is rolled up from per-tissue
-quantities plus consumables and box tare.
+quantities plus consumables and box tare. The 8th leg covers shipments that
+originate from all 7 labs and include a return leg.
 
 Each leg's **Destination ZIP** is paired with a read-only **City, State**
 readout that resolves client-side via the Google Maps Geocoder as soon as the

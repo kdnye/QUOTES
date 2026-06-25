@@ -2,7 +2,7 @@
 
 This module exposes:
 
-* ``GET /sc/quote`` — renders the seven-leg multi-lab quote form.
+* ``GET /sc/quote`` — renders the eight-leg multi-lab quote form.
 * ``GET /sc/quote/tissue-row`` — HTMX endpoint that returns a blank
   tissue row partial (used by the "Add row" button on each leg).
 * ``GET /sc/quote/tissue-lookup`` — HTMX endpoint that resolves a
@@ -124,8 +124,9 @@ _FALLBACK_ACCESSORIAL_LABELS = {
     "J8": "Liftgate Required",
 }
 
-# Number of shipment legs supported by the multi-lab form.
-SC_LEG_COUNT = 7
+# Number of shipment legs supported by the multi-lab form. Leg 8 covers
+# shipments that originate from all 7 labs and include a return leg.
+SC_LEG_COUNT = 8
 
 
 # Maps the sc_tissue_codes TableSpec's virtual per-box column attrs to
@@ -304,7 +305,7 @@ def _default_lab_slots(user_id: int) -> dict[int, str]:
 @login_required
 @sc_user_required
 def sc_quote_form() -> str:
-    """Render the empty seven-leg multi-lab quote form.
+    """Render the empty eight-leg multi-lab quote form.
 
     When called with ``?from_session=<id>`` or ``?from_ref=<multi_ref>``
     the form is prefilled from a previously-submitted multi-leg quote so
