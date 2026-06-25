@@ -30,9 +30,10 @@ those rows represent intentional overrides and should be reviewed manually.
 The downgrade restores the prior ``rates/air_cost_zone.csv`` values.
 """
 
-from typing import Sequence, Union
+from typing import Dict, Sequence, Tuple, Union
 
 from alembic import op
+from sqlalchemy import text
 
 
 revision: str = "f3a8c2b9d1e4"
@@ -64,14 +65,22 @@ _PRE_FSI_RATES = {
 }
 
 
-def _apply(rates: dict[str, tuple[float, float, float]]) -> None:
+def _apply(rates: Dict[str, Tuple[float, float, float]]) -> None:
+    stmt = text(
+        "UPDATE air_cost_zones "
+        "SET min_charge = :min_charge, "
+        "    per_lb = :per_lb, "
+        "    weight_break = :weight_break "
+        "WHERE zone = :zone AND rate_set = 'default'"
+    )
     for zone, (min_charge, per_lb, weight_break) in rates.items():
         op.execute(
-            "UPDATE air_cost_zones "
-            f"SET min_charge = {min_charge}, "
-            f"    per_lb = {per_lb}, "
-            f"    weight_break = {weight_break} "
-            f"WHERE zone = '{zone}' AND rate_set = 'default'"
+            stmt.bindparams(
+                min_charge=min_charge,
+                per_lb=per_lb,
+                weight_break=weight_break,
+                zone=zone,
+            )
         )
 
 
