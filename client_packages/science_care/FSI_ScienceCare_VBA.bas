@@ -156,20 +156,26 @@ End Sub
 
 ' -----------------------------------------------------------------------
 ' PUBLIC ENTRY POINT - assign this macro to the Clear button on each tab.
-' Clears the API result cells on the active SHIPMENT sheet so stale output
-' is not mistaken for a fresh quote. Inputs (lab, ZIP, accessorials) are
-' left untouched.
+' On SHIPMENT tabs 2-8: clears header inputs (B3:B9), accessorials (J3:J8),
+' box/quantity block (A13:B22), and quote outputs (C40, C41, H41).
+' Also clears the summary table rows C44:C52 on SHIPMENT 1 and then
+' rebuilds them from whatever data remains on all other tabs.
 ' -----------------------------------------------------------------------
 Public Sub ClearShipment()
     Dim ws As Worksheet
     Set ws = ActiveSheet
+    ws.Range("B3:B9").Value = ""
+    ws.Range("J3:J8").Value = ""
+    ws.Range("A13:B22").Value = ""
     ws.Range(CELL_OUT_AIR_TOTAL).Value = ""
-    ws.Range(CELL_OUT_AIR_STATUS).Value = ""
     ws.Range(CELL_OUT_HOT_TOTAL).Value = ""
     ws.Range(CELL_OUT_HOT_MILES).Value = ""
-    ws.Range(CELL_OUT_HOT_STATUS).Value = ""
-    ws.Range(CELL_OUT_ORIGIN_NOTE).Value = ""
-    ws.Range(CELL_OUT_DEST_NOTE).Value = ""
+    ' Clear the summary rows on SHIPMENT 1 before rebuilding.
+    Dim s1 As Worksheet
+    On Error Resume Next
+    Set s1 = ThisWorkbook.Sheets(SUMMARY_SHEET)
+    On Error GoTo 0
+    If Not s1 Is Nothing Then s1.Range("C44:C52").Value = ""
     UpdateSummaryTable
 End Sub
 
