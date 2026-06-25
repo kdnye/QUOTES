@@ -277,7 +277,9 @@ Public Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
     Dim routeVal As Variant
     routeVal = ws.Range(CELL_ROUTING_MODE).Value
     If Not IsError(routeVal) Then
-        isReturn = (LCase(Trim(CStr(routeVal))) = RETURN_LABEL)
+        ' "routeVal & """" coerces Null / Empty to "" without the Error 94
+        ' that CStr would raise on Null (e.g. a merged B9 range).
+        isReturn = (LCase(Trim(routeVal & "")) = RETURN_LABEL)
     End If
 
     ' --- International guard: API is domestic-only for now ---
@@ -345,7 +347,7 @@ Public Function QuoteShipment(ws As Worksheet, silent As Boolean) As String
         QuoteShipment = "Error: ZIP cell error"
         Exit Function
     End If
-    If IsEmpty(locRaw) Or CStr(locRaw) = "" Then
+    If IsEmpty(locRaw) Or locRaw & "" = "" Then
         SetStatus ws, "Air", "Error: ZIP cell " & CELL_DEST_ZIP & " is empty."
         SetStatus ws, "Hotshot", "Error: ZIP cell empty."
         If Not silent Then MsgBox "ZIP cell (" & CELL_DEST_ZIP & ") is empty.", vbExclamation, "FSI Quote"
