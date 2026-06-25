@@ -232,14 +232,23 @@ CSV files in the `rates` directory next to the executable (or its
 `resources\rates` extraction folder when frozen) to load custom pricing the next
 time you run the launcher.
 
-`rates/air_cost_zone.csv` and the seeded `air_cost_zones` table are kept in
-lock-step with the FSI Shipping Quote Tool 2026 VSC-Locked workbook
-(`Domestic Air Quotes!C4:E11`) — that workbook is the company's authoritative
-rate card. To realign an already-migrated production database with that card
-after the CSV is updated, run `flask db upgrade head`; migration
-`f3a8c2b9d1e4_align_air_cost_zones_with_fsi_vsc_locked.py` rewrites the eight
-zones in the `default` rate set. Per-customer rate sets (anything other than
-`'default'`) are NOT touched and must be reviewed manually.
+`rates/air_cost_zone.csv` / `rates/Hotshot_Rates.csv` and the seeded
+`air_cost_zones` / `hotshot_rates` tables are kept in lock-step with the FSI
+Shipping Quote Tool 2026 VSC-Locked workbook (Air rates from
+`Domestic Air Quotes!C4:E11`; Hotshot rates from
+`Domestic Hotshot Quotes!E45:G54` + the Zone X row). That workbook is the
+company's authoritative rate card. To realign an already-migrated production
+database, run `flask db upgrade head`:
+
+| Migration | What it does |
+| --- | --- |
+| `f3a8c2b9d1e4_align_air_cost_zones_with_fsi_vsc_locked.py` | Rewrites the 8 `air_cost_zones` rows in the `default` rate set. |
+| `c5d7f1e9a2b3_align_hotshot_rates_with_fsi_vsc_locked.py` | Rewrites the 11 `hotshot_rates` zones (A-J + X) in the `default` rate set; zeros Zone X `fuel_pct`. |
+| `e9b3a7c4d28f_align_scicr_air_and_hotshot_with_default.py` | Mirrors the same FSI values into the `scicr` (Science Care) rate set — UPSERT so missing rows are created, existing rows updated. |
+
+Per-customer rate sets other than `default` / `scicr` are NOT touched by
+these migrations and must be reviewed manually if they need to track the
+public card.
 
 Security guidance:
 

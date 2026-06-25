@@ -267,8 +267,16 @@ def calculate_hotshot_quote(
         per_mile = None
         min_charge = float(rate.min_charge)
         # Workbook D17 Zones A-J: IF(weight > WB, ((weight-WB)*per_lb) + min, min)
-        if weight_break is not None and weight > weight_break:
-            base = ((weight - weight_break) * per_lb) + min_charge
+        # When a row carries no explicit weight_break (legacy CSV uploads
+        # and the admin form both allow it), derive WB from min/per_lb the
+        # same way the workbook does (`G45 = F45/E45`). Without this
+        # fallback an A-J quote on such a row would silently flatten to
+        # `min` regardless of weight, under-quoting heavy shipments.
+        effective_wb = weight_break
+        if effective_wb is None and per_lb > 0:
+            effective_wb = min_charge / per_lb
+        if effective_wb is not None and weight > effective_wb:
+            base = ((weight - effective_wb) * per_lb) + min_charge
         else:
             base = min_charge
 
@@ -293,15 +301,17 @@ def calculate_hotshot_quote(
             nyc_override_applied = True
 
     # VSC zone = MAX(origin VSC zone, destination VSC zone) to mirror the
-    # workbook's K10 = MAX(K8, K9). Both lookups feed `get_vsc_pct_for_zone`.
+    # workbook's K10 = MAX(K8, K9). Strip incoming ZIPs the same way the
+    # NYC-override check does so accidental whitespace from a form
+    # submission doesn't quietly collapse a real zone into "NATIONAL".
     origin_vsc_zone, origin_warnings = _resolve_destination_zone(
-        origin,
+        str(origin).strip(),
         rate_set=rate_set,
         zip_lookup=zip_lookup,
         vsc_zone_lookup=vsc_zone_lookup,
     )
     dest_vsc_zone, dest_warnings = _resolve_destination_zone(
-        destination,
+        str(destination).strip(),
         rate_set=rate_set,
         zip_lookup=zip_lookup,
         vsc_zone_lookup=vsc_zone_lookup,

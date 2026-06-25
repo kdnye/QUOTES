@@ -41,7 +41,12 @@ SEED_CSV = Path(__file__).resolve().parents[2] / "rates" / "international_lanes.
 
 
 def _to_float(value, *, allow_blank: bool = True) -> "float | None":
-    text = str(value or "").strip()
+    # Don't rely on ``value or ""`` — ``0`` and ``0.0`` are falsy and would
+    # be wrongly coerced to the blank branch. Check ``is None`` explicitly
+    # so a numeric zero in the CSV survives as ``0.0`` instead of ``None``.
+    if value is None:
+        return None if allow_blank else 0.0
+    text = str(value).strip()
     if not text:
         return None if allow_blank else 0.0
     try:

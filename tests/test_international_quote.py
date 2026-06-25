@@ -149,3 +149,62 @@ def test_missing_lane_returns_error_payload():
     assert result.error is not None
     assert result.quote_total == pytest.approx(0.0)
     assert result.lane is None
+
+
+def test_destination_and_lab_normalized_at_entry():
+    """``destination`` is stripped and ``lab_code`` is stripped + uppercased.
+
+    The result payload and the error message both reflect the canonical
+    keys so downstream consumers don't have to second-guess what the
+    user typed. The lane_lookup stub receives the normalized values.
+    """
+
+    captured = {"destination": None, "lab_code": None, "rate_set": None}
+
+    def lane_lookup(*, destination, lab_code, rate_set):
+        captured["destination"] = destination
+        captured["lab_code"] = lab_code
+        captured["rate_set"] = rate_set
+        return None
+
+    result = calculate_international_quote(
+        destination="  Australia - Adelaide ",
+        lab_code=" scaz\n",
+        weight_lb=100.0,
+        lane_lookup=lane_lookup,
+    )
+
+    assert captured["destination"] == "Australia - Adelaide"
+    assert captured["lab_code"] == "SCAZ"
+    assert result.destination == "Australia - Adelaide"
+    assert result.lab_code == "SCAZ"
+    assert "Australia - Adelaide" in result.error
+    assert "SCAZ" in result.error
+
+
+def test_excel_equivalent_rounding_for_halfway_km():
+    """Workbook ``AA10`` uses Excel ROUND (half away from zero).
+
+    Python's banker's ``round(80.5)`` returns ``80``, which would make
+    the surcharge $0 instead of $1.25. The runtime uses
+    ``int(km + 0.5)`` so the halfway case matches the workbook.
+    """
+    lane = _stub_lane(cost_per_km_over_80=1.25)
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=81.5,  # round (banker's) -> 82; int(81.5+0.5) -> 82
+        lane_lookup=lambda **_: lane,
+    )
+    assert result.intl_hotshot_surcharge == pytest.approx((82 - 80) * 1.25)
+
+    result_half = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=80.5,  # banker's -> 80 (no charge); Excel -> 81
+        lane_lookup=lambda **_: lane,
+    )
+    # int(80.5 + 0.5) = 81 -> (81-80)*1.25 = 1.25, matches the workbook.
+    assert result_half.intl_hotshot_surcharge == pytest.approx(1.25)

@@ -97,10 +97,16 @@ def calculate_international_quote(
     surcharge is left at $0 and a warning is emitted — the door-to-door
     leg of the calc requires that distance.
     """
+    # Normalize at the entry point so the error string, the result payload,
+    # and the lane lookup all see the same canonical key. Avoids "lab not
+    # found" misses when a form sends "scaz" or " SCAZ " and matches the
+    # ``lookup_lane`` default that already strips internally.
+    destination = str(destination or "").strip()
+    lab_code = str(lab_code or "").strip().upper()
     lane = lane_lookup(destination=destination, lab_code=lab_code, rate_set=rate_set)
     result = InternationalQuote(
         destination=destination,
-        lab_code=lab_code.strip().upper(),
+        lab_code=lab_code,
         weight_lb=float(weight_lb),
         km_to_airport=km_to_airport,
         lane=lane,
@@ -135,7 +141,11 @@ def calculate_international_quote(
                 "supply km_to_airport to refine the quote."
             )
         elif km_to_airport > 80:
-            intl_hotshot = (round(km_to_airport) - 80) * float(
+            # Excel's ROUND(x, 0) rounds half away from zero; Python's
+            # round() uses banker's rounding (round half to even). Use the
+            # ``int(x + 0.5)`` idiom so the workbook's AA10 produces the
+            # same surcharge dollar for halfway cases (e.g. 80.5 -> 81).
+            intl_hotshot = (int(km_to_airport + 0.5) - 80) * float(
                 lane.cost_per_km_over_80
             )
 

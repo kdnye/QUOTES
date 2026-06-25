@@ -40,6 +40,10 @@ def test_miles_are_ceiling_rounded(monkeypatch):
             per_lb=5.1, per_mile=6.0192, fuel_pct=0.0, weight_break=None, min_charge=10.0
         ),
         zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=1),
+        # Stub the VSC zone lookup so the test doesn't hit the real DB
+        # under Postgres CI (where the vsc_zones table may not be in the
+        # per-test reset schema).
+        vsc_zone_lookup=lambda _zip, rate_set=None: 1,
     )
 
     assert result["miles"] == 24
@@ -341,15 +345,110 @@ def test_calculate_hotshot_quote_uses_national_fallback_when_dest_zone_missing(
 
 
 def test_get_vsc_zone_for_zip_can_raise_typed_error_when_missing() -> None:
-    """Missing ZIP can raise deterministic typed lookup error when configured."""
+    """Missing ZIP can raise deterministic typed lookup error when configured.
+
+    Both ``zip_lookup`` and ``vsc_zone_lookup`` are stubbed so the test
+    never hits the real DB — important under Postgres CI where the
+    ``vsc_zones`` table may not be in the per-test reset schema.
+    """
 
     with pytest.raises(logic_hotshot.VscDestinationZoneLookupError):
         logic_hotshot.get_vsc_zone_for_zip(
             "99999",
             rate_set="default",
             zip_lookup=lambda _zip, rate_set=None: None,
+            vsc_zone_lookup=lambda _zip, rate_set=None: None,
             raise_on_missing=True,
         )
+
+
+def test_calculate_hotshot_quote_a_j_blank_weight_break_falls_back_to_min_over_per_lb(
+    monkeypatch,
+):
+    """A-J rows with NULL weight_break derive WB = min/per_lb (workbook G=F/E).
+
+    Without the fallback, a legacy CSV / admin upload that leaves the
+    Weight Break cell blank would silently flatten any A-J quote to
+    `min_charge` no matter how heavy the shipment is. Codex flagged
+    this regression on PR #328; this test pins the fix so a future
+    refactor cannot quietly drop it again.
+
+    Inputs: weight=600, per_lb=0.208, min=79.56, WB=None.
+        derived WB = 79.56 / 0.208 = 382.5
+        base = ((600 - 382.5) * 0.208) + 79.56
+             = 217.5 * 0.208 + 79.56
+             = 45.24 + 79.56 = 124.80
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 5.0)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.0)
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="11111",
+        destination="22222",
+        weight=600.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=0.208,
+            fuel_pct=0.0,
+            weight_break=None,
+            min_charge=79.56,
+        ),
+        zip_lookup=lambda _zip, rate_set=None: SimpleNamespace(dest_zone=1),
+        vsc_zone_lookup=lambda _zip, rate_set=None: 1,
+    )
+
+    # 79.56 + (600 - 382.5)*0.208 = 79.56 + 45.24 = 124.80
+    assert result["base_rate"] == pytest.approx(79.56 + (600 - 382.5) * 0.208)
+
+
+def test_calculate_hotshot_quote_strips_whitespace_from_zips(monkeypatch) -> None:
+    """Accidental whitespace on origin/dest ZIPs is stripped before VSC lookup.
+
+    Without the strip, the VSC zone lookup misses (the stub matches "30301"
+    not " 30301 ") and the runtime falls back to "NATIONAL", quietly
+    losing the real zone. With the strip both endpoints resolve to their
+    numeric zones and `vsc_zone_used` is the larger one.
+    """
+
+    monkeypatch.setattr(logic_hotshot, "get_distance_miles", lambda *_args: 50.0)
+    monkeypatch.setattr(logic_hotshot, "get_dynamic_vsc_pct", lambda **_kwargs: 0.0)
+
+    def zip_lookup(zipcode, rate_set=None):
+        # The stub explicitly does not strip — that mirrors the live DB
+        # lookups; we expect the calling code to normalize.
+        if str(zipcode) == "30301":
+            return SimpleNamespace(dest_zone=4)
+        if str(zipcode) == "90808":
+            return SimpleNamespace(dest_zone=10)
+        return None
+
+    def vsc_zone_lookup(zipcode, rate_set=None):
+        if str(zipcode) == "30301":
+            return 4
+        if str(zipcode) == "90808":
+            return 9
+        return None
+
+    result = logic_hotshot.calculate_hotshot_quote(
+        origin="  30301 ",
+        destination="\t90808\n",
+        weight=10.0,
+        accessorial_total=0.0,
+        zone_lookup=lambda _miles, rate_set=None: "A",
+        rate_lookup=lambda _zone, rate_set=None: SimpleNamespace(
+            per_lb=5.0, fuel_pct=0.0, weight_break=None, min_charge=50.0
+        ),
+        zip_lookup=zip_lookup,
+        vsc_zone_lookup=vsc_zone_lookup,
+    )
+
+    assert result["origin_vsc_zone"] == "4"
+    assert result["dest_zone"] == "9"
+    assert result["vsc_zone_used"] == "9"
+    # warning_metadata should be empty — both endpoints resolved.
+    assert result["warning_metadata"] == []
 
 
 def test_hotshot_vsc_uses_max_of_origin_and_destination(monkeypatch) -> None:

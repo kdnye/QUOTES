@@ -393,9 +393,11 @@ the FSI VSC-Locked workbook:
 
 - All three values come from the same row.
 - `per_mile` on the rate row is unused for Zones A-J (NULL in seed data).
-- When `weight_break` is NULL, the runtime falls through to the
-  `else: base = min_charge` branch, matching the workbook's behavior for
-  rows without a pivot.
+- When `weight_break` is NULL (legacy CSV uploads / admin form leave it
+  optional), the runtime derives an effective break of `min_charge /
+  per_lb` — same convention as the workbook's `G45 = F45/E45`. Without
+  this fallback an A-J quote on such a row would flatten to `min_charge`
+  regardless of weight, under-quoting heavy shipments.
 
 **Code location:** `app/quote/logic_hotshot.py`, `calculate_hotshot_quote()`,
 lines ~244-252; migration `migrations/versions/c5d7f1e9a2b3_*`.
