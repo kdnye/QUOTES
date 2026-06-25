@@ -5,6 +5,16 @@
 <form method="post">
   {{ form.hidden_tag() }}
   <div class="mb-3">
+    {{ form.rate_set.label(class="form-label") }}
+    <a
+      class="ms-2 small"
+      href="{{ url_for('help.admin') }}#rate-tables"
+      data-bs-toggle="tooltip"
+      title="Pick which rate set owns this ZIP row. The same ZIP can carry different beyond / dest_zone values per customer."
+    >More info</a>
+    {{ form.rate_set(class="form-select") }}
+  </div>
+  <div class="mb-3">
     {{ form.zipcode.label(class="form-label") }}
     <a
       class="ms-2 small"

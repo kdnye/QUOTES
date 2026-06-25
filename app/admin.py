@@ -239,6 +239,10 @@ class ZipZoneForm(FlaskForm):
     """Form for managing :class:`~app.models.ZipZone` records.
 
     Inputs:
+        rate_set: Named rate-set the row belongs to. ``ZipZone`` is
+            scoped per rate-set (UniqueConstraint ``rate_set + zipcode``)
+            so the same ZIP can carry different beyond / dest_zone values
+            for different customers — pick the right one here.
         zipcode: ZIP code whose zone mapping is being created or edited.
         dest_zone: Destination zone number used during air quote lookups.
         beyond: Optional indicator for beyond-area surcharges.
@@ -253,10 +257,24 @@ class ZipZoneForm(FlaskForm):
         :func:`app.admin.edit_zip_zone` to persist :class:`app.models.ZipZone`.
     """
 
+    rate_set = SelectField("Rate Set", validators=[DataRequired()])
     zipcode = StringField("ZIP Code", validators=[DataRequired()])
     dest_zone = IntegerField("Destination Zone", validators=[DataRequired()])
     beyond = StringField("Beyond", validators=[Optional()])
     notes = TextAreaField("Shipment Notes", validators=[Optional()])
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        # Mirror BeyondRateForm / HotshotRateForm / AirCostZoneForm:
+        # populate the SelectField's choices AND default rate_set.data
+        # to DEFAULT_RATE_SET when not supplied. Without this, any POST
+        # that omits the rate_set field (stale admin form, older script,
+        # existing test) fails the DataRequired() validator instead of
+        # falling back to the model's historical default-rate-set
+        # behavior.
+        super().__init__(*args, **kwargs)
+        _populate_rate_set_choices(self)
+        if not self.rate_set.data:
+            self.rate_set.data = DEFAULT_RATE_SET
 
 
 class CostZoneForm(FlaskForm):
@@ -635,14 +653,24 @@ TABLE_SPECS: Dict[str, TableSpec] = {
         label="ZIP Zones",
         model=ZipZone,
         columns=(
+            ColumnSpec(
+                "Rate Set",
+                "rate_set",
+                lambda value: _parse_rate_set(value, allow_new_rate_sets=True),
+                formatter=str,
+            ),
             ColumnSpec("ZIP Code", "zipcode", _parse_zipcode),
             ColumnSpec("Dest Zone", "dest_zone", _parse_required_int),
             ColumnSpec("Beyond", "beyond", _parse_optional_string, required=False),
             ColumnSpec("Notes", "notes", _parse_optional_string, required=False),
         ),
         list_endpoint="admin.list_zip_zones",
-        unique_attr="zipcode",
-        order_by=ZipZone.zipcode,
+        # ZipZone.UniqueConstraint is ("rate_set", "zipcode"); the admin
+        # CSV import/dedup must match or it would clobber per-customer
+        # overrides (e.g. an `scicr` ZIP would overwrite the `default`
+        # row for the same ZIP).
+        unique_attr=("rate_set", "zipcode"),
+        order_by=(ZipZone.rate_set, ZipZone.zipcode),
     ),
     "cost_zones": TableSpec(
         name="cost_zones",
@@ -2043,7 +2071,7 @@ def delete_hotshot_rate(hs_id: int) -> Response:
 def list_zip_zones() -> str:
     """List all ZIP code zone mappings."""
 
-    zones = ZipZone.query.order_by(ZipZone.id).all()
+    zones = ZipZone.query.order_by(ZipZone.rate_set, ZipZone.zipcode).all()
     return render_template("admin_zip_zones.html", zip_zones=zones)
 
 
@@ -2052,9 +2080,12 @@ def list_zip_zones() -> str:
 def new_zip_zone() -> Union[str, Response]:
     """Create a new ZIP zone mapping."""
 
+    # ZipZoneForm.__init__ populates rate_set choices + backfills
+    # DEFAULT_RATE_SET when missing, matching the other rate-scoped forms.
     form = ZipZoneForm()
     if form.validate_on_submit():
         zz = ZipZone(
+            rate_set=normalize_rate_set(form.rate_set.data),
             zipcode=form.zipcode.data,
             dest_zone=form.dest_zone.data,
             beyond=form.beyond.data,
@@ -2076,7 +2107,17 @@ def edit_zip_zone(zz_id: int) -> Union[str, Response]:
     if not zz:
         abort(404)
     form = ZipZoneForm(obj=zz)
+    # ZipZoneForm.__init__ defaults to DEFAULT_RATE_SET; explicitly fall
+    # back to the existing row's rate_set so a stale form that omits the
+    # field preserves the customer override rather than silently flipping
+    # to default.
+    if not form.rate_set.data:
+        form.rate_set.data = zz.rate_set or DEFAULT_RATE_SET
     if form.validate_on_submit():
+        # Normalize to stay consistent with the other rate-scoped edit
+        # routes — strips whitespace, lowercases, and lets a typo from
+        # the dropdown still land on a known rate set.
+        zz.rate_set = normalize_rate_set(form.rate_set.data)
         zz.zipcode = form.zipcode.data
         zz.dest_zone = form.dest_zone.data
         zz.beyond = form.beyond.data
