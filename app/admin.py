@@ -1267,6 +1267,7 @@ def create_user() -> Union[str, Response]:
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
+            "two_factor_enabled": bool(request.form.get("two_factor_enabled")),
             "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
             "is_sc_admin": bool(request.form.get("is_sc_admin")),
             "rate_set": request.form.get("rate_set") or DEFAULT_RATE_SET,
@@ -1352,6 +1353,7 @@ def create_user() -> Union[str, Response]:
             role=form_data["role"],
             employee_approved=employee_approved,
             can_send_mail=form_data["can_send_mail"],
+            two_factor_enabled=form_data["two_factor_enabled"],
             show_cost_breakdown=form_data["show_cost_breakdown"],
             is_sc_admin=form_data["is_sc_admin"],
             rate_set=rate_set,
@@ -1417,6 +1419,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
             "role": (request.form.get("role") or "customer").strip(),
             "employee_approved": bool(request.form.get("employee_approved")),
             "can_send_mail": bool(request.form.get("can_send_mail")),
+            "two_factor_enabled": bool(request.form.get("two_factor_enabled")),
             "show_cost_breakdown": bool(request.form.get("show_cost_breakdown")),
             "is_sc_admin": bool(request.form.get("is_sc_admin")),
             "rate_set": request.form.get("rate_set") or user.rate_set,
@@ -1513,6 +1516,7 @@ def edit_user(user_id: int) -> Union[str, Response]:
         user.company_phone = form_data["company_phone"] or None
         user.rate_set = parsed_rate_set
         user.can_send_mail = form_data["can_send_mail"]
+        user.two_factor_enabled = form_data["two_factor_enabled"]
         user.show_cost_breakdown = form_data["show_cost_breakdown"]
         # Disabled checkboxes don't submit, so the form's is_sc_admin will
         # always read False for super-admins and FSI-domain users; writing

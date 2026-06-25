@@ -159,6 +159,25 @@
     <input
       class="form-check-input"
       type="checkbox"
+      id="two_factor_enabled"
+      name="two_factor_enabled"
+      {% if data.get('two_factor_enabled', user.two_factor_enabled if user else True) %}checked{% endif %}
+    >
+    <label class="form-check-label" for="two_factor_enabled">
+      Require an emailed login code (two-factor authentication)
+    </label>
+    <div class="form-text">
+      Leave on for all customer accounts. When checked, the user must enter a
+      one-time code emailed to <strong>{{ data.get('email', user.email if user else '') or 'their address' }}</strong>
+      after their password to finish logging in. Only clear this for service
+      accounts that cannot receive email. Single sign-on (SSO) logins are
+      unaffected.
+    </div>
+  </div>
+  <div class="form-check mb-3">
+    <input
+      class="form-check-input"
+      type="checkbox"
       id="show_cost_breakdown"
       name="show_cost_breakdown"
       {% if data.get('show_cost_breakdown', user.show_cost_breakdown if user else False) %}checked{% endif %}

@@ -30,6 +30,7 @@ with a `[REMOVED YYYY-MM-DD]` marker — IDs are never reused.
 | EQ-016 | Air quote total | `app/quote/logic_air.py`, `calculate_air_quote()` (+ Guarantee post-processing in `app/quotes/routes.py`) |
 | EQ-017 | International freight base (workbook `R21`) | `app/services/international_quote.py`, `calculate_international_quote()`; lanes loaded by migration `migrations/versions/d8a4f9c1b2e6_*.py` |
 | EQ-018 | International door-to-door km surcharge | `app/services/international_quote.py`, `calculate_international_quote()` |
+| EQ-019 | Login two-factor code parameters (length, expiry, attempt cap) | `app/services/two_factor.py`, `create_login_code()` / `verify_login_code()` |
 
 ---
 
@@ -1330,5 +1331,67 @@ plus a warning string.
     km_to_airport=780.0 -> round=780
     intl_hotshot_surcharge = (780 - 80) * 1.25 = 875.00 USD
     quote_total            = base + 875.00 (requires FSI confirmation)
+
+**Last verified:** 2026-06-25
+
+---
+
+## EQ-019: Login Two-Factor Code Parameters
+
+**Purpose:** Define the generation and validation thresholds for the email
+one-time login code (second authentication factor). This is an authentication
+control, not a freight calculation, but the values are tunable thresholds and
+are recorded here per `CLAUDE.md` Section 2.
+
+**Formula:**
+
+    code            = zero_pad(secrets.randbelow(10 ** length), length)
+    expires_at      = created_at + (ttl_minutes minutes)
+    valid(code_in)  = (not used)
+                      and (now <= expires_at)
+                      and (attempts < max_attempts)
+                      and compare_digest(stored_hash, sha256(code_in))
+    locked          = used or (now > expires_at) or (attempts >= max_attempts)
+
+A wrong guess increments `attempts`; reaching `max_attempts` (or expiry) burns
+the code (`used = True`) so a fresh one must be requested. Generating a new code
+invalidates any earlier unused code for the same user.
+
+**Variables:**
+
+| Variable | Type | Unit | Source | Description |
+|----------|------|------|--------|-------------|
+| `length` | int | digits | `TWO_FACTOR_CODE_LENGTH` (default 6) | Number of decimal digits in the code. |
+| `ttl_minutes` | int | minutes | `TWO_FACTOR_CODE_TTL_MINUTES` (default 10) | Lifetime of a code before expiry. |
+| `max_attempts` | int | count | `TWO_FACTOR_MAX_ATTEMPTS` (default 5) | Wrong guesses allowed before the code is burned. |
+| `cooldown_s` | int | seconds | `TWO_FACTOR_RESEND_COOLDOWN_SECONDS` (default 30) | Minimum spacing between two emailed codes for one account. |
+| `code` | str | — | `secrets.randbelow` | The numeric code emailed to the user (only its SHA-256 hash is stored). |
+
+**Constraints:**
+
+- Codes are stored only as SHA-256 digests (`code_hash`); plaintext is never
+  persisted.
+- `length` is floored at 4, `ttl_minutes`/`max_attempts` at 1, and
+  `cooldown_s` at 0 by `app/services/two_factor.py` so misconfiguration cannot
+  disable the control.
+- Verification uses constant-time comparison (`secrets.compare_digest`).
+- The challenge is skipped entirely when `TWO_FACTOR_ENABLED` is false or the
+  account's `users.two_factor_enabled` flag is cleared, and for OIDC/SSO logins.
+
+**Code location:** `app/services/two_factor.py`, `create_login_code()` (line
+~190) and `verify_login_code()` (line ~300).
+
+**Worked example:** defaults (`length = 6`, `ttl_minutes = 10`,
+`max_attempts = 5`):
+
+    secrets.randbelow(1_000_000) -> 4213 -> zero_pad(4213, 6) = "004213"
+    created_at = 2026-06-25 14:00:00Z
+    expires_at = 2026-06-25 14:10:00Z
+
+    submit "004213" at 14:03 -> not used, 14:03 <= 14:10, attempts 0 < 5,
+        sha256 matches -> valid -> used = True (login proceeds)
+
+    submit "000000" five times -> attempts reaches 5 -> used = True
+        -> even the correct "004213" now returns "request a new code"
 
 **Last verified:** 2026-06-25

@@ -25,6 +25,7 @@ QUOTES_TABLE = "quotes"
 EMAIL_REQUESTS_TABLE = "email_quote_requests"
 EMAIL_DISPATCH_LOG_TABLE = "email_dispatch_log"
 PASSWORD_RESET_TOKENS_TABLE = "password_reset_tokens"
+EMAIL_OTP_TOKENS_TABLE = "email_otp_tokens"
 ACCESSORIALS_TABLE = "accessorials"
 APP_SETTINGS_TABLE = "app_settings"
 HOTSHOT_RATES_TABLE = "hotshot_rates"
@@ -97,6 +98,11 @@ class User(UserMixin, db.Model):
             access.
         can_send_mail: Boolean toggle that explicitly permits the user to send
             outbound emails, bypassing role checks for mail-only workflows.
+        two_factor_enabled: Boolean gating the email one-time-code challenge on
+            password logins. Defaults to ``True`` so every password account is
+            protected; administrators may clear it for service accounts that
+            cannot receive email. The OIDC/SSO path ignores this flag because the
+            identity provider already enforces multi-factor and account status.
         theme_preference: Appearance mode persisted for the account.
             Accepted values are ``"auto"`` (follow system preference),
             ``"light"``, and ``"dark"``.
@@ -133,6 +139,9 @@ class User(UserMixin, db.Model):
     )
     employee_approved: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     can_send_mail: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
+    two_factor_enabled: Mapped[bool] = db.Column(
+        Boolean, nullable=False, default=True, server_default=db.true()
+    )
     show_cost_breakdown: Mapped[bool] = db.Column(Boolean, nullable=False, default=False)
     theme_preference: Mapped[str] = db.Column(
         db.String(10), nullable=False, default="auto"
@@ -326,6 +335,39 @@ class PasswordResetToken(db.Model):
     expires_at = db.Column(db.DateTime, nullable=False)  # UTC expiration timestamp
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     used = db.Column(db.Boolean, default=False)
+    user = db.relationship("User")
+
+
+class EmailOtpToken(db.Model):
+    """One-time email code used for the second factor of login.
+
+    Mirrors :class:`PasswordResetToken`: the ``code_hash`` column stores the
+    SHA-256 digest produced by
+    :func:`app.services.two_factor.hash_login_code` so a leaked database row
+    never exposes a usable code. Each row is bound to a single :class:`User`
+    and is consumed (``used=True``) once it is verified, expires, or runs out
+    of attempts. ``attempts`` records failed verification tries so the service
+    can lock a code after
+    :data:`flask.current_app.config['TWO_FACTOR_MAX_ATTEMPTS']` wrong guesses
+    without a brute-force window.
+    """
+
+    __tablename__ = EMAIL_OTP_TOKENS_TABLE
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(
+        db.Integer,
+        db.ForeignKey(f"{USERS_TABLE}.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash = db.Column(
+        db.String(128), nullable=False
+    )  # hashed code value (SHA-256 hex digest)
+    expires_at = db.Column(db.DateTime, nullable=False)  # UTC expiration timestamp
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    used = db.Column(db.Boolean, nullable=False, default=False)
+    attempts = db.Column(db.Integer, nullable=False, default=0)
     user = db.relationship("User")
 
 
