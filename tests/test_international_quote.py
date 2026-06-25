@@ -189,6 +189,38 @@ def test_auto_resolve_uses_destination_city_override():
     assert result.picked_airport == "MEL"
 
 
+def test_auto_resolve_dedupes_duplicate_airport_codes():
+    """Lanes with repeat airport codes (case/whitespace variants) call once.
+
+    A lane carrying ``("ADL", "adl", " ADL ")`` should send one Google
+    request, not three. The helper normalizes + dedups before fetching.
+    """
+    lane = _stub_lane(
+        airport_code_1="ADL",
+        airport_code_2="adl",
+        airport_code_3=" ADL ",
+    )
+    calls = []
+
+    def fake_distance(origin, destination):
+        calls.append((origin, destination))
+        return 95.0
+
+    result = calculate_international_quote(
+        destination=lane.destination,
+        lab_code=lane.lab_code,
+        weight_lb=100.0,
+        km_to_airport=None,
+        lane_lookup=lambda **_: lane,
+        distance_lookup=fake_distance,
+    )
+
+    assert len(calls) == 1
+    assert calls[0][0] == "ADL Airport"
+    assert result.picked_airport == "ADL"
+    assert result.km_to_airport == pytest.approx(95.0)
+
+
 def test_auto_resolve_falls_back_to_warning_when_lookup_fails():
     """Lookup returns None for every airport -> warning, no surcharge."""
     lane = _stub_lane(airport_code_1="ADL")

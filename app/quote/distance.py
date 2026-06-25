@@ -106,6 +106,22 @@ def get_distance_miles(origin_zip, destination_zip):
     return None
 
 
+_DIRECTIONS_API_URL = "https://maps.googleapis.com/maps/api/directions/json"
+
+
+def _redact_key(text: str, api_key: Optional[str]) -> str:
+    """Replace ``api_key`` with ``<redacted>`` everywhere it appears.
+
+    Exception strings raised by ``requests`` (timeouts, connection errors,
+    SSL failures) often embed the full request URL — including the
+    ``key=...`` query parameter. Sanitize before logging so the API key
+    never lands in application logs.
+    """
+    if not api_key:
+        return text
+    return text.replace(api_key, "<redacted>")
+
+
 def _get_distance_km_directions(origin: str, destination: str) -> Optional[float]:
     """Call Google Directions for a free-text origin/destination, return km.
 
@@ -116,20 +132,32 @@ def _get_distance_km_directions(origin: str, destination: str) -> Optional[float
     error). The international quote runtime treats ``None`` the same as
     "airport unreachable" — the lane's other candidate airports still get
     a chance, and the caller emits a warning if all of them miss.
+
+    The URL is composed via ``requests.get(url, params=...)`` rather than
+    by f-string interpolation so the user-supplied ``origin`` and
+    ``destination`` are encoded by ``urllib`` (which CodeQL recognizes
+    as a safe URL-construction sanitizer) and the API key never lands in
+    a string that could leak into logs via a raised exception.
     """
 
     api_key = _get_api_key()
     if not api_key:
         return None
-    base = "https://maps.googleapis.com/maps/api/directions/json"
-    url = (
-        f"{base}?origin={urlquote(origin)}"
-        f"&destination={urlquote(destination)}"
-        f"&mode=driving&key={urlquote(api_key)}"
-    )
+    params = {
+        "origin": origin,
+        "destination": destination,
+        "mode": "driving",
+        "key": api_key,
+    }
     try:
-        r = _session_with_retries().get(url, timeout=20)
+        # `with` so the session closes its connection pool deterministically
+        # even if the JSON parse path raises after the response lands.
+        with _session_with_retries() as session:
+            r = session.get(_DIRECTIONS_API_URL, params=params, timeout=20)
         data = r.json()
+        # ``AttributeError`` covers the case where ``r.json()`` returned a
+        # non-dict (list / str / None) and the subsequent ``.get()`` call
+        # would otherwise crash the whole quote.
         if data.get("status") != "OK":
             _log(
                 f"[distance.intl] non-OK status={data.get('status')!r} "
@@ -138,8 +166,19 @@ def _get_distance_km_directions(origin: str, destination: str) -> Optional[float
             return None
         meters = data["routes"][0]["legs"][0]["distance"]["value"]
         return meters / 1000.0
-    except (KeyError, IndexError, ValueError, requests.RequestException) as exc:
-        _log(f"[distance.intl] failure origin={origin!r} dest={destination!r}: {exc}")
+    except (
+        KeyError,
+        IndexError,
+        ValueError,
+        AttributeError,
+        requests.RequestException,
+    ) as exc:
+        # ``exc`` may carry the full URL (with ``key=...``) for network errors;
+        # redact before logging so the API key never reaches application logs.
+        _log(
+            f"[distance.intl] failure origin={origin!r} dest={destination!r}: "
+            f"{_redact_key(str(exc), api_key)}"
+        )
         return None
 
 
@@ -196,10 +235,15 @@ def get_km_to_nearest_airport(
 
     best_km = None
     best_airport = None
+    # Dedup defensively — duplicate codes in the lane (or that collapse to
+    # the same code after strip+upper) would otherwise spend an extra
+    # Google Directions API call ($0.005 each) for no new information.
+    seen_airports: set[str] = set()
     for code in airport_codes or ():
         airport = (str(code) if code is not None else "").strip().upper()
-        if not airport:
+        if not airport or airport in seen_airports:
             continue
+        seen_airports.add(airport)
         km = fetch(f"{airport} Airport", dest_query)
         if km is None:
             continue
