@@ -7,6 +7,9 @@ Services portal.
 ## Features
 
 - Sign up, log in, and reset passwords
+- Password logins require email-based two-factor authentication: a one-time code
+  is sent to the account's address and must be entered to finish signing in (see
+  [Email two-factor authentication](#email-two-factor-authentication-login))
 - After login, users are routed to a rate-set-specific landing page (see
   [Post-login landing pages](#post-login-landing-pages)). Users tagged with the
   `scicr` / `science_care` rate set land on `/sc/quote`; everyone else lands on
@@ -293,9 +296,48 @@ needed:
 | `AUTH_LOGIN_RATE_LIMIT` | Per-user/IP throttle for `/login` | `5 per minute` |
 | `AUTH_RESET_RATE_LIMIT` | Per-user/IP throttle for `/reset` | `5 per minute` |
 | `AUTH_RESET_TOKEN_RATE_LIMIT` | Frequency cap for issuing password reset tokens | `1 per 15 minutes` |
+| `AUTH_2FA_VERIFY_RATE_LIMIT` | Per-IP/account throttle for `/login/verify` code submissions | `10 per minute` |
+| `AUTH_2FA_RESEND_RATE_LIMIT` | Per-IP/account throttle for `/login/verify/resend` | `3 per 5 minutes` |
 
 Set `RATELIMIT_HEADERS_ENABLED=true` to expose standard rate-limit headers if
 your proxy or monitoring stack expects them.
+
+### Email two-factor authentication (login)
+
+Password logins require a second factor: a one-time numeric code emailed to the
+account's address. After the password check, the app stores the authenticated
+account in a short-lived session slot, emails a code, and redirects to
+`/login/verify`. The Flask-Login session only starts once the user submits the
+matching code, so a stolen password alone cannot sign in.
+
+Because the code is delivered to the user's **verified email address**, the
+ability to log in is tied to ongoing control of that mailbox. When a partner
+company deactivates a former employee's email account, that person can no longer
+receive a code and is locked out of this application automatically — no manual
+offboarding step is required on our side. This is the primary reason the feature
+exists.
+
+Codes are stored only as SHA-256 digests (never plaintext), generating a new
+code invalidates any earlier one, and a code is burned after
+`TWO_FACTOR_MAX_ATTEMPTS` wrong guesses or once it expires. Single sign-on (SSO /
+OIDC) logins are unaffected — the identity provider already enforces MFA and
+account status for `@freightservices.net` employees.
+
+Administrators can clear the per-user **"Require an emailed login code"** toggle
+on the user edit form (`/admin/users/<id>/edit`) for service accounts that
+cannot receive email; every account defaults to on.
+
+| Variable | Purpose | Default |
+| --- | --- | --- |
+| `TWO_FACTOR_ENABLED` | Deployment-wide kill switch for email login codes. Set to `false` to disable 2FA everywhere (e.g., environments without working SMTP). | `true` |
+| `TWO_FACTOR_CODE_LENGTH` | Number of digits in each login code. | `6` |
+| `TWO_FACTOR_CODE_TTL_MINUTES` | How long a code remains valid before it must be re-requested. | `10` |
+| `TWO_FACTOR_MAX_ATTEMPTS` | Wrong guesses allowed before the active code is burned. | `5` |
+| `TWO_FACTOR_RESEND_COOLDOWN_SECONDS` | Minimum spacing between two emailed codes for one account. | `30` |
+
+> 2FA depends on a working SMTP configuration (`MAIL_*`). In a deployment where
+> outbound email is not yet configured, set `TWO_FACTOR_ENABLED=false` so
+> password users are not locked out, then re-enable it once mail works.
 
 ### EIA fuel price sync
 

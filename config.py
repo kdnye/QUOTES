@@ -710,6 +710,31 @@ class Config:
     AUTH_RESET_TOKEN_RATE_LIMIT = os.getenv(
         "AUTH_RESET_TOKEN_RATE_LIMIT", "1 per 15 minutes"
     )
+
+    # Email-based two-factor authentication for password logins. Codes are
+    # delivered to the account's email address so login depends on continued
+    # access to that mailbox (see app/services/two_factor.py). The OIDC/SSO
+    # path is unaffected; the identity provider enforces MFA there.
+    TWO_FACTOR_ENABLED = os.getenv("TWO_FACTOR_ENABLED", "true").lower() in {
+        "true",
+        "1",
+        "yes",
+        "y",
+        "on",
+        "t",
+    }
+    TWO_FACTOR_CODE_LENGTH = _get_int_from_env("TWO_FACTOR_CODE_LENGTH", 6)
+    TWO_FACTOR_CODE_TTL_MINUTES = _get_int_from_env("TWO_FACTOR_CODE_TTL_MINUTES", 10)
+    TWO_FACTOR_MAX_ATTEMPTS = _get_int_from_env("TWO_FACTOR_MAX_ATTEMPTS", 5)
+    TWO_FACTOR_RESEND_COOLDOWN_SECONDS = _get_int_from_env(
+        "TWO_FACTOR_RESEND_COOLDOWN_SECONDS", 30
+    )
+    AUTH_2FA_VERIFY_RATE_LIMIT = os.getenv(
+        "AUTH_2FA_VERIFY_RATE_LIMIT", "10 per minute"
+    )
+    AUTH_2FA_RESEND_RATE_LIMIT = os.getenv(
+        "AUTH_2FA_RESEND_RATE_LIMIT", "3 per 5 minutes"
+    )
     API_AUTH_TOKEN = os.getenv("API_AUTH_TOKEN")
     API_QUOTE_RATE_LIMIT = os.getenv("API_QUOTE_RATE_LIMIT", "30 per minute")
     OIDC_ISSUER = os.getenv("OIDC_ISSUER")

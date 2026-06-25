@@ -56,9 +56,19 @@ from app.services.auth_utils import (
     provision_employee_from_oidc,
 )
 from app.services.mail import MailRateLimitError, send_email
+from app.services.two_factor import (
+    mask_email,
+    start_login_challenge,
+    two_factor_required,
+    verify_login_code,
+)
 from app import limiter
 from app.services.oidc_client import get_oidc_client, is_oidc_configured
 from app.services.rate_sets import landing_endpoint_for_user
+
+# Session keys used to carry an in-progress two-factor login between the
+# password step (``/login``) and the code-entry step (``/login/verify``).
+PENDING_2FA_USER_KEY = "pending_2fa_user_id"
 
 auth_bp = Blueprint("auth", __name__, template_folder="templates")
 
@@ -105,6 +115,38 @@ def _login_rate_limit_key() -> str:
     """
 
     return _remote_limit_scope(request.form.get("email"))
+
+
+def _two_factor_verify_rate_limit_value() -> str:
+    """Return the rate limit string applied to :func:`login_verify` POSTs.
+
+    Reads ``AUTH_2FA_VERIFY_RATE_LIMIT`` so deployments can tune how many code
+    submissions an IP/account may make per window, defaulting to
+    ``"10 per minute"``. The per-code wrong-guess cap enforced in
+    :func:`app.services.two_factor.verify_login_code` is the primary brute-force
+    control; this limiter simply blunts rapid automated submissions.
+    """
+
+    value = current_app.config.get("AUTH_2FA_VERIFY_RATE_LIMIT", "10 per minute")
+    return str(value or "10 per minute")
+
+
+def _two_factor_resend_rate_limit_value() -> str:
+    """Return the rate limit string applied to :func:`resend_login_code`.
+
+    Reads ``AUTH_2FA_RESEND_RATE_LIMIT`` (default ``"3 per 5 minutes"``) so a
+    caller cannot trigger an unbounded number of code emails. The mail service
+    applies its own per-recipient throttle as a second layer.
+    """
+
+    value = current_app.config.get("AUTH_2FA_RESEND_RATE_LIMIT", "3 per 5 minutes")
+    return str(value or "3 per 5 minutes")
+
+
+def _two_factor_rate_limit_key() -> str:
+    """Scope two-factor endpoints by remote IP and the pending account id."""
+
+    return _remote_limit_scope(str(session.get(PENDING_2FA_USER_KEY) or ""))
 
 
 def _reset_rate_limit_value() -> str:
@@ -351,6 +393,31 @@ def login() -> Union[str, Response]:
         password = request.form.get("password", "")
         user, error = authenticate(email, password)
         if user:
+            if two_factor_required(user):
+                session.pop(PENDING_2FA_USER_KEY, None)
+                try:
+                    sent, challenge_error = start_login_challenge(user)
+                except MailRateLimitError as exc:
+                    current_app.logger.warning(
+                        "2FA code rate limited for %s: %s", user.email, exc
+                    )
+                    flash(str(exc), "warning")
+                    return redirect(url_for("auth.login"))
+                except smtplib.SMTPException as exc:
+                    current_app.logger.exception(
+                        "2FA code email failed for %s: %s", user.email, exc
+                    )
+                    flash(
+                        "We couldn't send your login code right now. Please try "
+                        "again in a few minutes.",
+                        "danger",
+                    )
+                    return redirect(url_for("auth.login"))
+                if not sent and challenge_error:
+                    flash(challenge_error, "warning")
+                session[PENDING_2FA_USER_KEY] = user.id
+                current_app.logger.info("2FA challenge issued for %s", user.email)
+                return redirect(url_for("auth.login_verify"))
             login_user(user)
             current_app.logger.info(
                 "login successful for %s", getattr(user, "email", "<missing>")
@@ -364,6 +431,107 @@ def login() -> Union[str, Response]:
         employee_domain=f"@{employee_domain}",
         oidc_login_url=url_for("auth.login_oidc", employee_domain=employee_domain),
     )
+
+
+def _pending_two_factor_user() -> Optional[User]:
+    """Return the account mid-way through a two-factor login, if any.
+
+    Reads :data:`PENDING_2FA_USER_KEY` from the session and loads the matching
+    :class:`~app.models.User`. Clears the session key and returns ``None`` when
+    the id is missing, the user no longer exists, or the account has been
+    deactivated, so callers can bounce the visitor back to ``/login``.
+    """
+
+    user_id = session.get(PENDING_2FA_USER_KEY)
+    if not user_id:
+        return None
+    user = db.session.get(User, user_id)
+    if user is None or not getattr(user, "is_active", True):
+        session.pop(PENDING_2FA_USER_KEY, None)
+        return None
+    return user
+
+
+@auth_bp.route("/login/verify", methods=["GET", "POST"])
+@limiter.limit(
+    _two_factor_verify_rate_limit_value,
+    key_func=_two_factor_rate_limit_key,
+    methods=["POST"],
+)
+def login_verify() -> Union[str, Response]:
+    """Complete a password login by checking the emailed one-time code.
+
+    The first factor (:func:`login`) stashes the authenticated account id in the
+    session and emails a code. This view collects that code and, on a match,
+    starts the Flask-Login session. The account is never logged in until the
+    code is verified, so possession of the password alone is insufficient.
+
+    Required form fields:
+        - code
+
+    Returns:
+        Renders ``login_verify.html`` on GET or an invalid submission. Redirects
+        to the user's landing endpoint on success, or back to ``auth.login``
+        when no challenge is pending.
+    """
+
+    user = _pending_two_factor_user()
+    if user is None:
+        flash("Your login session has expired. Please log in again.", "warning")
+        return redirect(url_for("auth.login"))
+
+    if request.method == "POST":
+        code = request.form.get("code", "")
+        ok, error = verify_login_code(user, code)
+        if ok:
+            session.pop(PENDING_2FA_USER_KEY, None)
+            login_user(user)
+            current_app.logger.info("2FA verification succeeded for %s", user.email)
+            return redirect(url_for(landing_endpoint_for_user(user)))
+        current_app.logger.info("2FA verification failed for %s", user.email)
+        flash(error or "Invalid code.", "danger")
+
+    return render_template("login_verify.html", masked_email=mask_email(user.email))
+
+
+@auth_bp.route("/login/verify/resend", methods=["POST"])
+@limiter.limit(
+    _two_factor_resend_rate_limit_value,
+    key_func=_two_factor_rate_limit_key,
+)
+def resend_login_code() -> Response:
+    """Email a fresh login code for an in-progress two-factor login.
+
+    Returns:
+        Redirects back to ``auth.login_verify`` after attempting to send a new
+        code, or to ``auth.login`` when no challenge is pending. Mail failures
+        and the resend cooldown are surfaced as flash messages.
+    """
+
+    user = _pending_two_factor_user()
+    if user is None:
+        flash("Your login session has expired. Please log in again.", "warning")
+        return redirect(url_for("auth.login"))
+
+    try:
+        sent, challenge_error = start_login_challenge(user)
+    except MailRateLimitError as exc:
+        flash(str(exc), "warning")
+    except smtplib.SMTPException as exc:
+        current_app.logger.exception(
+            "2FA resend email failed for %s: %s", user.email, exc
+        )
+        flash(
+            "We couldn't send your login code right now. Please try again in a "
+            "few minutes.",
+            "danger",
+        )
+    else:
+        if sent:
+            flash("A new code is on its way to your email.", "info")
+        elif challenge_error:
+            flash(challenge_error, "warning")
+    return redirect(url_for("auth.login_verify"))
 
 
 @auth_bp.route("/login/oidc")
@@ -854,6 +1022,7 @@ def logout() -> Response:
     """
     logout_user()
     _clear_oidc_session()
+    session.pop(PENDING_2FA_USER_KEY, None)
     logout_endpoint = current_app.config.get("OIDC_END_SESSION_ENDPOINT")
     if logout_endpoint and is_oidc_configured():
         return redirect(_build_oidc_logout_url(logout_endpoint))

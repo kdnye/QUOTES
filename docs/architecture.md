@@ -60,9 +60,18 @@ Key tables:
 - `FuelSurcharge` – one row per EIA PADD region storing the current diesel price (`current_rate`, $/gal) and `last_updated` timestamp. Populated by `scripts/sync_eia_rates.py`; queried by `app/services/fuel_surcharge.py` to resolve per-zone surcharge percentages at quote time.
 
 ### Authentication (`app/auth.py`)
-- Routes for login, registration, logout, password reset request, and token-based reset.
-- Uses helpers in `services.auth_utils` for validation and token management.
+- Routes for login, login verification (email 2FA), registration, logout, password reset request, and token-based reset.
+- Uses helpers in `services.auth_utils` for validation and token management, and `services.two_factor` for the email one-time-code challenge.
 - After a successful login (form, OIDC callback, or visiting `/` while signed in), the redirect target is resolved by `app.services.rate_sets.landing_endpoint_for_user`. Users whose `rate_set` resolves to `scicr` or `science_care` are sent to `/sc/quote`; all other rate sets fall back to `/quotes/new`. Extend the `RATE_SET_LANDING_ENDPOINTS` mapping to add additional per-rate-set landing pages.
+
+#### Email two-factor authentication (`app/services/two_factor.py`)
+- The password login path is a two-step challenge:
+  1. `POST /login` validates the email/password via `services.auth_utils.authenticate`. On success, when `two_factor_required(user)` is true it generates a one-time numeric code, stores its SHA-256 hash in `email_otp_tokens`, emails the code via `services.mail.send_email` (feature `login_2fa`), stashes the account id in `session["pending_2fa_user_id"]`, and redirects to `/login/verify`. **`login_user` is not called at this step.**
+  2. `POST /login/verify` reads the pending account from the session and calls `verify_login_code`. Only on a match does `login_user` start the Flask-Login session and clear the pending slot. `POST /login/verify/resend` issues a fresh code (subject to a resend cooldown).
+- **Security boundary / offboarding property:** codes go to the account's verified email, so login depends on continued control of that mailbox. When a partner company deactivates a former employee's email, that user can no longer receive a code and is locked out automatically.
+- Codes are stored hashed (never plaintext), a new code invalidates earlier unused codes for the same user, and a code is burned after `TWO_FACTOR_MAX_ATTEMPTS` wrong guesses or once it expires (`TWO_FACTOR_CODE_TTL_MINUTES`). Constant-time comparison (`secrets.compare_digest`) guards verification.
+- Controlled by the deployment-wide `TWO_FACTOR_ENABLED` flag and the per-user `users.two_factor_enabled` column (admin-toggleable). The **OIDC/SSO path is intentionally exempt** — the identity provider already enforces MFA and account status for `@freightservices.net` employees.
+- Relevant routes are unauthenticated (the user is mid-login) but rate-limited via `AUTH_2FA_VERIFY_RATE_LIMIT` and `AUTH_2FA_RESEND_RATE_LIMIT`, in addition to the per-code attempt cap.
 
 ### Quote Workflow (`app/quotes/routes.py`)
 - `/quotes/new` displays the form for creating quotes or accepts JSON payloads.
@@ -229,6 +238,7 @@ The pricing modules implement the following core functions:
 
 ### Services Layer (`services` package)
 - `auth_utils.py` – password/email validation and password reset token handling.
+- `two_factor.py` – email one-time-code login challenge: generates/hashes/verifies codes (`email_otp_tokens` table) and emails them via `mail.py`. Gated by `TWO_FACTOR_ENABLED` and the per-user `users.two_factor_enabled` flag.
 - `hotshot_rates.py` – retrieval and management of hotshot rate records.
 - `quote.py` – orchestrates quote creation, accessorial cost calculations, and database persistence.
 - `mail.py` – validates sender formatting, enforces mail privileges, applies rate limits, and logs outbound email usage.
